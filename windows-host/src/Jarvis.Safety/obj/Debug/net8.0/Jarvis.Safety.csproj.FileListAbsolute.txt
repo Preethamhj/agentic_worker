@@ -1,0 +1,15 @@
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Safety\bin\Debug\net8.0\Jarvis.Safety.deps.json
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Safety\bin\Debug\net8.0\Jarvis.Safety.dll
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Safety\bin\Debug\net8.0\Jarvis.Safety.pdb
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Safety\bin\Debug\net8.0\Jarvis.Contracts.dll
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Safety\bin\Debug\net8.0\Jarvis.Contracts.pdb
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Safety\obj\Debug\net8.0\Jarvis.Safety.csproj.AssemblyReference.cache
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Safety\obj\Debug\net8.0\Jarvis.Safety.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Safety\obj\Debug\net8.0\Jarvis.Safety.AssemblyInfoInputs.cache
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Safety\obj\Debug\net8.0\Jarvis.Safety.AssemblyInfo.cs
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Safety\obj\Debug\net8.0\Jarvis.Safety.csproj.CoreCompileInputs.cache
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Safety\obj\Debug\net8.0\Jarvis.S.4DC57CCA.Up2Date
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Safety\obj\Debug\net8.0\Jarvis.Safety.dll
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Safety\obj\Debug\net8.0\refint\Jarvis.Safety.dll
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Safety\obj\Debug\net8.0\Jarvis.Safety.pdb
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Safety\obj\Debug\net8.0\ref\Jarvis.Safety.dll

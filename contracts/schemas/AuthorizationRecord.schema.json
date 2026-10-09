@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AuthorizationRecord",
+  "type": "object",
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "auth_id": { "type": "string" },
+    "task_id": { "type": "string" },
+    "step_id": { "type": "string" },
+    "tool_id": { "type": "string" },
+    "canonical_args": { "type": "object" },
+    "expected": { "type": "object" },
+    "allowed_effects": { "type": "array", "items": { "type": "string" } },
+    "watch_scopes": { "type": "array", "items": { "type": "string" } },
+    "risk": { "type": "string", "enum": ["low", "medium", "high"] },
+    "approved_by": { "type": "string", "enum": ["auto", "user"] },
+    "issued_at": { "type": "string" },
+    "expires_at": { "type": "string" },
+    "nonce": { "type": "string" },
+    "hmac": { "type": "string" }
+  },
+  "required": [
+    "schema_version", "auth_id", "task_id", "step_id", "tool_id",
+    "canonical_args", "expected", "allowed_effects", "watch_scopes",
+    "risk", "approved_by", "issued_at", "expires_at", "nonce", "hmac"
+  ],
+  "additionalProperties": false
+}

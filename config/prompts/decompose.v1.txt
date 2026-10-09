@@ -1,0 +1,5 @@
+Decompose the user request into ordered tool steps.
+Respond strictly in JSON.
+
+User request: {text}
+Intent: {intent}

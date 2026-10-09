@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "step_id": "step-001",
+  "order": 1,
+  "description": "Create test folder",
+  "depends_on": [],
+  "tool_call": {
+    "schema_version": 1,
+    "tool_id": "fs.create_folder",
+    "args": {
+      "path": "C:\\test"
+    }
+  },
+  "verification_plan": {
+    "schema_version": 1,
+    "checks": [],
+    "watch_scopes": [],
+    "window_seconds": 30
+  },
+  "advisory_risk": "extreme"
+}

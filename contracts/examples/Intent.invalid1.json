@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "intent_id": "intent-001",
+  "kind": "invalid_kind",
+  "action": "fs.create_folder",
+  "confidence": 0.95,
+  "entities": {},
+  "risk": {
+    "level": "medium",
+    "reasons": []
+  },
+  "source": "rules"
+}

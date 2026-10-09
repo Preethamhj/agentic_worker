@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Jarvis.Tools</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Jarvis.Contracts\Jarvis.Contracts.csproj" />
+    <ProjectReference Include="..\Jarvis.Safety\Jarvis.Safety.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,4 @@
+Generate a summary response based strictly on the step verification results.
+Do not claim success unless all steps were VERIFIED.
+
+Steps and verification statuses: {statuses}

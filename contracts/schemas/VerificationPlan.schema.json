@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "VerificationPlan",
+  "type": "object",
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": { "type": "string", "enum": ["file_exists", "file_hash", "dir_exists", "process_running", "task_exists", "trigger_matches"] },
+          "params": { "type": "object" }
+        },
+        "required": ["type", "params"],
+        "additionalProperties": false
+      }
+    },
+    "watch_scopes": { "type": "array", "items": { "type": "string" } },
+    "window_seconds": { "type": "integer" }
+  },
+  "required": ["schema_version", "checks", "watch_scopes", "window_seconds"],
+  "additionalProperties": false
+}

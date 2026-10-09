@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "session_id": "sess-001",
+  "text": "create folder test",
+  "locale": "en-US",
+  "extra_field": "not_allowed"
+}

@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "step_id": "step-001",
+  "status": "VERIFIED",
+  "stages": [],
+  "evidence": [],
+  "side_effects": [],
+  "reasons": [],
+  "duration_ms": "fast"
+}

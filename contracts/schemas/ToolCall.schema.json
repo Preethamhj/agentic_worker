@@ -1,0 +1,12 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ToolCall",
+  "type": "object",
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "tool_id": { "type": "string" },
+    "args": { "type": "object" }
+  },
+  "required": ["schema_version", "tool_id", "args"],
+  "additionalProperties": false
+}

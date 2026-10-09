@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "step_id": "step-001",
+  "auth_id": "auth-001",
+  "started_at": "2026-10-08T10:00:01Z",
+  "completed_at": "2026-10-08T10:00:02Z",
+  "exit_code": "0",
+  "reported_success": true,
+  "stdout": "",
+  "stderr": ""
+}

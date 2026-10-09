@@ -1,0 +1,17 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PlanStep",
+  "type": "object",
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "step_id": { "type": "string" },
+    "order": { "type": "integer" },
+    "description": { "type": "string" },
+    "depends_on": { "type": "array", "items": { "type": "string" } },
+    "tool_call": { "$ref": "ToolCall.schema.json" },
+    "verification_plan": { "$ref": "VerificationPlan.schema.json" },
+    "advisory_risk": { "type": "string", "enum": ["low", "medium", "high"] }
+  },
+  "required": ["schema_version", "step_id", "order", "description", "depends_on", "tool_call", "verification_plan", "advisory_risk"],
+  "additionalProperties": false
+}

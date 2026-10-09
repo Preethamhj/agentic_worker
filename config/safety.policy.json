@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "allowed_roots": [
+    "%USERPROFILE%\\Documents\\Jarvis",
+    "%USERPROFILE%\\Desktop\\agentic worker"
+  ],
+  "forbidden_path_patterns": [
+    "..",
+    "System32",
+    "Windows",
+    "Program Files"
+  ]
+}

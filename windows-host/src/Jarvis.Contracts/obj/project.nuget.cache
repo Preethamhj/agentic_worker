@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "dgSpecHash": "uMxETBcyJsY=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Contracts\\Jarvis.Contracts.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\ASUS\\.nuget\\packages\\humanizer.core\\2.14.1\\humanizer.core.2.14.1.nupkg.sha512",
+    "C:\\Users\\ASUS\\.nuget\\packages\\json.more.net\\2.0.1.2\\json.more.net.2.0.1.2.nupkg.sha512",
+    "C:\\Users\\ASUS\\.nuget\\packages\\jsonpointer.net\\5.0.0\\jsonpointer.net.5.0.0.nupkg.sha512",
+    "C:\\Users\\ASUS\\.nuget\\packages\\jsonschema.net\\7.0.2\\jsonschema.net.7.0.2.nupkg.sha512"
+  ],
+  "logs": []
+}

@@ -1,0 +1,559 @@
+{
+  "format": 1,
+  "restore": {
+    "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\tests\\Jarvis.Architecture.Tests\\Jarvis.Architecture.Tests.csproj": {}
+  },
+  "projects": {
+    "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Contracts\\Jarvis.Contracts.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Contracts\\Jarvis.Contracts.csproj",
+        "projectName": "Jarvis.Contracts",
+        "projectPath": "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Contracts\\Jarvis.Contracts.csproj",
+        "packagesPath": "C:\\Users\\ASUS\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Contracts\\obj\\",
+        "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "E:\\visualstudiocode\\sharedresoureces\\NuGetPackages"
+        ],
+        "configFilePaths": [
+          "C:\\Users\\ASUS\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "framework": "net8.0",
+            "targetAlias": "net8.0",
+            "projectReferences": {}
+          }
+        },
+        "warningProperties": {
+          "allWarningsAsErrors": true,
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "10.0.300"
+      },
+      "frameworks": {
+        "net8.0": {
+          "framework": "net8.0",
+          "targetAlias": "net8.0",
+          "dependencies": {
+            "JsonSchema.Net": {
+              "target": "Package",
+              "version": "[7.0.2, )"
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.300/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Core\\Jarvis.Core.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Core\\Jarvis.Core.csproj",
+        "projectName": "Jarvis.Core",
+        "projectPath": "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Core\\Jarvis.Core.csproj",
+        "packagesPath": "C:\\Users\\ASUS\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Core\\obj\\",
+        "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "E:\\visualstudiocode\\sharedresoureces\\NuGetPackages"
+        ],
+        "configFilePaths": [
+          "C:\\Users\\ASUS\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "framework": "net8.0",
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Contracts\\Jarvis.Contracts.csproj": {
+                "projectPath": "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Contracts\\Jarvis.Contracts.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "allWarningsAsErrors": true,
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "10.0.300"
+      },
+      "frameworks": {
+        "net8.0": {
+          "framework": "net8.0",
+          "targetAlias": "net8.0",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.300/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Infrastructure\\Jarvis.Infrastructure.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Infrastructure\\Jarvis.Infrastructure.csproj",
+        "projectName": "Jarvis.Infrastructure",
+        "projectPath": "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Infrastructure\\Jarvis.Infrastructure.csproj",
+        "packagesPath": "C:\\Users\\ASUS\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Infrastructure\\obj\\",
+        "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "E:\\visualstudiocode\\sharedresoureces\\NuGetPackages"
+        ],
+        "configFilePaths": [
+          "C:\\Users\\ASUS\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "framework": "net8.0",
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Contracts\\Jarvis.Contracts.csproj": {
+                "projectPath": "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Contracts\\Jarvis.Contracts.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "allWarningsAsErrors": true,
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "10.0.300"
+      },
+      "frameworks": {
+        "net8.0": {
+          "framework": "net8.0",
+          "targetAlias": "net8.0",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.300/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Safety\\Jarvis.Safety.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Safety\\Jarvis.Safety.csproj",
+        "projectName": "Jarvis.Safety",
+        "projectPath": "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Safety\\Jarvis.Safety.csproj",
+        "packagesPath": "C:\\Users\\ASUS\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Safety\\obj\\",
+        "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "E:\\visualstudiocode\\sharedresoureces\\NuGetPackages"
+        ],
+        "configFilePaths": [
+          "C:\\Users\\ASUS\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "framework": "net8.0",
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Contracts\\Jarvis.Contracts.csproj": {
+                "projectPath": "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Contracts\\Jarvis.Contracts.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "allWarningsAsErrors": true,
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "10.0.300"
+      },
+      "frameworks": {
+        "net8.0": {
+          "framework": "net8.0",
+          "targetAlias": "net8.0",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.300/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Tools\\Jarvis.Tools.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Tools\\Jarvis.Tools.csproj",
+        "projectName": "Jarvis.Tools",
+        "projectPath": "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Tools\\Jarvis.Tools.csproj",
+        "packagesPath": "C:\\Users\\ASUS\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Tools\\obj\\",
+        "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "E:\\visualstudiocode\\sharedresoureces\\NuGetPackages"
+        ],
+        "configFilePaths": [
+          "C:\\Users\\ASUS\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "framework": "net8.0",
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Contracts\\Jarvis.Contracts.csproj": {
+                "projectPath": "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Contracts\\Jarvis.Contracts.csproj"
+              },
+              "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Safety\\Jarvis.Safety.csproj": {
+                "projectPath": "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Safety\\Jarvis.Safety.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "allWarningsAsErrors": true,
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "10.0.300"
+      },
+      "frameworks": {
+        "net8.0": {
+          "framework": "net8.0",
+          "targetAlias": "net8.0",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.300/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Verification\\Jarvis.Verification.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Verification\\Jarvis.Verification.csproj",
+        "projectName": "Jarvis.Verification",
+        "projectPath": "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Verification\\Jarvis.Verification.csproj",
+        "packagesPath": "C:\\Users\\ASUS\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Verification\\obj\\",
+        "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "E:\\visualstudiocode\\sharedresoureces\\NuGetPackages"
+        ],
+        "configFilePaths": [
+          "C:\\Users\\ASUS\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "framework": "net8.0",
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Contracts\\Jarvis.Contracts.csproj": {
+                "projectPath": "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Contracts\\Jarvis.Contracts.csproj"
+              },
+              "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Infrastructure\\Jarvis.Infrastructure.csproj": {
+                "projectPath": "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Infrastructure\\Jarvis.Infrastructure.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "allWarningsAsErrors": true,
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "10.0.300"
+      },
+      "frameworks": {
+        "net8.0": {
+          "framework": "net8.0",
+          "targetAlias": "net8.0",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.300/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\tests\\Jarvis.Architecture.Tests\\Jarvis.Architecture.Tests.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\tests\\Jarvis.Architecture.Tests\\Jarvis.Architecture.Tests.csproj",
+        "projectName": "Jarvis.Architecture.Tests",
+        "projectPath": "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\tests\\Jarvis.Architecture.Tests\\Jarvis.Architecture.Tests.csproj",
+        "packagesPath": "C:\\Users\\ASUS\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\tests\\Jarvis.Architecture.Tests\\obj\\",
+        "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "E:\\visualstudiocode\\sharedresoureces\\NuGetPackages"
+        ],
+        "configFilePaths": [
+          "C:\\Users\\ASUS\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "framework": "net8.0",
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Contracts\\Jarvis.Contracts.csproj": {
+                "projectPath": "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Contracts\\Jarvis.Contracts.csproj"
+              },
+              "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Core\\Jarvis.Core.csproj": {
+                "projectPath": "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Core\\Jarvis.Core.csproj"
+              },
+              "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Infrastructure\\Jarvis.Infrastructure.csproj": {
+                "projectPath": "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Infrastructure\\Jarvis.Infrastructure.csproj"
+              },
+              "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Safety\\Jarvis.Safety.csproj": {
+                "projectPath": "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Safety\\Jarvis.Safety.csproj"
+              },
+              "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Tools\\Jarvis.Tools.csproj": {
+                "projectPath": "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Tools\\Jarvis.Tools.csproj"
+              },
+              "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Verification\\Jarvis.Verification.csproj": {
+                "projectPath": "C:\\Users\\ASUS\\Desktop\\agentic worker\\windows-host\\src\\Jarvis.Verification\\Jarvis.Verification.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "allWarningsAsErrors": true,
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "10.0.300"
+      },
+      "frameworks": {
+        "net8.0": {
+          "framework": "net8.0",
+          "targetAlias": "net8.0",
+          "dependencies": {
+            "FluentAssertions": {
+              "target": "Package",
+              "version": "[6.12.0, )"
+            },
+            "Microsoft.NET.Test.Sdk": {
+              "target": "Package",
+              "version": "[17.9.0, )"
+            },
+            "NetArchTest.Rules": {
+              "target": "Package",
+              "version": "[1.3.2, )"
+            },
+            "xunit": {
+              "target": "Package",
+              "version": "[2.7.0, )"
+            },
+            "xunit.runner.visualstudio": {
+              "include": "Runtime, Build, Native, ContentFiles, Analyzers, BuildTransitive",
+              "suppressParent": "All",
+              "target": "Package",
+              "version": "[2.5.7, )"
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.300/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Jarvis.Cli</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Jarvis.Contracts\Jarvis.Contracts.csproj" />
+    <ProjectReference Include="..\Jarvis.Core\Jarvis.Core.csproj" />
+    <ProjectReference Include="..\Jarvis.Safety\Jarvis.Safety.csproj" />
+    <ProjectReference Include="..\Jarvis.Tools\Jarvis.Tools.csproj" />
+    <ProjectReference Include="..\Jarvis.Verification\Jarvis.Verification.csproj" />
+    <ProjectReference Include="..\Jarvis.Infrastructure\Jarvis.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

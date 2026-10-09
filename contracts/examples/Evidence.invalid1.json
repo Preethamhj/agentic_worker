@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "evidence_id": "ev-001",
+  "step_id": "step-001",
+  "check": {
+    "type": "dir_exists",
+    "params": {
+      "path": "C:\\test"
+    }
+  },
+  "collector": "FileCollector",
+  "collected_at": "2026-10-08T10:00:03Z",
+  "observed": {
+    "exists": true
+  },
+  "expected": {
+    "exists": true
+  },
+  "match": "true",
+  "nonce": "nonce-12345",
+  "record_sha256": "sha256hash"
+}

@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Environment Setup
+        shell: powershell
+        run: |
+          .\scripts\setup-windows.ps1 -SkipOllamaPull
+
+      - name: Run All Checks
+        shell: powershell
+        run: |
+          .\scripts\check-all.ps1

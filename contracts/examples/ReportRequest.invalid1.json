@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "session_id": "sess-001",
+  "task_id": "task-001",
+  "steps": [
+    {
+      "step_id": "step-001",
+      "status": "completed",
+      "verification_status": "VERIFIED"
+    }
+  ]
+}

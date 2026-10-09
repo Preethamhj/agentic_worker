@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "step_id": "step-001",
+  "status": "VERIFIED",
+  "stages": [
+    {
+      "stage": 1,
+      "name": "Trigger validation",
+      "passed": true,
+      "detail": "OK"
+    }
+  ],
+  "evidence": [],
+  "side_effects": [],
+  "reasons": [
+    "All checks passed"
+  ],
+  "duration_ms": 45.2
+}

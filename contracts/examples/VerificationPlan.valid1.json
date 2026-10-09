@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "checks": [
+    {
+      "type": "dir_exists",
+      "params": {
+        "path": "C:\\test"
+      }
+    }
+  ],
+  "watch_scopes": [
+    "C:\\test"
+  ],
+  "window_seconds": 30
+}

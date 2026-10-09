@@ -1,0 +1,147 @@
+{
+  "schema_version": 1,
+  "tools": [
+    {
+      "tool_id": "fs.search_files",
+      "version": "1.0",
+      "risk": "low",
+      "enabled": true,
+      "description": "Enumerate files in allowed roots matching a pattern",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "pattern": { "type": "string" },
+          "root_path": { "type": "string" }
+        },
+        "required": ["pattern"],
+        "additionalProperties": false
+      },
+      "verification_template": {
+        "checks": [
+          { "type": "dir_exists", "params": { "path_arg": "root_path" } }
+        ]
+      }
+    },
+    {
+      "tool_id": "fs.create_folder",
+      "version": "1.0",
+      "risk": "medium",
+      "enabled": true,
+      "description": "Create a directory inside allowed roots",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string" }
+        },
+        "required": ["path"],
+        "additionalProperties": false
+      },
+      "verification_template": {
+        "checks": [
+          { "type": "dir_exists", "params": { "path_arg": "path" } }
+        ]
+      }
+    },
+    {
+      "tool_id": "fs.create_file",
+      "version": "1.0",
+      "risk": "medium",
+      "enabled": true,
+      "description": "Write a text file inside allowed roots",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string" },
+          "content": { "type": "string" }
+        },
+        "required": ["path", "content"],
+        "additionalProperties": false
+      },
+      "verification_template": {
+        "checks": [
+          { "type": "file_exists", "params": { "path_arg": "path" } }
+        ]
+      }
+    },
+    {
+      "tool_id": "app.launch",
+      "version": "1.0",
+      "risk": "medium",
+      "enabled": true,
+      "description": "Launch an application from the allowlist",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "app_id": { "type": "string" }
+        },
+        "required": ["app_id"],
+        "additionalProperties": false
+      },
+      "verification_template": {
+        "checks": [
+          { "type": "process_running", "params": { "app_id_arg": "app_id" } }
+        ]
+      }
+    },
+    {
+      "tool_id": "task.schedule_reminder",
+      "version": "1.0",
+      "risk": "medium",
+      "enabled": true,
+      "description": "Schedule a Task Scheduler reminder toast",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "task_name": { "type": "string" },
+          "time_iso": { "type": "string" },
+          "message": { "type": "string" }
+        },
+        "required": ["task_name", "time_iso", "message"],
+        "additionalProperties": false
+      },
+      "verification_template": {
+        "checks": [
+          { "type": "task_exists", "params": { "name_arg": "task_name" } }
+        ]
+      }
+    },
+    {
+      "tool_id": "shell.run_powershell",
+      "version": "1.0",
+      "risk": "high",
+      "enabled": false,
+      "description": "Execute a PowerShell script",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "script": { "type": "string" }
+        },
+        "required": ["script"],
+        "additionalProperties": false
+      },
+      "verification_template": {
+        "checks": []
+      }
+    },
+    {
+      "tool_id": "registry.set_value",
+      "version": "1.0",
+      "risk": "high",
+      "enabled": false,
+      "description": "Set an HKCU registry value",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "key_path": { "type": "string" },
+          "value_name": { "type": "string" },
+          "value_data": { "type": "string" }
+        },
+        "required": ["key_path", "value_name", "value_data"],
+        "additionalProperties": false
+      },
+      "verification_template": {
+        "checks": []
+      }
+    }
+  ]
+}

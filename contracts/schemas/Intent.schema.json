@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Intent",
+  "type": "object",
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "intent_id": { "type": "string" },
+    "kind": { "type": "string", "enum": ["command", "query", "chat"] },
+    "action": { "type": "string" },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "entities": { "type": "object" },
+    "risk": {
+      "type": "object",
+      "properties": {
+        "level": { "type": "string", "enum": ["low", "medium", "high"] },
+        "reasons": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["level", "reasons"],
+      "additionalProperties": false
+    },
+    "source": { "type": "string", "enum": ["rules", "llm"] }
+  },
+  "required": ["schema_version", "intent_id", "kind", "action", "confidence", "entities", "risk", "source"],
+  "additionalProperties": false
+}

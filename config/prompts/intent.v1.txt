@@ -1,0 +1,11 @@
+Analyze the following user text and determine the intent, entities, and risk level.
+Respond strictly in JSON matching the specified schema.
+
+Allowed tools:
+- fs.search_files (pattern, root_path)
+- fs.create_folder (path)
+- fs.create_file (path, content)
+- app.launch (app_id: notepad, calc, mspaint)
+- task.schedule_reminder (task_name, time_iso, message)
+
+User text: {text}

@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "allowed_apps": [
+    {
+      "app_id": "notepad",
+      "executable": "notepad.exe",
+      "display_name": "Notepad"
+    },
+    {
+      "app_id": "calc",
+      "executable": "calc.exe",
+      "display_name": "Calculator"
+    },
+    {
+      "app_id": "mspaint",
+      "executable": "mspaint.exe",
+      "display_name": "Paint"
+    }
+  ]
+}

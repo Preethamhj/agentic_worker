@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "auth_id": "auth-001",
+  "task_id": "task-001",
+  "step_id": "step-001",
+  "tool_id": "fs.create_folder",
+  "canonical_args": {
+    "path": "C:\\test"
+  },
+  "expected": {
+    "exists": true
+  },
+  "allowed_effects": [
+    "create:C:\\test"
+  ],
+  "watch_scopes": [
+    "C:\\test"
+  ],
+  "risk": "medium",
+  "approved_by": "user",
+  "issued_at": "2026-10-08T10:00:00Z",
+  "expires_at": "2026-10-08T10:05:00Z",
+  "nonce": "nonce-12345"
+}

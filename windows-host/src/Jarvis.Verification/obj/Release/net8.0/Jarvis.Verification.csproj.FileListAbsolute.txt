@@ -1,0 +1,17 @@
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Verification\bin\Release\net8.0\Jarvis.Verification.deps.json
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Verification\bin\Release\net8.0\Jarvis.Verification.dll
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Verification\bin\Release\net8.0\Jarvis.Verification.pdb
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Verification\bin\Release\net8.0\Jarvis.Contracts.dll
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Verification\bin\Release\net8.0\Jarvis.Infrastructure.dll
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Verification\bin\Release\net8.0\Jarvis.Contracts.pdb
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Verification\bin\Release\net8.0\Jarvis.Infrastructure.pdb
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Verification\obj\Release\net8.0\Jarvis.Verification.csproj.AssemblyReference.cache
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Verification\obj\Release\net8.0\Jarvis.Verification.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Verification\obj\Release\net8.0\Jarvis.Verification.AssemblyInfoInputs.cache
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Verification\obj\Release\net8.0\Jarvis.Verification.AssemblyInfo.cs
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Verification\obj\Release\net8.0\Jarvis.Verification.csproj.CoreCompileInputs.cache
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Verification\obj\Release\net8.0\Jarvis.V.5B20477D.Up2Date
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Verification\obj\Release\net8.0\Jarvis.Verification.dll
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Verification\obj\Release\net8.0\refint\Jarvis.Verification.dll
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Verification\obj\Release\net8.0\Jarvis.Verification.pdb
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Verification\obj\Release\net8.0\ref\Jarvis.Verification.dll

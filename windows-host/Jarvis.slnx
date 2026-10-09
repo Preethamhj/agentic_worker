@@ -1,0 +1,21 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Jarvis.Cli/Jarvis.Cli.csproj" />
+    <Project Path="src/Jarvis.Contracts/Jarvis.Contracts.csproj" />
+    <Project Path="src/Jarvis.Core/Jarvis.Core.csproj" />
+    <Project Path="src/Jarvis.Eval/Jarvis.Eval.csproj" />
+    <Project Path="src/Jarvis.Infrastructure/Jarvis.Infrastructure.csproj" />
+    <Project Path="src/Jarvis.Safety/Jarvis.Safety.csproj" />
+    <Project Path="src/Jarvis.Tools/Jarvis.Tools.csproj" />
+    <Project Path="src/Jarvis.UI/Jarvis.UI.csproj" />
+    <Project Path="src/Jarvis.Verification/Jarvis.Verification.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Jarvis.Architecture.Tests/Jarvis.Architecture.Tests.csproj" />
+    <Project Path="tests/Jarvis.Core.Tests/Jarvis.Core.Tests.csproj" />
+    <Project Path="tests/Jarvis.E2E.Tests/Jarvis.E2E.Tests.csproj" />
+    <Project Path="tests/Jarvis.Safety.Tests/Jarvis.Safety.Tests.csproj" />
+    <Project Path="tests/Jarvis.Tools.Tests/Jarvis.Tools.Tests.csproj" />
+    <Project Path="tests/Jarvis.Verification.Tests/Jarvis.Verification.Tests.csproj" />
+  </Folder>
+</Solution>

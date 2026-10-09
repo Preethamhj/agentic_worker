@@ -1,0 +1,12 @@
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Contracts\bin\Debug\net8.0\Jarvis.Contracts.deps.json
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Contracts\bin\Debug\net8.0\Jarvis.Contracts.dll
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Contracts\bin\Debug\net8.0\Jarvis.Contracts.pdb
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Contracts\obj\Debug\net8.0\Jarvis.Contracts.csproj.AssemblyReference.cache
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Contracts\obj\Debug\net8.0\Jarvis.Contracts.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Contracts\obj\Debug\net8.0\Jarvis.Contracts.AssemblyInfoInputs.cache
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Contracts\obj\Debug\net8.0\Jarvis.Contracts.AssemblyInfo.cs
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Contracts\obj\Debug\net8.0\Jarvis.Contracts.csproj.CoreCompileInputs.cache
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Contracts\obj\Debug\net8.0\Jarvis.Contracts.dll
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Contracts\obj\Debug\net8.0\refint\Jarvis.Contracts.dll
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Contracts\obj\Debug\net8.0\Jarvis.Contracts.pdb
+C:\Users\ASUS\Desktop\agentic worker\windows-host\src\Jarvis.Contracts\obj\Debug\net8.0\ref\Jarvis.Contracts.dll
