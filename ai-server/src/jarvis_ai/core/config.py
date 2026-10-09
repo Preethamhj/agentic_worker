@@ -11,8 +11,14 @@ def is_loopback(host_or_url: str) -> bool:
         parsed = urlparse(host_or_url)
         hostname = parsed.hostname or ""
     else:
-        hostname = host_or_url.split(":")[0]
-    return hostname in ("127.0.0.1", "localhost", "::1", "localhost.localdomain")
+        clean = host_or_url.strip("[]")
+        if ":" in clean and clean.count(":") == 1:
+            hostname = clean.split(":")[0]
+        else:
+            hostname = clean
+    hostname = hostname.strip("[]")
+    return hostname in ("127.0.0.1", "localhost", "::1", "0:0:0:0:0:0:0:1", "localhost.localdomain")
+
 
 
 class Settings:

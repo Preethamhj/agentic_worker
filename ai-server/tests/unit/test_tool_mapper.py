@@ -18,6 +18,17 @@ def test_tool_mapper_valid_args(tool_mapper: ToolMapper) -> None:
     assert args == {"path": "test.txt", "content": "hello"}
 
 
+def test_tool_mapper_allows_command_words_in_data_fields(tool_mapper: ToolMapper) -> None:
+    # Command words in file content or reminder message are DATA fields and MUST NOT be rejected
+    is_valid, status, err, _ = tool_mapper.map_and_validate(
+        "fs.create_file",
+        {"path": "script.py", "content": "import subprocess\nsubprocess.run(['powershell', '-c', 'rm -rf /'])\ncmd.exe del /f"},
+    )
+    assert is_valid is True
+    assert status == "ok"
+    assert err is None
+
+
 def test_tool_mapper_wrong_arg_types(tool_mapper: ToolMapper) -> None:
     # path expected string, given int
     is_valid, status, err, _ = tool_mapper.map_and_validate("fs.create_folder", {"path": 12345})
@@ -57,7 +68,6 @@ def test_tool_mapper_missing_required_fields(tool_mapper: ToolMapper) -> None:
     "tool_id,dangerous_args",
     [
         ("fs.create_file", {"path": "powershell.exe", "content": "safe"}),
-        ("fs.create_file", {"path": "file.txt", "content": "Invoke-Expression (New-Object Net.WebClient)"}),
         ("fs.create_folder", {"path": "C:\\Windows\\cmd.exe"}),
         ("fs.search_files", {"pattern": "*.txt; rm -rf /", "root_path": "C:\\"}),
         ("app.launch", {"app_id": "iex dangerous_script"}),
@@ -70,7 +80,7 @@ def test_tool_mapper_command_injection_rejection(
     is_valid, status, err, _ = tool_mapper.map_and_validate(tool_id, dangerous_args)
     assert is_valid is False
     assert status == "unsupported"
-    assert "command-like or dangerous argument detected" in err.lower()
+    assert "command-like or dangerous argument detected" in err.lower() or "not in the allowlist" in err.lower()
 
 
 def test_tool_mapper_disabled_tool(tool_mapper: ToolMapper) -> None:

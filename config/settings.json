@@ -1,8 +1,9 @@
 {
   "schema_version": 1,
-  "model": "llama3.2:latest",
+  "model": "qwen2.5:7b-instruct",
   "ai_server_port": 8000,
   "ai_server_host": "127.0.0.1",
+  "ollama_host": "http://127.0.0.1:11434",
   "timeouts": {
     "llm_seconds": 30,
     "step_execution_seconds": 60,

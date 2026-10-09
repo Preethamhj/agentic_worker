@@ -11,28 +11,113 @@ from jarvis_ai.llm.structured import generate_validated
 from jarvis_ai.nlu.rules import parse_rules_fast_path
 from jarvis_ai.schemas.models import IntentModel
 
-# 20 Prompts specifically designed to BYPASS rule fast-path regex and hit the LLM path
-PROMPTS_20_LLM_ONLY = [
-    "Please locate all documents ending with .pdf in my working directory",
-    "Can you find any files named budget in my primary storage",
-    "I need you to generate a new directory called ProjectArchives",
-    "Could you make a folder titled Backup_2026 for storing old logs",
-    "Please write a file named notes.txt containing important meeting notes",
-    "Save a new file called config.yaml with custom settings inside",
-    "Could you launch the text editor for me right now",
-    "I want to start the painting application to draw a diagram",
-    "Set up a calendar alert for team sync at 4pm today",
-    "Notify me about doctor appointment tomorrow morning",
-    "Please find all image files with extension .png",
-    "Can you construct a folder named ClientData in Documents",
-    "Generate a text file named log.txt containing debug trace output",
-    "Open up the calculator utility for financial calculations",
-    "I would like a reminder to submit the quarterly report later",
-    "Search for all python scripts residing in the source directory",
-    "Create a folder named Experimental for testing features",
-    "Write a file named readme.md with title # Project Overview",
-    "Start the notepad program for quick notes",
-    "Remind me to buy groceries before leaving office",
+# 20 Labelled Prompts with Ground-Truth expected tool_id and expected args for Accuracy evaluation
+PROMPTS_20_LABELLED = [
+    # 1. fs.search_files
+    {
+        "text": "Please locate all documents ending with .pdf in my working directory",
+        "expected_tool": "fs.search_files",
+        "expected_args": {"pattern": "*.pdf"},
+    },
+    {
+        "text": "Can you find any files named budget in my primary storage",
+        "expected_tool": "fs.search_files",
+        "expected_args": {"pattern": "*budget*"},
+    },
+    {
+        "text": "Search for all python scripts residing in the source directory",
+        "expected_tool": "fs.search_files",
+        "expected_args": {"pattern": "*.py"},
+    },
+    {
+        "text": "Please find all image files with extension .png",
+        "expected_tool": "fs.search_files",
+        "expected_args": {"pattern": "*.png"},
+    },
+    # 2. fs.create_folder
+    {
+        "text": "I need you to generate a new directory called ProjectArchives",
+        "expected_tool": "fs.create_folder",
+        "expected_args": {"path": "ProjectArchives"},
+    },
+    {
+        "text": "Could you make a folder titled Backup_2026 for storing old logs",
+        "expected_tool": "fs.create_folder",
+        "expected_args": {"path": "Backup_2026"},
+    },
+    {
+        "text": "Can you construct a folder named ClientData in Documents",
+        "expected_tool": "fs.create_folder",
+        "expected_args": {"path": "ClientData"},
+    },
+    {
+        "text": "Create a folder named Experimental for testing features",
+        "expected_tool": "fs.create_folder",
+        "expected_args": {"path": "Experimental"},
+    },
+    # 3. fs.create_file
+    {
+        "text": "Please write a file named notes.txt containing important meeting notes",
+        "expected_tool": "fs.create_file",
+        "expected_args": {"path": "notes.txt", "content": "important meeting notes"},
+    },
+    {
+        "text": "Save a new file called config.yaml with custom settings inside",
+        "expected_tool": "fs.create_file",
+        "expected_args": {"path": "config.yaml", "content": "custom settings inside"},
+    },
+    {
+        "text": "Generate a text file named log.txt containing debug trace output",
+        "expected_tool": "fs.create_file",
+        "expected_args": {"path": "log.txt", "content": "debug trace output"},
+    },
+    {
+        "text": "Write a file named readme.md with content # Project Overview",
+        "expected_tool": "fs.create_file",
+        "expected_args": {"path": "readme.md", "content": "# Project Overview"},
+    },
+    # 4. app.launch
+    {
+        "text": "Could you launch the text editor for me right now",
+        "expected_tool": "app.launch",
+        "expected_args": {"app_id": "notepad"},
+    },
+    {
+        "text": "I want to start the painting application to draw a diagram",
+        "expected_tool": "app.launch",
+        "expected_args": {"app_id": "mspaint"},
+    },
+    {
+        "text": "Open up the calculator utility for financial calculations",
+        "expected_tool": "app.launch",
+        "expected_args": {"app_id": "calc"},
+    },
+    {
+        "text": "Start the notepad program for quick notes",
+        "expected_tool": "app.launch",
+        "expected_args": {"app_id": "notepad"},
+    },
+    # 5. task.schedule_reminder
+    {
+        "text": "Set up a calendar alert for team sync at 4pm today",
+        "expected_tool": "task.schedule_reminder",
+        "expected_args": {"message": "team sync"},
+    },
+    {
+        "text": "Notify me about doctor appointment tomorrow morning",
+        "expected_tool": "task.schedule_reminder",
+        "expected_args": {"message": "doctor appointment"},
+    },
+    {
+        "text": "I would like a reminder to submit the quarterly report later",
+        "expected_tool": "task.schedule_reminder",
+        "expected_args": {"message": "submit the quarterly report"},
+    },
+    {
+        "text": "Remind me to buy groceries before leaving office",
+        "expected_tool": "task.schedule_reminder",
+        "expected_args": {"message": "buy groceries"},
+    },
 ]
 
 
@@ -66,7 +151,8 @@ def check_and_ensure_ollama_model(model_name: str) -> bool:
     try:
         proc = subprocess.run(["ollama", "list"], capture_output=True, text=True, check=True)
         print("Installed Ollama Models:\n" + proc.stdout)
-        if model_name.split(":")[0] not in proc.stdout:
+        model_prefix = model_name.split(":")[0]
+        if model_prefix not in proc.stdout:
             print(f"Model '{model_name}' not found locally. Pulling model...")
             pull_proc = subprocess.run(["ollama", "pull", model_name], check=True)
             if pull_proc.returncode != 0:
@@ -80,30 +166,31 @@ def check_and_ensure_ollama_model(model_name: str) -> bool:
         return False
 
 
-def run_eval() -> None:
-    settings = get_settings()
-    model_name = settings.model
-
-    ollama_ok = check_and_ensure_ollama_model(model_name)
-    raw_ollama_client = OllamaClient()
-
-    if not ollama_ok or not raw_ollama_client.is_healthy():
-        print("Ollama server or model is unavailable. Aborting real model evaluation.")
-        sys.exit(1)
+def evaluate_model(model_name: str) -> dict[str, Any]:
+    raw_ollama_client = OllamaClient(model=model_name)
+    if not raw_ollama_client.is_healthy():
+        print(f"Ollama server or model '{model_name}' is unavailable.")
+        return {}
 
     rule_count = 0
     llm_count = 0
     validities = []
+    tool_matches = []
+    arg_matches = []
     latencies = []
     total_retries = 0
 
-    print(f"\nEvaluating {len(PROMPTS_20_LLM_ONLY)} prompts against real Ollama model ({model_name})...\n")
+    print(f"\n--- Evaluating Model: {model_name} against {len(PROMPTS_20_LABELLED)} labelled prompts ---")
 
-    for i, prompt in enumerate(PROMPTS_20_LLM_ONLY, start=1):
+    for i, item in enumerate(PROMPTS_20_LABELLED, start=1):
+        prompt = item["text"]
+        expected_tool = item["expected_tool"]
+        expected_args = item["expected_args"]
+
         rule_intent = parse_rules_fast_path(prompt)
         if rule_intent is not None:
             rule_count += 1
-            print(f"[{i}/{len(PROMPTS_20_LLM_ONLY)}] FAST-PATH RULE MATCH - skipping LLM evaluation")
+            print(f"[{i}/{len(PROMPTS_20_LABELLED)}] FAST-PATH RULE MATCH - skipping LLM evaluation")
             continue
 
         llm_count += 1
@@ -130,8 +217,23 @@ def run_eval() -> None:
 
             validities.append(1)
             latencies.append(elapsed)
+
+            # Evaluate Tool Accuracy
+            t_correct = (res.action == expected_tool)
+            tool_matches.append(1 if t_correct else 0)
+
+            # Evaluate Argument Accuracy
+            a_correct = True
+            for k, expected_v in expected_args.items():
+                actual_v = str(res.entities.get(k, "")).lower()
+                expected_v_str = str(expected_v).lower().strip("*")
+                if expected_v_str not in actual_v and actual_v not in expected_v_str:
+                    a_correct = False
+                    break
+            arg_matches.append(1 if a_correct else 0)
+
             print(
-                f"[{i}/{len(PROMPTS_20_LLM_ONLY)}] LLM SUCCESS in {elapsed:.1f}ms (retries: {retries}) - action: {res.action}"
+                f"[{i}/{len(PROMPTS_20_LABELLED)}] SUCCESS ({elapsed:.1f}ms) - tool: {res.action} (match: {t_correct}), args match: {a_correct}"
             )
         except Exception as e:
             elapsed = (time.perf_counter() - start) * 1000.0
@@ -139,24 +241,58 @@ def run_eval() -> None:
             total_retries += retries
 
             validities.append(0)
+            tool_matches.append(0)
+            arg_matches.append(0)
             latencies.append(elapsed)
-            print(f"[{i}/{len(PROMPTS_20_LLM_ONLY)}] LLM FAILED in {elapsed:.1f}ms - error: {e}")
+            print(f"[{i}/{len(PROMPTS_20_LABELLED)}] FAILED in {elapsed:.1f}ms - error: {e}")
 
     validity_rate = (sum(validities) / len(validities)) * 100.0 if validities else 0.0
+    tool_acc = (sum(tool_matches) / len(tool_matches)) * 100.0 if tool_matches else 0.0
+    arg_acc = (sum(arg_matches) / len(arg_matches)) * 100.0 if arg_matches else 0.0
     latencies.sort()
     p50 = statistics.median(latencies) if latencies else 0.0
     p95 = latencies[int(len(latencies) * 0.95)] if latencies else 0.0
 
-    print("\n================ Real LLM-Path Evaluation Results ================")
+    stats = {
+        "model": model_name,
+        "total": len(PROMPTS_20_LABELLED),
+        "rule_count": rule_count,
+        "llm_count": llm_count,
+        "validity_rate": validity_rate,
+        "tool_accuracy": tool_acc,
+        "arg_accuracy": arg_acc,
+        "total_retries": total_retries,
+        "p50": p50,
+        "p95": p95,
+    }
+
+    print(f"\n================ Labelled Evaluation Results: {model_name} ================")
     print(f"Target Model:               {model_name}")
-    print(f"Total Prompts Tested:       {len(PROMPTS_20_LLM_ONLY)}")
+    print(f"Total Prompts Tested:       {len(PROMPTS_20_LABELLED)}")
     print(f"Prompts Matched by Rules:   {rule_count}")
     print(f"Prompts Sent to LLM:        {llm_count}")
     print(f"LLM JSON Validity Rate:     {validity_rate:.1f}%")
+    print(f"LLM Tool Action Accuracy:   {tool_acc:.1f}%")
+    print(f"LLM Argument Accuracy:      {arg_acc:.1f}%")
     print(f"Total LLM Retries:          {total_retries}")
     print(f"LLM Path p50 Latency:       {p50:.1f} ms")
     print(f"LLM Path p95 Latency:       {p95:.1f} ms")
-    print("==================================================================\n")
+    print("=========================================================================\n")
+
+    return stats
+
+
+def run_eval() -> None:
+    settings = get_settings()
+    configured_model = settings.model
+
+    ollama_ok = check_and_ensure_ollama_model(configured_model)
+    if not ollama_ok:
+        print("Ollama environment check failed. Aborting evaluation.")
+        sys.exit(1)
+
+    # Evaluate configured primary model from settings.json
+    evaluate_model(configured_model)
 
 
 if __name__ == "__main__":

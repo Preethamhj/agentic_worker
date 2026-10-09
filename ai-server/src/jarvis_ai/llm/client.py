@@ -22,8 +22,10 @@ class ILlmClient(Protocol):
 
 class OllamaClient:
 
-    def __init__(self, host: str | None = None) -> None:
+    def __init__(self, host: str | None = None, model: str | None = None) -> None:
         self.settings = get_settings()
+        self.host = host
+        self.model = model if model else self.settings.model
         self.client = ollama.Client(host=host)
 
     def generate(
@@ -43,7 +45,7 @@ class OllamaClient:
             format_arg = json_schema
 
         response = self.client.chat(
-            model=self.settings.model,
+            model=self.model,
             messages=messages,
             format=format_arg,
             options={"temperature": temperature},

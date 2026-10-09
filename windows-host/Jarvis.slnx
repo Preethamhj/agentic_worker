@@ -12,6 +12,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Jarvis.Architecture.Tests/Jarvis.Architecture.Tests.csproj" />
+    <Project Path="tests/Jarvis.Contracts.Tests/Jarvis.Contracts.Tests.csproj" />
     <Project Path="tests/Jarvis.Core.Tests/Jarvis.Core.Tests.csproj" />
     <Project Path="tests/Jarvis.E2E.Tests/Jarvis.E2E.Tests.csproj" />
     <Project Path="tests/Jarvis.Safety.Tests/Jarvis.Safety.Tests.csproj" />

@@ -4,7 +4,7 @@ using FluentAssertions;
 using Json.Schema;
 using Xunit;
 
-namespace Jarvis.Verification.Tests;
+namespace Jarvis.Contracts.Tests;
 
 public class ContractFixtureTests
 {

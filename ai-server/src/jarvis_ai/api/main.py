@@ -5,7 +5,11 @@ from fastapi import FastAPI
 from jarvis_ai import __version__
 from jarvis_ai.api.routes_plan import router as plan_router
 from jarvis_ai.api.routes_report import router as report_router
+from jarvis_ai.core.network_guard import install_network_guard
 from jarvis_ai.llm.client import OllamaClient
+
+# Enforce network guard at server startup
+install_network_guard()
 
 app = FastAPI(
     title="Jarvis AI Server",

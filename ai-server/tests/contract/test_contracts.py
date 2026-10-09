@@ -5,6 +5,7 @@ from typing import Any
 
 import jsonschema
 import pytest
+from referencing import Registry, Resource
 
 SCHEMAS_DIR = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "../../../contracts/schemas")
@@ -14,16 +15,29 @@ EXAMPLES_DIR = os.path.abspath(
 )
 
 
-def load_schemas() -> dict[str, dict[str, Any]]:
+def build_schema_registry() -> tuple[dict[str, dict[str, Any]], Registry]:
     schemas: dict[str, dict[str, Any]] = {}
+    resources = []
+    schemas_dir_uri = SCHEMAS_DIR.replace("\\", "/")
+
     for filepath in glob.glob(os.path.join(SCHEMAS_DIR, "*.schema.json")):
         schema_name = os.path.basename(filepath).replace(".schema.json", "")
         with open(filepath, "r", encoding="utf-8") as f:
-            schemas[schema_name] = json.load(f)
-    return schemas
+            content = json.load(f)
+        schemas[schema_name] = content
+
+        resource = Resource.from_contents(content)
+        filename = os.path.basename(filepath)
+        resources.append((filename, resource))
+        resources.append((f"file:///{schemas_dir_uri}/{filename}", resource))
+        if "$id" in content:
+            resources.append((content["$id"], resource))
+
+    registry = Registry().with_resources(resources)
+    return schemas, registry
 
 
-SCHEMAS = load_schemas()
+SCHEMAS, REGISTRY = build_schema_registry()
 
 
 def get_fixture_files() -> list[str]:
@@ -40,16 +54,13 @@ def test_contract_fixture(fixture_path: str) -> None:
     assert schema_name in SCHEMAS, f"Schema {schema_name} not found for fixture {filename}"
     schema = SCHEMAS[schema_name]
 
-    base_uri_path = SCHEMAS_DIR.replace("\\", "/")
-    resolver = jsonschema.RefResolver(
-        base_uri=f"file:///{base_uri_path}/", referrer=schema
-    )
-
     with open(fixture_path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
+    validator = jsonschema.Draft202012Validator(schema=schema, registry=REGISTRY)
+
     if expected_valid:
-        jsonschema.validate(instance=data, schema=schema, resolver=resolver)
+        validator.validate(instance=data)
     else:
         with pytest.raises((jsonschema.ValidationError, jsonschema.SchemaError)):
-            jsonschema.validate(instance=data, schema=schema, resolver=resolver)
+            validator.validate(instance=data)

@@ -2,6 +2,14 @@ import socket
 from typing import Any
 
 _orig_connect = socket.socket.connect
+LOOPBACK_HOSTS = {
+    "127.0.0.1",
+    "localhost",
+    "::1",
+    "[::1]",
+    "0:0:0:0:0:0:0:1",
+    "localhost.localdomain",
+}
 
 
 def _guarded_connect(self: socket.socket, address: Any) -> Any:
@@ -11,7 +19,7 @@ def _guarded_connect(self: socket.socket, address: Any) -> Any:
     elif isinstance(address, str):
         host = address
 
-    if host not in ("127.0.0.1", "localhost", "::1", "localhost.localdomain"):
+    if host not in LOOPBACK_HOSTS:
         raise PermissionError(
             f"Outbound non-loopback network connection to '{host}' is strictly forbidden by Jarvis security policy."
         )
