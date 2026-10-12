@@ -1,0 +1,281 @@
+using System.Collections.Concurrent;
+using FluentAssertions;
+using Jarvis.Contracts;
+using Jarvis.Core;
+using Xunit;
+
+namespace Jarvis.Core.Tests;
+
+public class OrchestratorAndQueueTests
+{
+    [Fact]
+    public async Task ExecutionQueue_Processes_Items_Sequentially_In_Fifo_Order()
+    {
+        await using var queue = new ExecutionQueue();
+        var executionOrder = new List<int>();
+
+        var task1 = queue.EnqueueAsync("task-1", "step-1", "low", async ct =>
+        {
+            await Task.Delay(50, ct);
+            executionOrder.Add(1);
+            return CreateDummyReceipt("step-1");
+        });
+
+        var task2 = queue.EnqueueAsync("task-2", "step-2", "low", async ct =>
+        {
+            await Task.Delay(10, ct);
+            executionOrder.Add(2);
+            return CreateDummyReceipt("step-2");
+        });
+
+        var task3 = queue.EnqueueAsync("task-3", "step-3", "low", async ct =>
+        {
+            executionOrder.Add(3);
+            return CreateDummyReceipt("step-3");
+        });
+
+        await Task.WhenAll(task1, task2, task3);
+
+        executionOrder.Should().ContainInOrder(1, 2, 3);
+    }
+
+    [Fact]
+    public async Task ExecutionQueue_HighRisk_Enforces_Single_Active_Lock()
+    {
+        await using var queue = new ExecutionQueue();
+        int activeHighRiskCount = 0;
+        int maxSimultaneousHighRisk = 0;
+
+        async Task<ExecutionReceiptDto> HighRiskWork(CancellationToken ct)
+        {
+            var current = Interlocked.Increment(ref activeHighRiskCount);
+            if (current > maxSimultaneousHighRisk)
+            {
+                maxSimultaneousHighRisk = current;
+            }
+            await Task.Delay(60, ct);
+            Interlocked.Decrement(ref activeHighRiskCount);
+            return CreateDummyReceipt("high-risk-step");
+        }
+
+        var t1 = queue.EnqueueAsync("task-1", "step-1", "high", HighRiskWork);
+        var t2 = queue.EnqueueAsync("task-2", "step-2", "high", HighRiskWork);
+
+        await Task.WhenAll(t1, t2);
+
+        maxSimultaneousHighRisk.Should().Be(1, "At most one high-risk execution must be active at any time");
+    }
+
+    [Fact]
+    public async Task ExecutionQueue_Throws_TimeoutException_On_Step_Timeout()
+    {
+        await using var queue = new ExecutionQueue();
+
+        var act = async () =>
+        {
+            await queue.EnqueueAsync("task-1", "step-1", "low", async ct =>
+            {
+                await Task.Delay(2000, ct);
+                return CreateDummyReceipt("step-1");
+            }, stepTimeout: TimeSpan.FromMilliseconds(50));
+        };
+
+        await act.Should().ThrowAsync<TimeoutException>();
+    }
+
+    [Fact]
+    public async Task ExecutionQueue_Cancels_When_CancellationToken_Triggered()
+    {
+        await using var queue = new ExecutionQueue();
+        using var cts = new CancellationTokenSource();
+
+        var act = async () =>
+        {
+            var task = queue.EnqueueAsync("task-1", "step-1", "low", async ct =>
+            {
+                await Task.Delay(1000, ct);
+                return CreateDummyReceipt("step-1");
+            }, cancellationToken: cts.Token);
+
+            cts.Cancel();
+            await task;
+        };
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task TaskOrchestrator_Never_Reaches_Completed_With_StubVerifier()
+    {
+        var stubVerifier = new StubVerifier();
+        var orchestrator = CreateTestOrchestrator(stubVerifier);
+
+        var result = await orchestrator.RunTaskAsync("create a test file");
+
+        result.FinalState.Should().NotBe(TaskState.Completed, "StubVerifier returns ESCALATE so completed must be unreachable");
+        result.FinalState.Should().Be(TaskState.Failed);
+        result.StatusMessage.Should().Contain("ESCALATE");
+    }
+
+    [Fact]
+    public async Task TaskOrchestrator_Reaches_Terminal_Failed_When_Safety_Rejects()
+    {
+        var stubVerifier = new StubVerifier();
+        var orchestrator = CreateTestOrchestrator(
+            stubVerifier,
+            safetyGate: new FakeSafetyGate(allowed: false, risk: "high", reason: "Blocked path outside allowed root"));
+
+        var result = await orchestrator.RunTaskAsync("delete system folder");
+
+        result.FinalState.Should().Be(TaskState.Failed);
+        StateMachine.IsTerminal(result.FinalState).Should().BeTrue();
+        result.StatusMessage.Should().Contain("Blocked path");
+    }
+
+    [Fact]
+    public async Task TaskOrchestrator_Reaches_Terminal_Cancelled_When_User_Rejects_Approval()
+    {
+        var stubVerifier = new StubVerifier();
+        var orchestrator = CreateTestOrchestrator(
+            stubVerifier,
+            approvalHandler: new FakeApprovalHandler(userApproved: false));
+
+        var result = await orchestrator.RunTaskAsync("execute sensitive action");
+
+        result.FinalState.Should().Be(TaskState.Cancelled);
+        StateMachine.IsTerminal(result.FinalState).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task TaskOrchestrator_Reaches_Terminal_Timeout_When_Execution_Times_Out()
+    {
+        var stubVerifier = new StubVerifier();
+        var orchestrator = CreateTestOrchestrator(
+            stubVerifier,
+            stepExecutor: new FakeStepExecutor(shouldTimeout: true));
+
+        var result = await orchestrator.RunTaskAsync("slow task");
+
+        result.FinalState.Should().Be(TaskState.Timeout);
+        StateMachine.IsTerminal(result.FinalState).Should().BeTrue();
+    }
+
+    private static ExecutionReceiptDto CreateDummyReceipt(string stepId) => new(
+        SchemaVersion: 1,
+        StepId: stepId,
+        AuthId: "auth-dummy",
+        StartedAt: DateTimeOffset.UtcNow.ToString("o"),
+        CompletedAt: DateTimeOffset.UtcNow.ToString("o"),
+        ExitCode: 0,
+        ReportedSuccess: true,
+        Stdout: "ok",
+        Stderr: string.Empty
+    );
+
+    private static TaskOrchestrator CreateTestOrchestrator(
+        IVerifier verifier,
+        ISafetyGate? safetyGate = null,
+        IApprovalHandler? approvalHandler = null,
+        IStepExecutor? stepExecutor = null)
+    {
+        var queue = new ExecutionQueue();
+        var planner = new FakePlanner();
+        var safety = safetyGate ?? new FakeSafetyGate(allowed: true, risk: "medium");
+        var approval = approvalHandler ?? new FakeApprovalHandler(userApproved: true);
+        var executor = stepExecutor ?? new FakeStepExecutor();
+
+        return new TaskOrchestrator(planner, safety, approval, queue, executor, verifier);
+    }
+
+    private class FakePlanner : IPlanner
+    {
+        public Task<PlanResponseDto> CreatePlanAsync(string prompt, string? traceId = null, CancellationToken cancellationToken = default)
+        {
+            var plan = new PlanResponseDto(
+                SchemaVersion: 1,
+                TraceId: "trace-" + Guid.NewGuid().ToString("N")[..8],
+                Status: "ok",
+                Intent: new IntentDto(
+                    SchemaVersion: 1,
+                    IntentId: "intent-1",
+                    Kind: "direct",
+                    Action: "create_file",
+                    Confidence: 1.0,
+                    Entities: new Dictionary<string, object?>(),
+                    Risk: new RiskDto("medium", new List<string>()),
+                    Source: "rule"
+                ),
+                Steps: new List<PlanStepDto>
+                {
+                    new(
+                        SchemaVersion: 1,
+                        StepId: "step-1",
+                        Order: 1,
+                        Description: "Create requested file",
+                        DependsOn: new List<string>(),
+                        ToolCall: new ToolCallDto(1, "fs.create_file", new Dictionary<string, object?> { ["path"] = @"C:\allowed\test.txt", ["content"] = "hello" }),
+                        VerificationPlan: new VerificationPlanDto(1, new List<CheckDto>(), new List<string>()),
+                        AdvisoryRisk: "medium"
+                    )
+                },
+                Message: "Plan generated successfully."
+            );
+            return Task.FromResult(plan);
+        }
+    }
+
+    private class FakeSafetyGate : ISafetyGate
+    {
+        private readonly bool _allowed;
+        private readonly string _risk;
+        private readonly string? _reason;
+
+        public FakeSafetyGate(bool allowed, string risk, string? reason = null)
+        {
+            _allowed = allowed;
+            _risk = risk;
+            _reason = reason;
+        }
+
+        public Task<SafetyEvaluation> EvaluateStepAsync(string taskId, string stepId, string toolId, IReadOnlyDictionary<string, object?> rawArgs, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(new SafetyEvaluation(_allowed, _risk, _reason));
+        }
+    }
+
+    private class FakeApprovalHandler : IApprovalHandler
+    {
+        private readonly bool _userApproved;
+
+        public FakeApprovalHandler(bool userApproved)
+        {
+            _userApproved = userApproved;
+        }
+
+        public Task<bool> RequestApprovalAsync(string taskId, string stepId, string toolId, IReadOnlyDictionary<string, object?> canonicalArgs, string risk, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(_userApproved);
+        }
+    }
+
+    private class FakeStepExecutor : IStepExecutor
+    {
+        private readonly bool _shouldTimeout;
+
+        public FakeStepExecutor(bool shouldTimeout = false)
+        {
+            _shouldTimeout = shouldTimeout;
+        }
+
+        public async Task<ExecutionReceiptDto> ExecuteStepAsync(string taskId, string stepId, string toolId, IReadOnlyDictionary<string, object?> args, string risk, CancellationToken cancellationToken = default)
+        {
+            if (_shouldTimeout)
+            {
+                throw new TimeoutException("Step timed out after 50ms");
+            }
+
+            await Task.Yield();
+            return CreateDummyReceipt(stepId);
+        }
+    }
+}

@@ -21,26 +21,81 @@ public sealed record SafetyGateResult(
 /// final risk = max(advisory, policy), requests approval via IApprovalProvider,
 /// and delegates signing to AuthorizationService.
 /// </summary>
-public sealed class SafetyGate
+public sealed class SafetyGate : ISafetyGate
 {
     private readonly ToolPolicy _toolPolicy;
+    private readonly PathPolicy? _pathPolicy;
     private readonly AuthorizationService _authService;
-    private readonly IApprovalProvider _approvalProvider;
+    private readonly IApprovalProvider? _approvalProvider;
     private readonly IAuditStore? _auditStore;
     private readonly IClock _clock;
 
     public SafetyGate(
         ToolPolicy toolPolicy,
         AuthorizationService authService,
-        IApprovalProvider approvalProvider,
+        IApprovalProvider? approvalProvider = null,
         IAuditStore? auditStore = null,
-        IClock? clock = null)
+        IClock? clock = null,
+        PathPolicy? pathPolicy = null)
     {
         _toolPolicy = toolPolicy ?? throw new ArgumentNullException(nameof(toolPolicy));
         _authService = authService ?? throw new ArgumentNullException(nameof(authService));
-        _approvalProvider = approvalProvider ?? throw new ArgumentNullException(nameof(approvalProvider));
+        _approvalProvider = approvalProvider;
         _auditStore = auditStore;
         _clock = clock ?? SystemClock.Instance;
+        _pathPolicy = pathPolicy;
+    }
+
+    public async Task<SafetyEvaluation> EvaluateStepAsync(
+        string taskId,
+        string stepId,
+        string toolId,
+        IReadOnlyDictionary<string, object?> rawArgs,
+        CancellationToken cancellationToken = default)
+    {
+        var jsonArgs = new JsonObject();
+        foreach (var kv in rawArgs)
+        {
+            if (kv.Value is string s) jsonArgs[kv.Key] = s;
+            else if (kv.Value is bool b) jsonArgs[kv.Key] = b;
+            else if (kv.Value is int i) jsonArgs[kv.Key] = i;
+            else if (kv.Value is long l) jsonArgs[kv.Key] = l;
+            else if (kv.Value is double d) jsonArgs[kv.Key] = d;
+            else if (kv.Value != null) jsonArgs[kv.Key] = kv.Value.ToString();
+        }
+
+        var validation = _toolPolicy.ValidateToolCall(toolId, jsonArgs);
+        if (!validation.IsValid)
+        {
+            await RecordAuditAsync(taskId, stepId, toolId, "unknown", "high", "high", "system", false, validation.ErrorMessage, cancellationToken).ConfigureAwait(false);
+            return new SafetyEvaluation(false, "high", validation.ErrorMessage);
+        }
+
+        if (_pathPolicy != null)
+        {
+            if (rawArgs.TryGetValue("path", out var pObj) && pObj is string p)
+            {
+                var pathVal = _pathPolicy.ValidatePath(p);
+                if (!pathVal.IsValid)
+                {
+                    await RecordAuditAsync(taskId, stepId, toolId, "unknown", "high", "high", "system", false, pathVal.ErrorMessage, cancellationToken).ConfigureAwait(false);
+                    return new SafetyEvaluation(false, "high", pathVal.ErrorMessage);
+                }
+            }
+            else if (rawArgs.TryGetValue("root_path", out var rpObj) && rpObj is string rp)
+            {
+                var pathVal = _pathPolicy.ValidatePath(rp);
+                if (!pathVal.IsValid)
+                {
+                    await RecordAuditAsync(taskId, stepId, toolId, "unknown", "high", "high", "system", false, pathVal.ErrorMessage, cancellationToken).ConfigureAwait(false);
+                    return new SafetyEvaluation(false, "high", pathVal.ErrorMessage);
+                }
+            }
+        }
+
+        var policyRisk = validation.PolicyRisk ?? _toolPolicy.GetPolicyRisk(toolId) ?? "medium";
+        await RecordAuditAsync(taskId, stepId, toolId, policyRisk, policyRisk, policyRisk, "system", true, null, cancellationToken).ConfigureAwait(false);
+        return new SafetyEvaluation(true, policyRisk);
     }
 
     /// <summary>
@@ -124,7 +179,7 @@ public sealed class SafetyGate
                 finalRisk
             );
 
-            var approved = await _approvalProvider.RequestApprovalAsync(approvalRequest, cancellationToken);
+            var approved = _approvalProvider != null && await _approvalProvider.RequestApprovalAsync(approvalRequest, cancellationToken);
             if (!approved)
             {
                 await RecordAuditAsync(taskId, stepId, toolId, advisoryRisk, policyRisk, finalRisk, "user", false, "User denied execution.", cancellationToken);

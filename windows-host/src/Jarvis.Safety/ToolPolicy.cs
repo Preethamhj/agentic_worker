@@ -35,10 +35,12 @@ public sealed class AllowedAppDefinition
 public sealed class ToolPolicy
 {
     private readonly Dictionary<string, ToolDefinition> _tools = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, AllowedAppDefinition> _allowedApps = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _allowedAppIds = new(StringComparer.OrdinalIgnoreCase);
 
     public IReadOnlyDictionary<string, ToolDefinition> Tools => _tools;
     public IReadOnlySet<string> AllowedAppIds => _allowedAppIds;
+    public IReadOnlyDictionary<string, AllowedAppDefinition> AllowedApps => _allowedApps;
 
     public ToolPolicy(IEnumerable<ToolDefinition> tools, IEnumerable<string> allowedAppIds)
     {
@@ -50,7 +52,32 @@ public sealed class ToolPolicy
         foreach (var appId in allowedAppIds)
         {
             _allowedAppIds.Add(appId);
+            _allowedApps[appId] = new AllowedAppDefinition
+            {
+                AppId = appId,
+                Executable = appId.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? appId : appId + ".exe",
+                DisplayName = appId
+            };
         }
+    }
+
+    public ToolPolicy(IEnumerable<ToolDefinition> tools, IEnumerable<AllowedAppDefinition> allowedApps)
+    {
+        foreach (var t in tools)
+        {
+            _tools[t.ToolId] = t;
+        }
+
+        foreach (var app in allowedApps)
+        {
+            _allowedAppIds.Add(app.AppId);
+            _allowedApps[app.AppId] = app;
+        }
+    }
+
+    public bool TryGetAllowedApp(string appId, out AllowedAppDefinition? app)
+    {
+        return _allowedApps.TryGetValue(appId, out app);
     }
 
     public static ToolPolicy FromFile(string toolsRegistryPath, string appsAllowlistPath)
@@ -104,14 +131,21 @@ public sealed class ToolPolicy
             }
         }
 
-        var allowedApps = new List<string>();
+        var allowedApps = new List<AllowedAppDefinition>();
         if (appsNode["allowed_apps"] is JsonArray appsArray)
         {
             foreach (var app in appsArray)
             {
                 if (app?["app_id"]?.GetValue<string>() is { } appId)
                 {
-                    allowedApps.Add(appId);
+                    var executable = app["executable"]?.GetValue<string>() ?? (appId + ".exe");
+                    var displayName = app["display_name"]?.GetValue<string>() ?? appId;
+                    allowedApps.Add(new AllowedAppDefinition
+                    {
+                        AppId = appId,
+                        Executable = executable,
+                        DisplayName = displayName
+                    });
                 }
             }
         }
