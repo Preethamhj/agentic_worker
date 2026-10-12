@@ -17,10 +17,10 @@ if (-not (Test-Path $venvPython)) {
 Write-Host "=== Step 1: C# Build & Tests ===" -ForegroundColor Cyan
 Push-Location $windowsHostDir
 try {
-    dotnet build --configuration Release --no-incremental
+    dotnet build Jarvis.sln --configuration Release --no-incremental
     if ($LASTEXITCODE -ne 0) { throw "dotnet build failed" }
 
-    dotnet test --configuration Release --no-build
+    dotnet test Jarvis.sln --configuration Release --no-build
     if ($LASTEXITCODE -ne 0) { throw "dotnet test failed" }
 } finally {
     Pop-Location
@@ -56,7 +56,7 @@ try {
 Write-Host "`n=== Step 3: C# Formatting Verification ===" -ForegroundColor Cyan
 Push-Location $windowsHostDir
 try {
-    dotnet format --verify-no-changes
+    dotnet format Jarvis.sln --verify-no-changes
     if ($LASTEXITCODE -ne 0) { throw "dotnet format check failed" }
 } finally {
     Pop-Location

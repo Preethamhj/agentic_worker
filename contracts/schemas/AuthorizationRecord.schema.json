@@ -16,13 +16,16 @@
     "approved_by": { "type": "string", "enum": ["auto", "user"] },
     "issued_at": { "type": "string" },
     "expires_at": { "type": "string" },
+    "execute_before": { "type": "string" },
+    "verify_before": { "type": "string" },
     "nonce": { "type": "string" },
     "hmac": { "type": "string" }
   },
   "required": [
     "schema_version", "auth_id", "task_id", "step_id", "tool_id",
     "canonical_args", "expected", "allowed_effects", "watch_scopes",
-    "risk", "approved_by", "issued_at", "expires_at", "nonce", "hmac"
+    "risk", "approved_by", "issued_at", "expires_at", "execute_before",
+    "verify_before", "nonce", "hmac"
   ],
   "additionalProperties": false
 }

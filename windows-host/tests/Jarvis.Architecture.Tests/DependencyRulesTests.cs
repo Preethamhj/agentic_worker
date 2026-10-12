@@ -20,7 +20,7 @@ public class DependencyRulesTests
     [Fact]
     public void Contracts_Must_Not_Reference_Other_Jarvis_Projects()
     {
-        var result = Types.InAssembly(typeof(Jarvis.Contracts.ContractPlaceholder).Assembly)
+        var result = Types.InAssembly(typeof(Jarvis.Contracts.PlanRequestDto).Assembly)
             .ShouldNot()
             .HaveDependencyOnAny("Jarvis.Core", "Jarvis.Safety", "Jarvis.Tools", "Jarvis.Verification", "Jarvis.Infrastructure")
             .GetResult();
@@ -32,8 +32,18 @@ public class DependencyRulesTests
     public void Tools_Must_Reference_Safety()
     {
         // Tools assembly types should have dependency or reference Safety
-        var assembly = typeof(Jarvis.Tools.ToolsPlaceholder).Assembly;
+        var assembly = typeof(Jarvis.Tools.IToolExecutor).Assembly;
         var referencedAssemblies = assembly.GetReferencedAssemblies();
         referencedAssemblies.Should().Contain(a => a.Name == "Jarvis.Safety", "Jarvis.Tools must reference Jarvis.Safety");
+    }
+
+    [Fact]
+    public void VerifiedAuthorization_Cannot_Be_Constructed_Outside_Jarvis_Safety()
+    {
+        var type = typeof(Jarvis.Safety.VerifiedAuthorization);
+        var constructors = type.GetConstructors(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+
+        constructors.Should().NotBeEmpty("VerifiedAuthorization must have at least one constructor");
+        constructors.Should().OnlyContain(c => c.IsAssembly, "VerifiedAuthorization constructors must be strictly internal (assembly-scoped) to prevent instantiation outside Jarvis.Safety");
     }
 }
