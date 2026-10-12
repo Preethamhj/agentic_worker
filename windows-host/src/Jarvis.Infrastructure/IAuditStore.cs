@@ -28,12 +28,27 @@ public sealed record SafetyDecisionRecord(
 );
 
 /// <summary>
+/// Audit record for authorization lifecycle transitions (Issued, Consumed, Verified).
+/// </summary>
+public sealed record AuthorizationLifecycleRecord(
+    string AuthId,
+    string TaskId,
+    string StepId,
+    string State,
+    string Nonce,
+    DateTimeOffset Timestamp
+);
+
+/// <summary>
 /// Storage interface for system audit records.
 /// </summary>
 public interface IAuditStore
 {
     Task RecordStateTransitionAsync(StateTransitionRecord record, CancellationToken cancellationToken = default);
     Task RecordSafetyDecisionAsync(SafetyDecisionRecord record, CancellationToken cancellationToken = default);
+    Task RecordAuthorizationLifecycleAsync(AuthorizationLifecycleRecord record, CancellationToken cancellationToken = default);
+
     IReadOnlyList<StateTransitionRecord> GetStateTransitions(string? taskId = null);
     IReadOnlyList<SafetyDecisionRecord> GetSafetyDecisions(string? taskId = null);
+    IReadOnlyList<AuthorizationLifecycleRecord> GetAuthorizationLifecycle(string? authId = null);
 }

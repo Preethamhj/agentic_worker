@@ -48,4 +48,23 @@ public class ToolsTests
         executor.ToolId.Should().Be("fs.create_file");
         executor.Should().BeAssignableTo<IToolExecutor>();
     }
+
+    [Fact]
+    public void VerifiedAuthorization_Has_No_Copy_Path_And_No_With_Expression_Support()
+    {
+        var type = typeof(VerifiedAuthorization);
+        type.IsSealed.Should().BeTrue("VerifiedAuthorization must be a sealed class");
+        type.IsValueType.Should().BeFalse("VerifiedAuthorization must be a class, not a struct");
+
+        // In C#, records generate a compiler method `<Clone>$`. A sealed class does not, which causes `auth with { ... }` to fail compilation with CS8858.
+        var cloneMethod = type.GetMethod("<Clone>$", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        cloneMethod.Should().BeNull("VerifiedAuthorization must not be a record or have a clone/copy method");
+
+        // All properties must be get-only with no setter or init accessor
+        foreach (var prop in type.GetProperties())
+        {
+            prop.CanRead.Should().BeTrue();
+            prop.SetMethod.Should().BeNull($"Property {prop.Name} must be get-only with no setter or init accessor");
+        }
+    }
 }

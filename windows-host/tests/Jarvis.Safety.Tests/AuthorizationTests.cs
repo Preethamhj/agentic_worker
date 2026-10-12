@@ -182,6 +182,79 @@ public class AuthorizationTests
             .WithMessage("*HMAC*");
     }
 
+    [Fact]
+    public async Task Atomic_Consume_With_50_Concurrent_Calls_Gives_Exactly_One_Success()
+    {
+        var auditStore = new InMemoryAuditStore();
+        var authService = new AuthorizationService(_keyStore, _clock, auditStore);
+
+        var record = authService.IssueAuthorization(
+            taskId: "task-concurrency",
+            stepId: "step-concurrency",
+            toolId: "fs.create_file",
+            rawArgs: new Dictionary<string, object?> { ["path"] = @"C:\test.txt", ["content"] = "hello" },
+            risk: "medium",
+            approvedBy: "user");
+
+        const int callerCount = 50;
+        var successCount = 0;
+        var failureCount = 0;
+        var exceptions = new System.Collections.Concurrent.ConcurrentBag<Exception>();
+        var verifiedTokens = new System.Collections.Concurrent.ConcurrentBag<VerifiedAuthorization>();
+
+        var tasks = Enumerable.Range(0, callerCount).Select(_ => Task.Run(() =>
+        {
+            try
+            {
+                var auth = authService.Consume(record, "step-concurrency");
+                Interlocked.Increment(ref successCount);
+                verifiedTokens.Add(auth);
+            }
+            catch (AuthorizationSecurityException ex)
+            {
+                Interlocked.Increment(ref failureCount);
+                exceptions.Add(ex);
+            }
+        })).ToArray();
+
+        await Task.WhenAll(tasks);
+
+        successCount.Should().Be(1, "Exactly one concurrent consume call must succeed");
+        failureCount.Should().Be(49, "All 49 other concurrent calls must be refused");
+        verifiedTokens.Should().HaveCount(1);
+        exceptions.Should().OnlyContain(e => e.Message.Contains("already consumed") || e.Message.Contains("single-use nonce"));
+
+        // Check IAuditStore lifecycle persistence
+        var lifecycles = auditStore.GetAuthorizationLifecycle(record.AuthId);
+        lifecycles.Should().ContainSingle(l => l.State == "Issued");
+        lifecycles.Should().ContainSingle(l => l.State == "Consumed");
+    }
+
+    [Fact]
+    public void Forged_Copy_Of_VerifiedAuthorization_Is_Refused()
+    {
+        var record = CreateSampleRecord();
+        var validAuth = _authService.Consume(record, "step-001");
+
+        // Executor verification of valid auth succeeds
+        _authService.Consume(validAuth, "step-001");
+
+        // Attempt to forge a copy via reflection with tampered args
+        var tamperedArgs = new Dictionary<string, object?>(record.CanonicalArgs)
+        {
+            ["path"] = @"C:\tampered\path.txt"
+        };
+        var forgedRecord = record with { CanonicalArgs = tamperedArgs };
+
+        var ctor = typeof(VerifiedAuthorization).GetConstructors(System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)[0];
+        var forgedAuth = (VerifiedAuthorization)ctor.Invoke(new object[] { forgedRecord });
+
+        // Executor calling AuthorizationService.Consume(forgedAuth) must refuse it!
+        Action act = () => _authService.Consume(forgedAuth, "step-001");
+        act.Should().Throw<AuthorizationSecurityException>()
+            .WithMessage("*HMAC*");
+    }
+
     private AuthorizationRecordDto CreateSampleRecord()
     {
         return _authService.IssueAuthorization(

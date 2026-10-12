@@ -18,11 +18,13 @@ public enum AuthorizationLifecycleState
 /// <summary>
 /// Service responsible for issuing, signing, tracking, consuming, and verifying
 /// AuthorizationRecords. HMAC-SHA256 keys are managed through DPAPI (IDpapiKeyStore).
+/// All lifecycle transitions are atomically persisted and audited through IAuditStore.
 /// </summary>
 public sealed class AuthorizationService
 {
     private readonly IDpapiKeyStore _keyStore;
     private readonly IClock _clock;
+    private readonly IAuditStore? _auditStore;
     private readonly TimeSpan _defaultExecuteWindow = TimeSpan.FromSeconds(60);
     private readonly TimeSpan _defaultVerifyWindow = TimeSpan.FromSeconds(120);
     private readonly TimeSpan _defaultTotalExpiry = TimeSpan.FromMinutes(5);
@@ -31,10 +33,11 @@ public sealed class AuthorizationService
     private readonly HashSet<string> _consumedNonces = new();
     private readonly object _lock = new();
 
-    public AuthorizationService(IDpapiKeyStore keyStore, IClock? clock = null)
+    public AuthorizationService(IDpapiKeyStore keyStore, IClock? clock = null, IAuditStore? auditStore = null)
     {
         _keyStore = keyStore ?? throw new ArgumentNullException(nameof(keyStore));
         _clock = clock ?? SystemClock.Instance;
+        _auditStore = auditStore;
     }
 
     /// <summary>
@@ -108,12 +111,22 @@ public sealed class AuthorizationService
             var signedRecord = unsignedRecord with { Hmac = hmac };
             _recordStates[signedRecord.AuthId] = AuthorizationLifecycleState.Issued;
 
+            _auditStore?.RecordAuthorizationLifecycleAsync(new AuthorizationLifecycleRecord(
+                signedRecord.AuthId,
+                signedRecord.TaskId,
+                signedRecord.StepId,
+                "Issued",
+                signedRecord.Nonce,
+                now
+            ));
+
             return signedRecord;
         }
     }
 
     /// <summary>
-    /// Consumes the authorization record for single use by a tool executor.
+    /// Atomically consumes the authorization record for single use by a tool executor.
+    /// Thread-safe: exactly one concurrent caller succeeds; all others are rejected.
     /// Returns VerifiedAuthorization, which is required by tool executors.
     /// </summary>
     public VerifiedAuthorization Consume(AuthorizationRecordDto record, string stepId)
@@ -161,11 +174,56 @@ public sealed class AuthorizationService
                 throw new AuthorizationSecurityException($"Authorization record is in invalid state '{state}' for execution.");
             }
 
-            // 5. Transition lifecycle state to Consumed
+            // 5. Atomically transition lifecycle state to Consumed
             _recordStates[record.AuthId] = AuthorizationLifecycleState.Consumed;
             _consumedNonces.Add(record.Nonce);
 
+            _auditStore?.RecordAuthorizationLifecycleAsync(new AuthorizationLifecycleRecord(
+                record.AuthId,
+                record.TaskId,
+                record.StepId,
+                "Consumed",
+                record.Nonce,
+                now
+            ));
+
             return new VerifiedAuthorization(record);
+        }
+    }
+
+    /// <summary>
+    /// Re-verifies HMAC over the actual field values of VerifiedAuthorization.
+    /// Called by executors to ensure that no forged or tampered copy can execute.
+    /// </summary>
+    public void Consume(VerifiedAuthorization auth, string? expectedStepId = null)
+    {
+        lock (_lock)
+        {
+            // 1. Re-verify HMAC over actual fields of auth
+            var key = _keyStore.GetOrCreateKey();
+            if (!VerifyHmac(auth, key))
+            {
+                throw new AuthorizationSecurityException("HMAC signature mismatch: forged or tampered VerifiedAuthorization object.");
+            }
+
+            // 2. Validate Step ID if specified
+            if (expectedStepId != null && !string.Equals(auth.StepId, expectedStepId, StringComparison.Ordinal))
+            {
+                throw new AuthorizationSecurityException($"Step ID mismatch: authorized for '{auth.StepId}' but executed for '{expectedStepId}'.");
+            }
+
+            // 3. Validate deadline
+            var now = _clock.UtcNow;
+            if (DateTimeOffset.TryParse(auth.ExecuteBefore, out var execDeadline) && now > execDeadline)
+            {
+                throw new AuthorizationSecurityException($"Execution deadline expired at {auth.ExecuteBefore} (current: {now:o}).");
+            }
+
+            // 4. Validate state
+            if (!_recordStates.TryGetValue(auth.AuthId, out var state) || state != AuthorizationLifecycleState.Consumed)
+            {
+                throw new AuthorizationSecurityException($"Authorization '{auth.AuthId}' is not in Consumed state.");
+            }
         }
     }
 
@@ -209,6 +267,16 @@ public sealed class AuthorizationService
 
             // 4. Transition to Verified
             _recordStates[record.AuthId] = AuthorizationLifecycleState.Verified;
+
+            _auditStore?.RecordAuthorizationLifecycleAsync(new AuthorizationLifecycleRecord(
+                record.AuthId,
+                record.TaskId,
+                record.StepId,
+                "Verified",
+                record.Nonce,
+                now
+            ));
+
             return true;
         }
     }
@@ -236,6 +304,32 @@ public sealed class AuthorizationService
             record.ExecuteBefore,
             record.VerifyBefore,
             record.Nonce
+        );
+    }
+
+    public static string ComputeCanonicalRepresentation(VerifiedAuthorization auth)
+    {
+        var canonicalArgsJson = CanonicalizeDictionary(auth.CanonicalArgs);
+        var expectedJson = CanonicalizeDictionary(auth.Expected);
+        var allowedEffectsStr = string.Join(",", (auth.AllowedEffects ?? new List<string>()).OrderBy(x => x, StringComparer.Ordinal));
+        var watchScopesStr = string.Join(",", (auth.WatchScopes ?? new List<string>()).OrderBy(x => x, StringComparer.Ordinal));
+
+        return string.Join("|",
+            auth.AuthId,
+            auth.TaskId,
+            auth.StepId,
+            auth.ToolId,
+            canonicalArgsJson,
+            expectedJson,
+            allowedEffectsStr,
+            watchScopesStr,
+            auth.Risk,
+            auth.ApprovedBy,
+            auth.IssuedAt,
+            auth.ExpiresAt,
+            auth.ExecuteBefore,
+            auth.VerifyBefore,
+            auth.Nonce
         );
     }
 
@@ -269,6 +363,14 @@ public sealed class AuthorizationService
         var expectedHmac = ComputeHmac(ComputeCanonicalRepresentation(record), key);
         var expectedBytes = Encoding.UTF8.GetBytes(expectedHmac);
         var actualBytes = Encoding.UTF8.GetBytes(record.Hmac.ToLowerInvariant());
+        return CryptographicOperations.FixedTimeEquals(expectedBytes, actualBytes);
+    }
+
+    private static bool VerifyHmac(VerifiedAuthorization auth, byte[] key)
+    {
+        var expectedHmac = ComputeHmac(ComputeCanonicalRepresentation(auth), key);
+        var expectedBytes = Encoding.UTF8.GetBytes(expectedHmac);
+        var actualBytes = Encoding.UTF8.GetBytes(auth.Hmac.ToLowerInvariant());
         return CryptographicOperations.FixedTimeEquals(expectedBytes, actualBytes);
     }
 

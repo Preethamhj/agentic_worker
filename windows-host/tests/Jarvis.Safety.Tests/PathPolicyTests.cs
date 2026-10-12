@@ -120,18 +120,98 @@ public class PathPolicyTests
     [Fact]
     public void ReparsePoint_Junction_Or_Symlink_Is_Blocked()
     {
-        // If a directory is a reparse point (simulated via attribute check)
-        var testDir = Path.Combine(TempRoot, "junction_test");
+        var testDir = Path.Combine(TempRoot, "normal_dir_test");
         Directory.CreateDirectory(testDir);
         try
         {
-            // PathPolicy reparse point check
             var isReparse = PathPolicy.IsReparsePoint(testDir);
-            isReparse.Should().BeFalse(); // normal dir is not a reparse point
+            isReparse.Should().BeFalse();
         }
         finally
         {
             if (Directory.Exists(testDir)) Directory.Delete(testDir);
         }
+    }
+
+    [Fact]
+    public void Real_Junction_Via_Mklink_Is_Blocked()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        var targetDir = Path.Combine(TempRoot, "real_target_" + Guid.NewGuid().ToString("N"));
+        var junctionDir = Path.Combine(TempRoot, "real_junction_" + Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(targetDir);
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                Arguments = $"/c mklink /J \"{junctionDir}\" \"{targetDir}\"",
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+            using var proc = System.Diagnostics.Process.Start(psi);
+            proc?.WaitForExit(5000);
+
+            if (Directory.Exists(junctionDir))
+            {
+                try
+                {
+                    PathPolicy.IsReparsePoint(junctionDir).Should().BeTrue("mklink /J creates an NTFS reparse point");
+
+                    var result = _policy.ValidatePath(junctionDir);
+                    result.IsValid.Should().BeFalse("Junction folder must be blocked by PathPolicy");
+                    result.ErrorMessage.Should().Contain("reparse point");
+                }
+                finally
+                {
+                    Directory.Delete(junctionDir);
+                }
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(targetDir)) Directory.Delete(targetDir);
+        }
+    }
+
+    [Theory]
+    [InlineData("Evil")]
+    [InlineData("_malicious")]
+    [InlineData("-bad")]
+    public void Root_Prefix_Confusion_Is_Blocked(string suffix)
+    {
+        var confusionRoot = TempRoot + suffix;
+        var testPath = Path.Combine(confusionRoot, "secret.txt");
+
+        var result = _policy.ValidatePath(testPath);
+        result.IsValid.Should().BeFalse($"Path '{testPath}' must be blocked due to root prefix confusion");
+        result.ErrorMessage.Should().Contain("outside allowed roots");
+    }
+
+    [Fact]
+    public void Forward_Slash_Input_Is_Accepted_And_Normalized()
+    {
+        var forwardSlashPath = TempRoot.Replace('\\', '/') + "/nested/forward_doc.txt";
+        var result = _policy.ValidatePath(forwardSlashPath);
+
+        result.IsValid.Should().BeTrue($"Pure forward slash path '{forwardSlashPath}' should be accepted");
+        result.NormalizedPath.Should().Be(Path.Combine(TempRoot, "nested", "forward_doc.txt"));
+    }
+
+    [Fact]
+    public void Case_Differences_Are_Accepted_And_Match_Root()
+    {
+        var upperPath = TempRoot.ToUpperInvariant() + @"\SUBFOLDER\TEST_CASE.TXT";
+        var lowerPath = TempRoot.ToLowerInvariant() + @"\subfolder\test_case.txt";
+
+        var resUpper = _policy.ValidatePath(upperPath);
+        resUpper.IsValid.Should().BeTrue();
+
+        var resLower = _policy.ValidatePath(lowerPath);
+        resLower.IsValid.Should().BeTrue();
     }
 }
