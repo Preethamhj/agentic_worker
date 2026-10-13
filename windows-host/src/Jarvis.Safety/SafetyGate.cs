@@ -26,21 +26,21 @@ public sealed class SafetyGate : ISafetyGate
     private readonly ToolPolicy _toolPolicy;
     private readonly PathPolicy? _pathPolicy;
     private readonly AuthorizationService _authService;
-    private readonly IApprovalProvider? _approvalProvider;
+    private readonly IApprovalHandler? _approvalHandler;
     private readonly IAuditStore? _auditStore;
     private readonly IClock _clock;
 
     public SafetyGate(
         ToolPolicy toolPolicy,
         AuthorizationService authService,
-        IApprovalProvider? approvalProvider = null,
+        IApprovalHandler? approvalHandler = null,
         IAuditStore? auditStore = null,
         IClock? clock = null,
         PathPolicy? pathPolicy = null)
     {
         _toolPolicy = toolPolicy ?? throw new ArgumentNullException(nameof(toolPolicy));
         _authService = authService ?? throw new ArgumentNullException(nameof(authService));
-        _approvalProvider = approvalProvider;
+        _approvalHandler = approvalHandler;
         _auditStore = auditStore;
         _clock = clock ?? SystemClock.Instance;
         _pathPolicy = pathPolicy;
@@ -179,11 +179,11 @@ public sealed class SafetyGate : ISafetyGate
                 finalRisk
             );
 
-            var approved = _approvalProvider != null && await _approvalProvider.RequestApprovalAsync(approvalRequest, cancellationToken);
+            var approved = _approvalHandler != null && await _approvalHandler.RequestApprovalAsync(approvalRequest, cancellationToken);
             if (!approved)
             {
                 await RecordAuditAsync(taskId, stepId, toolId, advisoryRisk, policyRisk, finalRisk, "user", false, "User denied execution.", cancellationToken);
-                return SafetyGateResult.Denied($"Execution denied by approval provider for step '{stepId}'.");
+                return SafetyGateResult.Denied($"Execution denied by approval handler for step '{stepId}'.");
             }
 
             approvedBy = "user";

@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Jarvis.Contracts;
 using Jarvis.Core;
 using Xunit;
 

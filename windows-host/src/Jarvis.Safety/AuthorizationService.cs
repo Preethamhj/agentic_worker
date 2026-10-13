@@ -38,6 +38,29 @@ public sealed class AuthorizationService
         _keyStore = keyStore ?? throw new ArgumentNullException(nameof(keyStore));
         _clock = clock ?? SystemClock.Instance;
         _auditStore = auditStore;
+
+        if (_auditStore != null)
+        {
+            try
+            {
+                var existingLifecycles = _auditStore.GetAuthorizationLifecycle();
+                foreach (var rec in existingLifecycles)
+                {
+                    if (Enum.TryParse<AuthorizationLifecycleState>(rec.State, out var state))
+                    {
+                        _recordStates[rec.AuthId] = state;
+                    }
+                    if (rec.State is "Consumed" or "Verified")
+                    {
+                        _consumedNonces.Add(rec.Nonce);
+                    }
+                }
+            }
+            catch
+            {
+                // Graceful fallback if audit store is newly initializing
+            }
+        }
     }
 
     /// <summary>

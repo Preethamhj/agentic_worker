@@ -76,11 +76,11 @@ public sealed class AppLaunchExecutor : IToolExecutor
             return Task.FromResult(FailureReceipt(auth, startedAt, $"App ID '{appId}' is not in the allowed applications registry."));
         }
 
-        // 5. Resolve executable to full path
+        // 5. Resolve executable to absolute system path
         var executablePath = ResolveExecutableFullPath(appDef.Executable);
         if (string.IsNullOrEmpty(executablePath) || !File.Exists(executablePath))
         {
-            return Task.FromResult(FailureReceipt(auth, startedAt, $"Executable for app '{appId}' not found at '{executablePath}'."));
+            return Task.FromResult(FailureReceipt(auth, startedAt, $"Executable '{appDef.Executable}' for app '{appId}' cannot be resolved to a verified absolute system path. PATH resolution is prohibited."));
         }
 
         // 6. Launch with UseShellExecute = false
@@ -118,11 +118,13 @@ public sealed class AppLaunchExecutor : IToolExecutor
         }
     }
 
-    private static string ResolveExecutableFullPath(string executableName)
+    private static string? ResolveExecutableFullPath(string executableName)
     {
+        if (string.IsNullOrWhiteSpace(executableName)) return null;
+
         if (Path.IsPathRooted(executableName) && File.Exists(executableName))
         {
-            return executableName;
+            return Path.GetFullPath(executableName);
         }
 
         if (OperatingSystem.IsWindows())
@@ -136,7 +138,8 @@ public sealed class AppLaunchExecutor : IToolExecutor
             if (File.Exists(pathInWindows)) return pathInWindows;
         }
 
-        return Path.GetFullPath(executableName);
+        // Resolving via PATH or working directory is strictly prohibited
+        return null;
     }
 
     private static ExecutionReceiptDto FailureReceipt(VerifiedAuthorization auth, string startedAt, string error)

@@ -6,6 +6,13 @@ namespace Jarvis.Architecture.Tests;
 
 public class DependencyRulesTests
 {
+    private readonly Xunit.Abstractions.ITestOutputHelper _output;
+
+    public DependencyRulesTests(Xunit.Abstractions.ITestOutputHelper output)
+    {
+        _output = output;
+    }
+
     [Fact]
     public void Verification_Must_Not_Reference_Tools()
     {
@@ -18,11 +25,81 @@ public class DependencyRulesTests
     }
 
     [Fact]
+    public void Transitive_Closure_Of_Verification_Must_Not_Reach_Tools()
+    {
+        var verificationAsm = typeof(Jarvis.Verification.VerificationPlaceholder).Assembly;
+        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var queue = new Queue<System.Reflection.Assembly>();
+
+        var rootName = verificationAsm.GetName().Name!;
+        visited.Add(rootName);
+        queue.Enqueue(verificationAsm);
+
+        while (queue.Count > 0)
+        {
+            var current = queue.Dequeue();
+            foreach (var refName in current.GetReferencedAssemblies())
+            {
+                if (refName.Name != null && visited.Add(refName.Name))
+                {
+                    try
+                    {
+                        var loaded = System.Reflection.Assembly.Load(refName);
+                        queue.Enqueue(loaded);
+                    }
+                    catch
+                    {
+                        // External system assembly
+                    }
+                }
+            }
+        }
+
+        _output.WriteLine($"Transitive assembly reference closure for {rootName} ({visited.Count} assemblies):");
+        foreach (var asm in visited.OrderBy(x => x))
+        {
+            _output.WriteLine($"  - {asm}");
+        }
+
+        visited.Should().NotContain("Jarvis.Tools", "Jarvis.Verification must never have transitive reachability to Jarvis.Tools");
+    }
+
+    [Fact]
+    public void Print_Project_Reference_Graph()
+    {
+        var assemblies = new[]
+        {
+            typeof(Jarvis.Contracts.PlanRequestDto).Assembly,
+            typeof(Jarvis.Core.StateMachine).Assembly,
+            typeof(Jarvis.Safety.PathPolicy).Assembly,
+            typeof(Jarvis.Tools.IToolExecutor).Assembly,
+            typeof(Jarvis.Verification.VerificationPlaceholder).Assembly,
+            typeof(Jarvis.Infrastructure.SqliteAuditStore).Assembly,
+            typeof(Jarvis.Cli.ConsoleApprovalHandler).Assembly
+        };
+
+        _output.WriteLine("=================== PROJECT REFERENCE GRAPH ===================");
+        foreach (var asm in assemblies)
+        {
+            var name = asm.GetName().Name!;
+            var jarvisRefs = asm.GetReferencedAssemblies()
+                .Where(r => r.Name != null && r.Name.StartsWith("Jarvis.", StringComparison.OrdinalIgnoreCase))
+                .Select(r => r.Name!)
+                .OrderBy(x => x)
+                .ToList();
+
+            var refsStr = jarvisRefs.Count > 0 ? string.Join(", ", jarvisRefs) : "(leaf / no Jarvis references)";
+            _output.WriteLine($"{name} -> [ {refsStr} ]");
+        }
+        _output.WriteLine("===============================================================");
+    }
+
+    [Fact]
     public void Contracts_Must_Not_Reference_Other_Jarvis_Projects()
     {
         var result = Types.InAssembly(typeof(Jarvis.Contracts.PlanRequestDto).Assembly)
             .ShouldNot()
-            .HaveDependencyOnAny("Jarvis.Core", "Jarvis.Safety", "Jarvis.Tools", "Jarvis.Verification", "Jarvis.Infrastructure")
+            .HaveDependencyOnAny("Jarvis.Core", "Jarvis.Safety", "Jarvis.Tools", "Jarvis.Verification", "Jarvis.Infrastructure", "Jarvis.Cli")
             .GetResult();
 
         result.IsSuccessful.Should().BeTrue("Jarvis.Contracts must be a leaf project referencing no other Jarvis projects");

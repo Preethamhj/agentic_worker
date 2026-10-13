@@ -162,6 +162,36 @@ public class ExecutorTests
     }
 
     [Fact]
+    public async Task AppLaunchExecutor_Refuses_Executable_Resolved_Via_PATH_And_Requires_Allowlisted_Absolute_Path()
+    {
+        // Define a custom policy with an app whose executable is only a PATH name (not rooted and not in System folders)
+        var customApp = new AllowedAppDefinition
+        {
+            AppId = "path_tool",
+            Executable = "arbitrary_path_tool.exe",
+            DisplayName = "Arbitrary Path Tool"
+        };
+        var policyWithCustomApp = new ToolPolicy(_toolPolicy.Tools.Values, new[] { customApp });
+
+        var executor = new AppLaunchExecutor(policyWithCustomApp, _authService);
+
+        var record = _authService.IssueAuthorization(
+            taskId: "task-path-launch",
+            stepId: "step-1",
+            toolId: "app.launch",
+            rawArgs: new Dictionary<string, object?> { ["app_id"] = "path_tool" },
+            risk: "medium",
+            approvedBy: "user");
+
+        var auth = _authService.Consume(record, "step-1");
+
+        var receipt = await executor.ExecuteAsync(auth);
+
+        receipt.ReportedSuccess.Should().BeFalse("Executables resolved via PATH or relative names outside system folders must be rejected");
+        receipt.Stderr.Should().Contain("PATH resolution is prohibited");
+    }
+
+    [Fact]
     public async Task Executor_Refuses_Forged_Or_Reused_Authorization()
     {
         var executor = new CreateFolderExecutor(_pathPolicy, _authService);

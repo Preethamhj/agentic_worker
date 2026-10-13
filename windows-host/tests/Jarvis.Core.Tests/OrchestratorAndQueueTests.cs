@@ -252,7 +252,7 @@ public class OrchestratorAndQueueTests
             _userApproved = userApproved;
         }
 
-        public Task<bool> RequestApprovalAsync(string taskId, string stepId, string toolId, IReadOnlyDictionary<string, object?> canonicalArgs, string risk, CancellationToken cancellationToken = default)
+        public Task<bool> RequestApprovalAsync(ApprovalRequest request, CancellationToken cancellationToken = default)
         {
             return Task.FromResult(_userApproved);
         }

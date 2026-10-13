@@ -1,3 +1,5 @@
+using Jarvis.Contracts;
+
 namespace Jarvis.Core;
 
 /// <summary>

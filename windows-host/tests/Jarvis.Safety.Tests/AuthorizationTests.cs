@@ -255,6 +255,55 @@ public class AuthorizationTests
             .WithMessage("*HMAC*");
     }
 
+    [Fact]
+    public void Restart_Test_Consuming_Persisted_Nonce_On_New_Service_Fails()
+    {
+        var tempDb = Path.Combine(Path.GetTempPath(), $"jarvis_audit_restart_{Guid.NewGuid():N}.db");
+        try
+        {
+            var keyStore = new InMemoryDpapiKeyStore();
+            AuthorizationRecordDto record;
+
+            // 1. Initial service instance issues and consumes the nonce
+            using (var store1 = new SqliteAuditStore(tempDb))
+            {
+                var authService1 = new AuthorizationService(keyStore, SystemClock.Instance, store1);
+                record = authService1.IssueAuthorization(
+                    taskId: "task-restart-01",
+                    stepId: "step-01",
+                    toolId: "fs.create_file",
+                    rawArgs: new Dictionary<string, object?> { ["path"] = @"C:\allowed\doc.txt", ["content"] = "hello" },
+                    risk: "medium"
+                );
+
+                var verified = authService1.Consume(record, "step-01");
+                verified.Should().NotBeNull();
+            }
+
+            // 2. Restart: Create a completely new SqliteAuditStore and AuthorizationService on the same SQLite file
+            using (var store2 = new SqliteAuditStore(tempDb))
+            {
+                var authService2 = new AuthorizationService(keyStore, SystemClock.Instance, store2);
+
+                // Consuming the same record again on the new service instance must fail
+                Action act = () => authService2.Consume(record, "step-01");
+                act.Should().Throw<AuthorizationSecurityException>()
+                    .WithMessage("*already consumed*");
+            }
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(tempDb))
+                {
+                    File.Delete(tempDb);
+                }
+            }
+            catch { }
+        }
+    }
+
     private AuthorizationRecordDto CreateSampleRecord()
     {
         return _authService.IssueAuthorization(

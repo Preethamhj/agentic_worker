@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using FluentAssertions;
+using Jarvis.Contracts;
 using Jarvis.Core;
 using Jarvis.Infrastructure;
 using Jarvis.Safety;
@@ -9,7 +10,7 @@ namespace Jarvis.Safety.Tests;
 
 public class SafetyGateTests
 {
-    private class FakeApprovalProvider : IApprovalProvider
+    private class FakeApprovalProvider : IApprovalHandler
     {
         public bool NextApprovalResult { get; set; } = true;
         public int CallCount { get; private set; }
