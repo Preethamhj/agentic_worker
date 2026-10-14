@@ -25,7 +25,21 @@ public sealed class SystemClock : IClock
 /// </summary>
 public interface IVerifier
 {
-    Task<VerificationResultDto> VerifyAsync(string taskId, string stepId, ExecutionReceiptDto receipt, CancellationToken cancellationToken = default);
+    Task<StepToken> BeginStepAsync(AuthorizationRecordDto authorization, CancellationToken cancellationToken = default);
+
+    Task<VerificationResultDto> VerifyAsync(
+        ExecutionReceiptDto receipt,
+        ExecutionObservation observation,
+        StepToken token,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Verifies a signed authorization and atomically marks its consumed lifecycle as verified.
+/// </summary>
+public interface IAuthorizationVerifier
+{
+    Task VerifyAndMarkVerifiedAsync(AuthorizationRecordDto authorization, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -90,5 +104,14 @@ public interface IPlanner
 /// </summary>
 public interface IStepExecutor
 {
-    Task<ExecutionReceiptDto> ExecuteStepAsync(string taskId, string stepId, string toolId, IReadOnlyDictionary<string, object?> args, string risk, CancellationToken cancellationToken = default);
+    AuthorizationRecordDto PrepareAuthorization(
+        string taskId,
+        string stepId,
+        string toolId,
+        IReadOnlyDictionary<string, object?> args,
+        string risk);
+
+    Task<ExecutionReceiptDto> ExecuteStepAsync(
+        AuthorizationRecordDto authorization,
+        CancellationToken cancellationToken = default);
 }

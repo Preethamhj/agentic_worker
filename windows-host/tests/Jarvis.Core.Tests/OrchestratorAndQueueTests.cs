@@ -267,7 +267,34 @@ public class OrchestratorAndQueueTests
             _shouldTimeout = shouldTimeout;
         }
 
-        public async Task<ExecutionReceiptDto> ExecuteStepAsync(string taskId, string stepId, string toolId, IReadOnlyDictionary<string, object?> args, string risk, CancellationToken cancellationToken = default)
+        public AuthorizationRecordDto PrepareAuthorization(
+            string taskId,
+            string stepId,
+            string toolId,
+            IReadOnlyDictionary<string, object?> args,
+            string risk) =>
+            new(
+                1,
+                "auth-dummy",
+                taskId,
+                stepId,
+                toolId,
+                new Dictionary<string, object?>(args),
+                new Dictionary<string, object?>(),
+                new List<string>(),
+                new List<string>(),
+                risk,
+                "user",
+                DateTimeOffset.UtcNow.ToString("o"),
+                DateTimeOffset.UtcNow.AddMinutes(1).ToString("o"),
+                DateTimeOffset.UtcNow.AddMinutes(1).ToString("o"),
+                DateTimeOffset.UtcNow.AddMinutes(2).ToString("o"),
+                "nonce-dummy",
+                "hmac-dummy");
+
+        public async Task<ExecutionReceiptDto> ExecuteStepAsync(
+            AuthorizationRecordDto authorization,
+            CancellationToken cancellationToken = default)
         {
             if (_shouldTimeout)
             {
@@ -275,7 +302,7 @@ public class OrchestratorAndQueueTests
             }
 
             await Task.Yield();
-            return CreateDummyReceipt(stepId);
+            return CreateDummyReceipt(authorization.StepId);
         }
     }
 }

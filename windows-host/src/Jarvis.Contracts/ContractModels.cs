@@ -125,7 +125,32 @@ public record VerificationStageResultDto(
     [property: JsonPropertyName("stage")] int Stage,
     [property: JsonPropertyName("name")] string Name,
     [property: JsonPropertyName("passed")] bool Passed,
-    [property: JsonPropertyName("detail")] string Detail
+    [property: JsonPropertyName("detail")] string Detail,
+    [property: JsonPropertyName("outcome")] string Outcome = "PASSED"
+);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public record ExecutionObservation(
+    [property: JsonPropertyName("started_at_utc")] DateTimeOffset StartedAtUtc,
+    [property: JsonPropertyName("completed_at_utc")] DateTimeOffset CompletedAtUtc
+);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public record SnapshotEntryDto(
+    [property: JsonPropertyName("path")] string Path,
+    [property: JsonPropertyName("is_directory")] bool IsDirectory,
+    [property: JsonPropertyName("is_reparse_point")] bool IsReparsePoint,
+    [property: JsonPropertyName("size")] long Size,
+    [property: JsonPropertyName("last_write_time_utc")] DateTimeOffset LastWriteTimeUtc,
+    [property: JsonPropertyName("sha256")] string? Sha256
+);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public record StepToken(
+    [property: JsonPropertyName("authorization_id")] string AuthorizationId,
+    [property: JsonPropertyName("nonce")] string Nonce,
+    [property: JsonPropertyName("before_snapshots")] IReadOnlyList<SnapshotEntryDto> BeforeSnapshots,
+    [property: JsonPropertyName("snapshot_limit_exceeded")] bool SnapshotLimitExceeded = false
 );
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]

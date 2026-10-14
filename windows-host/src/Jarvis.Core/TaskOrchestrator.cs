@@ -116,9 +116,19 @@ public sealed class TaskOrchestrator
 
                 stateMachine.Transition(TaskState.Approved, $"Step '{step.StepId}' approved.");
 
+                var authorization = _stepExecutor.PrepareAuthorization(
+                    taskId,
+                    step.StepId,
+                    step.ToolCall.ToolId,
+                    step.ToolCall.Args,
+                    safetyEval.Risk);
+                var stepToken = await _verifier.BeginStepAsync(authorization, cancellationToken).ConfigureAwait(false);
+
                 // 3c. Queue & Execute
                 stateMachine.Transition(TaskState.Queued, $"Step '{step.StepId}' enqueued.");
 
+                var executionStartedAt = default(DateTimeOffset);
+                var executionCompletedAt = default(DateTimeOffset);
                 var receipt = await _queue.EnqueueAsync(
                     taskId,
                     step.StepId,
@@ -126,23 +136,25 @@ public sealed class TaskOrchestrator
                     async ct =>
                     {
                         stateMachine.Transition(TaskState.Executing, $"Step '{step.StepId}' executing.");
-                        return await _stepExecutor.ExecuteStepAsync(taskId, step.StepId, step.ToolCall.ToolId, step.ToolCall.Args, safetyEval.Risk, ct).ConfigureAwait(false);
+                        executionStartedAt = _clock.UtcNow;
+                        try
+                        {
+                            return await _stepExecutor.ExecuteStepAsync(authorization, ct).ConfigureAwait(false);
+                        }
+                        finally
+                        {
+                            executionCompletedAt = _clock.UtcNow;
+                        }
                     },
                     cancellationToken: cancellationToken
                 ).ConfigureAwait(false);
 
                 receipts.Add(receipt);
 
-                if (!receipt.ReportedSuccess)
-                {
-                    stateMachine.Transition(TaskState.Verifying, $"Execution reported failure for step '{step.StepId}'.");
-                    stateMachine.Transition(TaskState.Failed, $"Execution failed: {receipt.Stderr}");
-                    return new TaskOrchestratorResult(taskId, stateMachine.CurrentState, receipts, verifications, $"Step execution failed: {receipt.Stderr}");
-                }
-
                 // 3d. Verification
                 stateMachine.Transition(TaskState.Verifying, $"Step '{step.StepId}' verifying.");
-                var verification = await _verifier.VerifyAsync(taskId, step.StepId, receipt, cancellationToken).ConfigureAwait(false);
+                var observation = new ExecutionObservation(executionStartedAt, executionCompletedAt);
+                var verification = await _verifier.VerifyAsync(receipt, observation, stepToken, cancellationToken).ConfigureAwait(false);
                 verifications.Add(verification);
 
                 if (string.Equals(verification.Status, "VERIFIED", StringComparison.OrdinalIgnoreCase))

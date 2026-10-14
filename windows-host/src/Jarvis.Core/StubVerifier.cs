@@ -9,11 +9,25 @@ namespace Jarvis.Core;
 /// </summary>
 public sealed class StubVerifier : IVerifier
 {
-    public Task<VerificationResultDto> VerifyAsync(string taskId, string stepId, ExecutionReceiptDto receipt, CancellationToken cancellationToken = default)
+    public Task<StepToken> BeginStepAsync(AuthorizationRecordDto authorization, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(new StepToken(
+            authorization.AuthId,
+            authorization.Nonce,
+            Array.Empty<SnapshotEntryDto>()));
+    }
+
+    public Task<VerificationResultDto> VerifyAsync(
+        ExecutionReceiptDto receipt,
+        ExecutionObservation observation,
+        StepToken token,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
         var result = new VerificationResultDto(
             SchemaVersion: 1,
-            StepId: stepId,
+            StepId: receipt.StepId,
             Status: "ESCALATE",
             Stages: new List<VerificationStageResultDto>
             {

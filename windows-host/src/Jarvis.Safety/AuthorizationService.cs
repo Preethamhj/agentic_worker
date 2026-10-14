@@ -20,7 +20,7 @@ public enum AuthorizationLifecycleState
 /// AuthorizationRecords. HMAC-SHA256 keys are managed through DPAPI (IDpapiKeyStore).
 /// All lifecycle transitions are atomically persisted and audited through IAuditStore.
 /// </summary>
-public sealed class AuthorizationService
+public sealed class AuthorizationService : IAuthorizationVerifier
 {
     private readonly IDpapiKeyStore _keyStore;
     private readonly IClock _clock;
@@ -275,6 +275,10 @@ public sealed class AuthorizationService
             {
                 throw new AuthorizationSecurityException($"Authorization record '{record.AuthId}' was never consumed by an executor.");
             }
+            if (state == AuthorizationLifecycleState.Verified)
+            {
+                throw new AuthorizationSecurityException($"Authorization record '{record.AuthId}' was already verified and cannot be replayed.");
+            }
 
             // 3. Validate deadlines
             var now = _clock.UtcNow;
@@ -302,6 +306,16 @@ public sealed class AuthorizationService
 
             return true;
         }
+    }
+
+    public Task VerifyAndMarkVerifiedAsync(
+        AuthorizationRecordDto authorization,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(authorization);
+        cancellationToken.ThrowIfCancellationRequested();
+        Verify(authorization);
+        return Task.CompletedTask;
     }
 
     public static string ComputeCanonicalRepresentation(AuthorizationRecordDto record)
