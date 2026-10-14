@@ -145,6 +145,18 @@ public class AuthorizationTests
     }
 
     [Fact]
+    public void Verified_Authorization_Cannot_Be_Replayed()
+    {
+        var record = CreateSampleRecord();
+        _authService.Consume(record, "step-001");
+        _authService.Verify(record).Should().BeTrue();
+
+        Action replay = () => _authService.Verify(record);
+        replay.Should().Throw<AuthorizationSecurityException>()
+            .WithMessage("*already verified*");
+    }
+
+    [Fact]
     public void Tampered_Canonical_Args_Fails()
     {
         var record = CreateSampleRecord();
