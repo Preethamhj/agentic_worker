@@ -28,7 +28,6 @@ def isolate_report_state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Non
     fresh_store = SessionStore(db_path=tmp_db)
 
     monkeypatch.setattr(routes_report_module, "session_store", fresh_store)
-    routes_report_module._idempotency_cache.clear()
 
 
 def _report_payload(task_id: str = _TASK_ID, session_id: str = _SESSION_ID) -> dict:
@@ -119,3 +118,28 @@ def test_report_endpoint_without_idempotency_key_creates_entries_each_time() -> 
     fresh_store = routes_report_module.session_store
     summaries = fresh_store.get_task_summaries("sess-no-key")
     assert len(summaries) == 2, "Without an Idempotency-Key, every call creates a new session entry"
+
+
+def test_report_idempotency_is_persisted_across_session_store_restarts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = _report_payload("task-persist-check", "sess-persist-check")
+    headers = {
+        "X-Jarvis-Token": _REPORT_TOKEN,
+        "Idempotency-Key": "persisted-key-123",
+    }
+
+    res1 = client.post("/v1/report", headers=headers, json=payload)
+    assert res1.status_code == 200
+
+    restarted_store = SessionStore(db_path=routes_report_module.session_store.db_path)
+    cached = restarted_store.get_report_response("persisted-key-123")
+    assert cached is not None
+
+    monkeypatch.setattr(routes_report_module, "session_store", restarted_store)
+    res2 = client.post("/v1/report", headers=headers, json=payload)
+    assert res2.status_code == 200
+    assert res1.json() == res2.json()
+
+    summaries = restarted_store.get_task_summaries("sess-persist-check")
+    assert len(summaries) == 1, "The persisted idempotency cache must prevent re-writing the same report"

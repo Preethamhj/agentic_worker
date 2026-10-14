@@ -9,7 +9,7 @@ Phase 2b completes the execution engine, asynchronous queue, HTTP API client, ch
 - **Application Launch Security:** `AppLaunchExecutor` maps allowlisted application IDs (`apps.allowlist.json`) to verified executable paths, prohibits free-form arguments, forces `UseShellExecute = false`, and refuses execution when invoked from an elevated (Administrator) process.
 - **Execution Queue (`Jarvis.Core.ExecutionQueue`):** Channel-based sequential FIFO queue (`System.Threading.Channels`). Restricts concurrency with a dedicated `SemaphoreSlim(1, 1)` lock for high-risk steps, enforces per-step timeouts with linked `CancellationTokenSource`, and handles task cancellation cleanly.
 - **Task Orchestrator (`Jarvis.Core.TaskOrchestrator`):** Wires planning, safety evaluation, user approval, sequential queuing, tool execution, and verification. Enforces that every execution outcome reaches a terminal state (`Completed`, `Failed`, `Cancelled`, `Timeout`). With `StubVerifier` (returning `ESCALATE`), tasks transition to `Failed` and never reach `Completed`.
-- **SQLite Audit Store (`Jarvis.Infrastructure.SqliteAuditStore`):** Implemented `IAuditStore` backed by `Microsoft.Data.Sqlite`, creating the tables `state_transitions`, `safety_decisions`, and `auth_lifecycles` with indices per DESIGN.md section 10.
+- **SQLite Audit Store (`Jarvis.Infrastructure.SqliteAuditStore`):** Implemented `IAuditStore` backed by `Microsoft.Data.Sqlite`, creating all nine DESIGN.md section 10 tables: `tasks`, `steps`, `executions`, `verifications`, `evidence`, `api_calls`, `state_transitions`, `safety_decisions`, and `auth_lifecycles`.
 - **Structured JSON Logging (`Jarvis.Infrastructure.JarvisLogging`):** Configured Serilog with `CompactJsonFormatter` writing rolling `.jsonl` files enriched with `trace_id`, `task_id`, and `step_id`.
 - **HTTP Client (`Jarvis.Infrastructure.ApiClient`):** Implemented `IApiClient` connecting strictly to loopback (`127.0.0.1`). Injects `X-Jarvis-Token` and `X-Trace-Id` headers, enforces a 90s plan timeout, provides exactly one automatic retry for transient planning errors, and sets the `Idempotency-Key` header to `task_id` on report requests.
 - **Zero-Orphan Process Launcher (`Jarvis.Infrastructure.AiServerLauncher`):** Dynamically allocates a free loopback port, generates a 256-bit cryptographically secure token passed strictly via `JARVIS_TOKEN` environment variable (never logged), starts `uvicorn`, binds process lifetime to the host via a Win32 Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, and polls `/health` before returning.
@@ -48,7 +48,7 @@ Phase 2b completes the execution engine, asynchronous queue, HTTP API client, ch
   - `ExecutionQueue.cs`: Channel-based sequential queue with `SemaphoreSlim(1,1)` high-risk lock, step timeout, and cancellation.
   - `TaskOrchestrator.cs`: Wires plan, safety, approval, queue, execute, and verify, guaranteeing terminal state upon any outcome.
 - `windows-host/src/Jarvis.Infrastructure/`:
-  - `SqliteAuditStore.cs`: SQLite audit engine managing tables `state_transitions`, `safety_decisions`, and `auth_lifecycles`.
+  - `SqliteAuditStore.cs`: SQLite audit engine managing all nine audit tables listed above.
   - `JarvisLogging.cs`: Serilog compact JSON setup with `trace_id`, `task_id`, `step_id` correlation enrichment.
   - `JarvisApiException.cs`: Typed exception for HTTP client and protocol errors.
   - `ApiClient.cs`: HTTP client for `/v1/plan` (90s timeout, 1 retry), `/v1/report` (Idempotency-Key), and `/health`.

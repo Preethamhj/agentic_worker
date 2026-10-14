@@ -17,7 +17,9 @@ if (-not (Test-Path $venvPython)) {
 Write-Host "=== Step 1: C# Build & Tests ===" -ForegroundColor Cyan
 Push-Location $windowsHostDir
 try {
-    Write-Host "Using .NET SDK: $(dotnet --version)"
+    $sdkVersion = dotnet --version
+    Write-Host "Using .NET SDK: $sdkVersion"
+    if (-not $sdkVersion.StartsWith("10.")) { throw "Expected .NET 10 SDK, got $sdkVersion" }
     dotnet build Jarvis.sln --configuration Release --no-incremental
     if ($LASTEXITCODE -ne 0) { throw "dotnet build failed" }
 
