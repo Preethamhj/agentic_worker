@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.IO;
-using System.Security.Principal;
 using Jarvis.Contracts;
 using Jarvis.Safety;
 
@@ -22,11 +21,13 @@ public sealed class AppLaunchExecutor : IToolExecutor
 
     private readonly ToolPolicy _toolPolicy;
     private readonly AuthorizationService _authService;
+    private readonly IElevationChecker _elevationChecker;
 
-    public AppLaunchExecutor(ToolPolicy toolPolicy, AuthorizationService authService)
+    public AppLaunchExecutor(ToolPolicy toolPolicy, AuthorizationService authService, IElevationChecker elevationChecker)
     {
         _toolPolicy = toolPolicy ?? throw new ArgumentNullException(nameof(toolPolicy));
         _authService = authService ?? throw new ArgumentNullException(nameof(authService));
+        _elevationChecker = elevationChecker ?? throw new ArgumentNullException(nameof(elevationChecker));
     }
 
     public Task<ExecutionReceiptDto> ExecuteAsync(VerifiedAuthorization auth, CancellationToken cancellationToken = default)
@@ -37,21 +38,16 @@ public sealed class AppLaunchExecutor : IToolExecutor
         _authService.Consume(auth, auth.StepId);
 
         // 2. Refuse execution if the current process is elevated
-        if (OperatingSystem.IsWindows())
+        try
         {
-            try
+            if (_elevationChecker.IsElevated())
             {
-                using var identity = WindowsIdentity.GetCurrent();
-                var principal = new WindowsPrincipal(identity);
-                if (principal.IsInRole(WindowsBuiltInRole.Administrator))
-                {
-                    return Task.FromResult(FailureReceipt(auth, startedAt, "Refusing to launch application from an elevated (Administrator) process."));
-                }
+                return Task.FromResult(FailureReceipt(auth, startedAt, "Refusing to launch application from an elevated (Administrator) process."));
             }
-            catch (Exception ex)
-            {
-                return Task.FromResult(FailureReceipt(auth, startedAt, $"Failed to check process elevation status: {ex.Message}"));
-            }
+        }
+        catch (Exception ex)
+        {
+            return Task.FromResult(FailureReceipt(auth, startedAt, $"Failed to check process elevation status: {ex.Message}"));
         }
 
         // 3. Prohibit free-form arguments
@@ -75,15 +71,13 @@ public sealed class AppLaunchExecutor : IToolExecutor
         {
             return Task.FromResult(FailureReceipt(auth, startedAt, $"App ID '{appId}' is not in the allowed applications registry."));
         }
-
-        // 5. Resolve executable to absolute system path
         var executablePath = ResolveExecutableFullPath(appDef.Executable);
         if (string.IsNullOrEmpty(executablePath) || !File.Exists(executablePath))
         {
             return Task.FromResult(FailureReceipt(auth, startedAt, $"Executable '{appDef.Executable}' for app '{appId}' cannot be resolved to a verified absolute system path. PATH resolution is prohibited."));
         }
 
-        // 6. Launch with UseShellExecute = false
+        // 5. Launch with UseShellExecute = false
         try
         {
             var psi = new ProcessStartInfo
@@ -123,9 +117,7 @@ public sealed class AppLaunchExecutor : IToolExecutor
         if (string.IsNullOrWhiteSpace(executableName)) return null;
 
         if (Path.IsPathRooted(executableName) && File.Exists(executableName))
-        {
             return Path.GetFullPath(executableName);
-        }
 
         if (OperatingSystem.IsWindows())
         {
@@ -138,7 +130,6 @@ public sealed class AppLaunchExecutor : IToolExecutor
             if (File.Exists(pathInWindows)) return pathInWindows;
         }
 
-        // Resolving via PATH or working directory is strictly prohibited
         return null;
     }
 

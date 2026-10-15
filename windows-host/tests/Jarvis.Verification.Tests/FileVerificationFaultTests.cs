@@ -41,6 +41,25 @@ public sealed class FileVerificationFaultTests : IDisposable
     }
 
     [Fact]
+    public async Task Preexisting_Identical_File_Within_100ms_Tolerance_Is_Failed_When_Executor_Does_Nothing()
+    {
+        var target = Path.Combine(_root, "preexisting-identical.txt");
+        File.WriteAllText(target, Content, Utf8NoBom);
+        var setup = await PrepareAsync("fs.create_file", "preexisting-identical.txt");
+        File.SetCreationTimeUtc(target, setup.StartedAtUtc.UtcDateTime.AddMilliseconds(-50));
+
+        Math.Abs((new DateTimeOffset(File.GetCreationTimeUtc(target), TimeSpan.Zero) - setup.StartedAtUtc).TotalMilliseconds)
+            .Should().BeLessThan(100);
+
+        var result = await VerifyAsync(setup);
+
+        result.Status.Should().Be("FAILED");
+        result.Stages.Single(stage => stage.Stage == 5).Outcome.Should().Be("PASSED");
+        result.Stages.Single(stage => stage.Stage == 6).Outcome.Should().Be("FAILED");
+        result.Reasons.Should().Contain(reason => reason.Contains("not observed as a new side effect", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task File_With_Wrong_Content_Is_Failed()
     {
         var setup = await PrepareAsync("fs.create_file", "wrong-content.txt");
@@ -355,7 +374,7 @@ public sealed class FileVerificationFaultTests : IDisposable
             toolId,
             args,
             allowedEffects: [$"create:{target}"],
-            watchScopes: [_root],
+            watchScopes: [Path.GetDirectoryName(target)!],
             risk: "medium",
             approvedBy: "user");
         var engine = maxSnapshotEntries == 10_000

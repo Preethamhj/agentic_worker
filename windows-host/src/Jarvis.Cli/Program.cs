@@ -101,7 +101,7 @@ public static class Program
             new CreateFileExecutor(pathPolicy, authService),
             new CreateFolderExecutor(pathPolicy, authService),
             new SearchFilesExecutor(pathPolicy, authService),
-            new AppLaunchExecutor(toolPolicy, authService)
+            new AppLaunchExecutor(toolPolicy, authService, new WindowsElevationChecker())
         };
 
         var stepExecutor = new StepExecutor(authService, executors);

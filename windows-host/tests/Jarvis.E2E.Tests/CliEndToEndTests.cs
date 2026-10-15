@@ -51,7 +51,7 @@ public class CliEndToEndTests : IDisposable
             new CreateFileExecutor(_pathPolicy, _authService),
             new CreateFolderExecutor(_pathPolicy, _authService),
             new SearchFilesExecutor(_pathPolicy, _authService),
-            new AppLaunchExecutor(_toolPolicy, _authService)
+            new AppLaunchExecutor(_toolPolicy, _authService, new WindowsElevationChecker())
         };
 
         _stepExecutor = new StepExecutor(_authService, executors);

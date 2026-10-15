@@ -30,7 +30,11 @@ public sealed class SnapshotService
 
     public IReadOnlyList<string> NoiseExclusions => _noiseExclusions;
 
-    public SnapshotCaptureResult Capture(IReadOnlyList<string> watchScopes, CancellationToken cancellationToken = default)
+    public SnapshotCaptureResult Capture(
+        IReadOnlyList<string> watchScopes,
+        CancellationToken cancellationToken = default,
+        IReadOnlyDictionary<string, SnapshotEntryDto>? previousEntries = null,
+        string? authorizedTarget = null)
     {
         var entries = new Dictionary<string, SnapshotEntryDto>(StringComparer.OrdinalIgnoreCase);
         if (watchScopes.Count == 0)
@@ -48,29 +52,19 @@ public sealed class SnapshotService
                     if ((attributes & FileAttributes.ReparsePoint) != 0)
                         return new SnapshotCaptureResult(entries.Values.ToArray(), false, $"Watch scope is a reparse point: {fullScope}");
 
-                    var pendingDirectories = new Stack<string>();
-                    pendingDirectories.Push(fullScope);
-                    while (pendingDirectories.Count > 0)
+                    foreach (var info in new DirectoryInfo(fullScope).EnumerateFileSystemInfos())
                     {
                         cancellationToken.ThrowIfCancellationRequested();
-                        var directory = pendingDirectories.Pop();
-                        foreach (var path in Directory.EnumerateFileSystemEntries(directory))
-                        {
-                            cancellationToken.ThrowIfCancellationRequested();
-                            var name = Path.GetFileName(path);
-                            if (_noiseExclusions.Contains(name, StringComparer.OrdinalIgnoreCase))
-                                continue;
+                        var name = info.Name;
+                        if (_noiseExclusions.Contains(name, StringComparer.OrdinalIgnoreCase))
+                            continue;
 
-                            var entry = CaptureEntry(path);
-                            if (!entries.TryAdd(entry.Path, entry))
-                                continue;
+                        var entry = CaptureEntry(info, previousEntries, authorizedTarget);
+                        if (!entries.TryAdd(entry.Path, entry))
+                            continue;
 
-                            if (entries.Count > _entryLimit)
-                                return new SnapshotCaptureResult(entries.Values.Take(_entryLimit).ToArray(), true, null);
-
-                            if (entry.IsDirectory && !entry.IsReparsePoint)
-                                pendingDirectories.Push(path);
-                        }
+                        if (entries.Count > _entryLimit)
+                            return new SnapshotCaptureResult(entries.Values.Take(_entryLimit).ToArray(), true, null);
                     }
                 }
                 else if (File.Exists(fullScope))
@@ -78,7 +72,7 @@ public sealed class SnapshotService
                     var name = Path.GetFileName(fullScope);
                     if (!_noiseExclusions.Contains(name, StringComparer.OrdinalIgnoreCase))
                     {
-                        entries[fullScope] = CaptureEntry(fullScope);
+                        entries[fullScope] = CaptureEntry(new FileInfo(fullScope), previousEntries, authorizedTarget);
                         if (entries.Count > _entryLimit)
                             return new SnapshotCaptureResult(entries.Values.Take(_entryLimit).ToArray(), true, null);
                     }
@@ -113,27 +107,47 @@ public sealed class SnapshotService
         }
     }
 
-    private static SnapshotEntryDto CaptureEntry(string path)
+    private static SnapshotEntryDto CaptureEntry(
+        FileSystemInfo info,
+        IReadOnlyDictionary<string, SnapshotEntryDto>? previousEntries,
+        string? authorizedTarget)
     {
-        var attributes = File.GetAttributes(path);
+        var path = info.FullName;
+        var attributes = info.Attributes;
         var isDirectory = (attributes & FileAttributes.Directory) != 0;
         var isReparsePoint = (attributes & FileAttributes.ReparsePoint) != 0;
-        var info = isDirectory ? (FileSystemInfo)new DirectoryInfo(path) : new FileInfo(path);
-        info.Refresh();
         var size = isDirectory ? 0L : ((FileInfo)info).Length;
+        var fullPath = Path.GetFullPath(path);
+        var lastWriteTimeUtc = new DateTimeOffset(info.LastWriteTimeUtc, TimeSpan.Zero);
+        var metadataChanged = previousEntries is not null
+            && (!previousEntries.TryGetValue(fullPath, out var previous)
+                || MetadataChanged(previous, isDirectory, isReparsePoint, size, lastWriteTimeUtc));
+        var isAuthorizedTarget = authorizedTarget is not null
+            && string.Equals(fullPath, Path.GetFullPath(authorizedTarget), StringComparison.OrdinalIgnoreCase);
         string? hash = null;
-        if (!isDirectory && !isReparsePoint && size < HashLimitBytes)
+        if (!isDirectory && !isReparsePoint && size < HashLimitBytes && (metadataChanged || isAuthorizedTarget))
         {
             using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
             hash = Convert.ToHexString(SHA256.HashData(stream));
         }
 
         return new SnapshotEntryDto(
-            Path.GetFullPath(path),
+            fullPath,
             isDirectory,
             isReparsePoint,
             size,
-            new DateTimeOffset(info.LastWriteTimeUtc, TimeSpan.Zero),
+            lastWriteTimeUtc,
             hash);
     }
+
+    private static bool MetadataChanged(
+        SnapshotEntryDto previous,
+        bool isDirectory,
+        bool isReparsePoint,
+        long size,
+        DateTimeOffset lastWriteTimeUtc) =>
+        previous.IsDirectory != isDirectory
+        || previous.IsReparsePoint != isReparsePoint
+        || previous.Size != size
+        || previous.LastWriteTimeUtc != lastWriteTimeUtc;
 }

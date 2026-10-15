@@ -124,6 +124,8 @@ public sealed class RealExecutorRoundTripTests : IDisposable
         authorization.WatchScopes.Should().ContainSingle().Which.Should().Be(_root);
         snapshot.EntryLimitExceeded.Should().BeFalse();
         snapshot.Entries.Should().HaveCount(5_000);
+        snapshot.Entries.All(entry => entry.Sha256 is null).Should().BeTrue("unchanged entries are metadata-only");
+        timer.Elapsed.Should().BeLessThan(TimeSpan.FromMilliseconds(500));
         _output.WriteLine($"5,000-file default watch scope=[{string.Join(", ", authorization.WatchScopes)}]");
         _output.WriteLine($"snapshot entries={snapshot.Entries.Count}; elapsed={timer.Elapsed.TotalMilliseconds:F2}ms; default cap=10000; cap_triggered={snapshot.EntryLimitExceeded}");
     }

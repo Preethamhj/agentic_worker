@@ -93,7 +93,8 @@ $venvPython = "$venvDir\Scripts\python.exe"
 if (Test-Path $venvPython) {
     Write-Host "Installing ai-server dependencies..." -ForegroundColor Yellow
     & $venvPython -m pip install --upgrade pip
-    & $venvPython -m pip install -e "$aiServerDir[dev]"
+    & $venvPython -m pip install -r "$aiServerDir\requirements.lock"
+    & $venvPython -m pip install -e "$aiServerDir" --no-deps
     $status["venv"] = "OK ($venvDir)"
 } else {
     $status["venv"] = "FAIL (venv python not found)"

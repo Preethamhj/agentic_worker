@@ -132,7 +132,7 @@ public class ExecutorTests
     [Fact]
     public async Task AppLaunchExecutor_Maps_AppId_And_Refuses_FreeForm_Args_Or_Elevation()
     {
-        var executor = new AppLaunchExecutor(_toolPolicy, _authService);
+        var executor = new AppLaunchExecutor(_toolPolicy, _authService, new WindowsElevationChecker());
 
         var record = _authService.IssueAuthorization(
             taskId: "task-4",
@@ -173,7 +173,8 @@ public class ExecutorTests
         };
         var policyWithCustomApp = new ToolPolicy(_toolPolicy.Tools.Values, new[] { customApp });
 
-        var executor = new AppLaunchExecutor(policyWithCustomApp, _authService);
+        var elevationChecker = new TestElevationChecker(false);
+        var executor = new AppLaunchExecutor(policyWithCustomApp, _authService, elevationChecker);
 
         var record = _authService.IssueAuthorization(
             taskId: "task-path-launch",
@@ -186,18 +187,28 @@ public class ExecutorTests
         var auth = _authService.Consume(record, "step-1");
 
         var receipt = await executor.ExecuteAsync(auth);
-        var isElevated = OperatingSystem.IsWindows()
-            && new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator);
-
         receipt.ReportedSuccess.Should().BeFalse("Executables resolved via PATH or relative names outside system folders must be rejected");
-        if (isElevated)
-        {
-            receipt.Stderr.Should().Contain("elevated", "elevation is rejected before executable resolution");
-        }
-        else
-        {
-            receipt.Stderr.Should().Contain("PATH resolution is prohibited");
-        }
+        receipt.Stderr.Should().Contain("PATH resolution is prohibited");
+        elevationChecker.CallCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task AppLaunchExecutor_Uses_Injected_Elevation_Checker_Deterministically()
+    {
+        var elevatedChecker = new TestElevationChecker(true);
+        var executor = new AppLaunchExecutor(_toolPolicy, _authService, elevatedChecker);
+        var record = _authService.IssueAuthorization(
+            taskId: "task-elevation-check",
+            stepId: "step-elevation-check",
+            toolId: "app.launch",
+            rawArgs: new Dictionary<string, object?> { ["app_id"] = "calc" });
+        var authorization = _authService.Consume(record, record.StepId);
+
+        var receipt = await executor.ExecuteAsync(authorization);
+
+        elevatedChecker.CallCount.Should().Be(1);
+        receipt.ReportedSuccess.Should().BeFalse();
+        receipt.Stderr.Should().Contain("elevated");
     }
 
     [Fact]
@@ -280,6 +291,17 @@ public class ExecutorTests
         {
             if (Directory.Exists(junctionSubdir)) Directory.Delete(junctionSubdir);
             if (Directory.Exists(outsideDir)) Directory.Delete(outsideDir);
+        }
+    }
+
+    private sealed class TestElevationChecker(bool isElevated) : IElevationChecker
+    {
+        public int CallCount { get; private set; }
+
+        public bool IsElevated()
+        {
+            CallCount++;
+            return isElevated;
         }
     }
 }

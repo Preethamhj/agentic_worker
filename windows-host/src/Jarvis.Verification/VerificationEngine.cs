@@ -53,7 +53,13 @@ public sealed class VerificationEngine : IVerifier
     {
         ArgumentNullException.ThrowIfNull(authorization);
         cancellationToken.ThrowIfCancellationRequested();
-        var snapshot = _snapshots.Capture(authorization.WatchScopes, cancellationToken);
+        var target = authorization.CanonicalArgs.TryGetValue("path", out var path) && path is string targetPath
+            ? targetPath
+            : null;
+        var snapshot = _snapshots.Capture(
+            authorization.WatchScopes,
+            cancellationToken,
+            authorizedTarget: target);
         return Task.FromResult(new StepToken(
             authorization,
             authorization.Nonce,
@@ -177,7 +183,15 @@ public sealed class VerificationEngine : IVerifier
             stages.Add(NotRunStage(5, "AttributeVerification", "Authorization validation failed."));
         }
 
-        var afterSnapshot = _snapshots.Capture(authorization.WatchScopes, cancellationToken);
+        var beforeEntries = token.BeforeSnapshots.ToDictionary(entry => entry.Path, StringComparer.OrdinalIgnoreCase);
+        var targetPath = authorization.CanonicalArgs.TryGetValue("path", out var path) && path is string target
+            ? target
+            : null;
+        var afterSnapshot = _snapshots.Capture(
+            authorization.WatchScopes,
+            cancellationToken,
+            beforeEntries,
+            targetPath);
         var sideEffectOutcome = CompareSnapshots(token, afterSnapshot, authorization, sideEffects, reasons);
         stages.Add(Stage(6, "SideEffectDetection", sideEffectOutcome == "PASSED",
             sideEffectOutcome == "PASSED" ? "Watched filesystem changes are within allowed_effects." : string.Join("; ", reasons.Where(r => r.Contains("side effect", StringComparison.OrdinalIgnoreCase) || r.Contains("snapshot", StringComparison.OrdinalIgnoreCase) || r.Contains("authorized creation", StringComparison.OrdinalIgnoreCase))),
@@ -307,6 +321,7 @@ public sealed class VerificationEngine : IVerifier
         return mismatches.Count == 0;
     }
 
+
     private bool ValidateEvidence(
         EvidenceDto evidence,
         StepToken token,
@@ -416,7 +431,7 @@ public sealed class VerificationEngine : IVerifier
                 kind = "created";
             else if (hadBefore && !hasAfter)
                 kind = "deleted";
-            else if (hadBefore && hasAfter && before != current)
+            else if (hadBefore && hasAfter && MetadataChanged(before!, current!))
                 kind = "modified";
             if (kind is null)
                 continue;
@@ -464,6 +479,12 @@ public sealed class VerificationEngine : IVerifier
             return Escalate;
         return executed.All(stage => stage.Outcome == "PASSED") ? Verified : Failed;
     }
+
+    private static bool MetadataChanged(SnapshotEntryDto before, SnapshotEntryDto after) =>
+        before.IsDirectory != after.IsDirectory
+        || before.IsReparsePoint != after.IsReparsePoint
+        || before.Size != after.Size
+        || before.LastWriteTimeUtc != after.LastWriteTimeUtc;
 
     private static VerificationStageResultDto Stage(int number, string name, bool passed, string detail, string? outcome = null) =>
         new(number, name, passed, detail, outcome ?? (passed ? "PASSED" : Failed));
