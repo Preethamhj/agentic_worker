@@ -26,7 +26,7 @@ jobs:
       - name: Environment Setup
         shell: powershell
         run: |
-          .\scripts\setup-windows.ps1 -SkipOllamaPull
+          .\scripts\setup-windows.ps1 -SkipOllamaPull -SkipOllamaCheck
 
       - name: Run All Checks
         shell: powershell

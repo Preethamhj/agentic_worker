@@ -292,6 +292,13 @@ to appear as a new authorized snapshot entry. The complete local gate passed
 after this change: 261 C# tests, 103 Python tests, lint/type checks, and C#
 formatting.
 
+The second Actions run (`38603693170`) installed the project dependencies but
+failed because the hosted runner did not have Ollama; `setup-windows.ps1`
+treated that as a required tool even though CI skips model pulling and the test
+suite does not launch a model. CI now passes `-SkipOllamaCheck` as well as
+`-SkipOllamaPull`; ordinary local setup keeps its existing Ollama requirement.
+A third push run will validate the CI-only opt-out.
+
 Close-out commands:
 
 ```powershell

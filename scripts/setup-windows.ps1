@@ -1,7 +1,8 @@
 # setup-windows.ps1 - Environment Setup for Jarvis Agent
 [CmdletBinding()]
 param(
-    [switch]$SkipOllamaPull
+    [switch]$SkipOllamaPull,
+    [switch]$SkipOllamaCheck
 )
 
 $ErrorActionPreference = "Stop"
@@ -66,12 +67,16 @@ try {
 }
 
 # 4. Check Ollama
-try {
-    $ollamaVer = & ollama --version 2>$null
-    $status["ollama"] = "OK ($ollamaVer)"
-} catch {
-    Write-Warning "Ollama missing. Installing via winget..."
-    & winget install Ollama.Ollama --accept-source-agreements --accept-package-agreements
+if ($SkipOllamaCheck) {
+    $status["ollama"] = "SKIPPED (not required for this environment)"
+} else {
+    try {
+        $ollamaVer = & ollama --version 2>$null
+        $status["ollama"] = "OK ($ollamaVer)"
+    } catch {
+        Write-Warning "Ollama missing. Installing via winget..."
+        & winget install Ollama.Ollama --accept-source-agreements --accept-package-agreements
+    }
 }
 
 # 5. Create ai-server/.venv and install dependencies
