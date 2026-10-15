@@ -8,33 +8,57 @@ The CLI now signs the allowlisted executable path for launches and registers the
 
 ## Validation results
 
-The final `scripts\check-all.ps1` run passed:
+Phase 3b close-out validation on 2026-10-15 passed:
 
 | Gate | Result |
 |---|---:|
 | C# build | Passed, 0 warnings, 0 errors |
-| C# tests | 274 passed, 0 failed, 0 skipped |
+| C# tests | 283 passed, 0 failed, 0 skipped |
 | Python tests | 103 passed, 0 failed |
 | mypy | No issues in 29 source files |
 | C# formatting | Passed |
 | Python warnings | 4 deprecation warnings from the existing Starlette/HTTPX TestClient stack |
 
-The focused verifier suite passed 37/37 tests. The E2E suite passed 26/26 and the architecture suite passed 6/6. There are no skipped tests. A positive process-verification result requires a non-elevated host; elevated-process rejection is intentional, and deterministic injected elevation tests cover both checker outcomes.
+The focused verifier suite passed 46/46 tests. The Phase 3b verification class passed 17/17, including its search evidence and process-launch cases. The E2E suite passed 26/26 and the architecture suite passed 6/6.
 
 ### Phase 3b verifier tests
 
-The eight dedicated tests in `Phase3bVerificationTests` passed:
+All 17 tests in `Phase3bVerificationTests` passed locally:
 
 - `Search_Verifies_Only_Existing_Matching_Paths_Inside_Signed_Root`
 - `Search_Verifies_A_Matching_Existing_Path_Without_Trusting_Receipt_Success_Fields`
 - `Search_Fails_On_Malformed_Receipt_Path_Claims`
+- `Search_UnderReporting_Is_Failed_By_Independent_FindFirstFileEx_Enumeration`
+- `Search_OverReporting_Is_Failed_By_Independent_FindFirstFileEx_Enumeration`
+- `Search_Reaching_Result_Cap_Escalates_Instead_Of_Passing`
+- `Search_Exact_Kannada_Matches_In_Nested_Folders_Are_Verified`
+- `Search_Exact_Clean_Results_Verify_In_50_Consecutive_Runs`
 - `AppLaunch_Fails_When_Receipt_Claims_Success_But_No_Child_Process_Exists`
 - `AppLaunch_Verifies_Live_NonElevated_Child_By_OS_Image_And_Parent`
 - `ScheduleReminder_Verification_Fails_When_Task_Is_Missing`
 - `ScheduleReminder_Executor_Rejects_Subsecond_Time_Without_Registering`
+- `ScheduleReminder_With_Wrong_Time_Is_Failed`
+- `ScheduleReminder_With_Wrong_Action_Is_Failed`
+- `ScheduleReminder_Disabled_Task_Is_Failed`
+- `ScheduleReminder_Extra_Unauthorized_Task_Is_Failed`
 - `ScheduleReminder_Executor_Creates_A_Task_That_Independent_Xml_Verification_Accepts`
 
-The full 37-test Verification suite also includes the prior file/folder fault fixtures, real executor round trips, snapshot tests, persistence checks, and clean-run latency case. The E2E suite covers CLI registration and resolved-path authorization; architecture tests guard both direct and transitive project dependencies.
+Search receipts are intentionally untrusted. The engine passes the receipt's reported path list to `SearchEvidenceCollector`, which compares the claimed path set against an independent `FindFirstFileEx` enumeration of the signed root. Under-reporting and over-reporting fail; reaching the signed result cap escalates; exact claims, including nested Kannada paths, verify. Fifty consecutive clean runs produced no false failures.
+
+`AppLaunch_Verifies_Live_NonElevated_Child_By_OS_Image_And_Parent` uses `[NonElevatedFact]`; it ran locally with no skip. On an elevated Windows CI runner, this one fact is skipped because that test must verify a normal-integrity child. No test requires an elevated host, so `[ElevatedFact]` is not applied. The tests have no early returns.
+
+The complete 46-test Verification suite also includes the prior file/folder fault fixtures, real executor round trips, snapshot tests, persistence checks, and clean-run latency case. The E2E suite covers CLI registration and resolved-path authorization; architecture tests guard both direct and transitive project dependencies.
+
+### Close-out reproduction and cleanup
+
+```powershell
+dotnet test windows-host\tests\Jarvis.Verification.Tests\Jarvis.Verification.Tests.csproj --filter FullyQualifiedName~Phase3bVerificationTests --no-restore
+.\scripts\check-all.ps1
+schtasks.exe /Query /FO LIST | Select-String -Pattern 'Jarvis'
+Get-Process -Name notepad,calc,CalculatorApp,mspaint -ErrorAction SilentlyContinue
+```
+
+The task and process checks returned no matches after verification tests completed. The test suite had launched two Calculator processes; both were closed by their specific process IDs before the final empty process check.
 
 The 5,000-file snapshot remeasurement enumerated 5,000 entries in **30.29 ms**, below the 10,000-entry cap. A large user's immediate parent folder is still fully enumerated non-recursively; if it exceeds the configured cap, verification escalates rather than passing. Create-tool default watch scope is the target's parent folder, non-recursive.
 

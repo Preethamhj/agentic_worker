@@ -191,6 +191,59 @@ public sealed class Phase3bVerificationTests : IDisposable
     }
 
     [Fact]
+    public async AsyncTask Search_Exact_Kannada_Matches_In_Nested_Folders_Are_Verified()
+    {
+        var searchRoot = Path.Combine(_root, "search-kannada-nested");
+        var nestedDirectory = Path.Combine(searchRoot, "ಕನ್ನಡ", "ಒಳಗೆ");
+        Directory.CreateDirectory(nestedDirectory);
+        var rootFile = Path.Combine(searchRoot, "ನಮಸ್ಕಾರ.txt");
+        var nestedFile = Path.Combine(nestedDirectory, "ಜಾರ್ವಿಸ್.txt");
+        await File.WriteAllTextAsync(rootFile, "root");
+        await File.WriteAllTextAsync(nestedFile, "nested");
+        var authorization = IssueSearchAuthorization(searchRoot, "*.txt", "kannada-nested");
+        var token = await _engine.BeginStepAsync(authorization);
+        _authorizationService.Consume(authorization, authorization.StepId);
+
+        var result = await _engine.VerifyAsync(
+            LyingReceipt(authorization) with
+            {
+                Stdout = JsonSerializer.Serialize(new[] { rootFile, nestedFile })
+            },
+            HostObservation(),
+            token);
+
+        result.Status.Should().Be("VERIFIED");
+        result.Evidence.Single().Observed["independently_enumerated_count"].Should().Be(2);
+        result.Evidence.Single().Observed["reported_path_count"].Should().Be(2);
+        result.Evidence.Single().Observed["enumerated_paths"]
+            .Should().BeEquivalentTo(new[] { Path.GetFullPath(rootFile), Path.GetFullPath(nestedFile) });
+    }
+
+    [Fact]
+    public async AsyncTask Search_Exact_Clean_Results_Verify_In_50_Consecutive_Runs()
+    {
+        var searchRoot = Path.Combine(_root, "search-50-clean-runs");
+        Directory.CreateDirectory(searchRoot);
+        var matchingFile = Path.Combine(searchRoot, "found.txt");
+        await File.WriteAllTextAsync(matchingFile, "clean search result");
+
+        for (var run = 0; run < 50; run++)
+        {
+            var authorization = IssueSearchAuthorization(searchRoot, "*.txt", $"clean-run-{run}");
+            var token = await _engine.BeginStepAsync(authorization);
+            _authorizationService.Consume(authorization, authorization.StepId);
+
+            var result = await _engine.VerifyAsync(
+                LyingReceipt(authorization) with { Stdout = JsonSerializer.Serialize(new[] { matchingFile }) },
+                HostObservation(),
+                token);
+
+            result.Status.Should().Be("VERIFIED", $"clean search run {run + 1} should not produce a false failure");
+            result.Evidence.Should().ContainSingle(item => item.Match);
+        }
+    }
+
+    [Fact]
     public async AsyncTask AppLaunch_Fails_When_Receipt_Claims_Success_But_No_Child_Process_Exists()
     {
         var imagePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "where.exe");
@@ -219,7 +272,7 @@ public sealed class Phase3bVerificationTests : IDisposable
         result.Stages.Single(stage => stage.Stage == 5).Passed.Should().BeFalse();
     }
 
-    [Fact]
+    [NonElevatedFact]
     public async AsyncTask AppLaunch_Verifies_Live_NonElevated_Child_By_OS_Image_And_Parent()
     {
         var imagePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "ping.exe");
@@ -515,8 +568,6 @@ public sealed class Phase3bVerificationTests : IDisposable
 
             receipt.ReportedSuccess.Should().BeTrue();
             var result = await _engine.VerifyAsync(receipt, observation, token);
-            Console.WriteLine($"Result: {result.Status} | {string.Join(" | ", result.Reasons)}");
-            Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(result.Evidence));
 
             result.Status.Should().Be("VERIFIED");
             result.Evidence.Should().ContainSingle(item => item.Match);
