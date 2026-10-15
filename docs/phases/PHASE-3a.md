@@ -299,6 +299,12 @@ suite does not launch a model. CI now passes `-SkipOllamaCheck` as well as
 `-SkipOllamaPull`; ordinary local setup keeps its existing Ollama requirement.
 A third push run will validate the CI-only opt-out.
 
+The third Actions run (`38604609121`) passed environment setup but exposed an
+existing elevated-runner assumption in a Tools test. The app-launch executor
+correctly refused the hosted runner before PATH resolution; the test now
+asserts elevation rejection on elevated hosts and PATH rejection on
+non-elevated hosts. A fourth push run will validate the full gate.
+
 Close-out commands:
 
 ```powershell

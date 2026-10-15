@@ -186,9 +186,18 @@ public class ExecutorTests
         var auth = _authService.Consume(record, "step-1");
 
         var receipt = await executor.ExecuteAsync(auth);
+        var isElevated = OperatingSystem.IsWindows()
+            && new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator);
 
         receipt.ReportedSuccess.Should().BeFalse("Executables resolved via PATH or relative names outside system folders must be rejected");
-        receipt.Stderr.Should().Contain("PATH resolution is prohibited");
+        if (isElevated)
+        {
+            receipt.Stderr.Should().Contain("elevated", "elevation is rejected before executable resolution");
+        }
+        else
+        {
+            receipt.Stderr.Should().Contain("PATH resolution is prohibited");
+        }
     }
 
     [Fact]
