@@ -18,7 +18,7 @@ public sealed class VerificationEngine : IVerifier
     private const string Failed = "FAILED";
     private const string Escalate = "ESCALATE";
     private const string NotRun = "NOT_RUN";
-    private static readonly TimeSpan FileTimeResolutionTolerance = TimeSpan.FromMilliseconds(10);
+    private static readonly TimeSpan FileTimeResolutionTolerance = TimeSpan.FromMilliseconds(100);
 
     private readonly IAuthorizationVerifier _authorizationVerifier;
     private readonly IAuditStore _auditStore;

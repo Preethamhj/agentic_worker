@@ -279,6 +279,19 @@ scripts\check-all.ps1: 261 C# passed; 103 Python passed; formatting passed; ALL 
 targeting every branch. Push commit and GitHub Actions run ID/result are
 recorded here after the remote workflow completes.
 
+The first Actions run (`38601729757`) reached the workflow but failed during
+environment setup because `ai-server/pyproject.toml` pinned `httpx==0.27.0`
+while `ollama==0.1.7` requires `httpx<0.26.0`. The dependency pin and
+`ai-server/requirements.lock` are corrected to `httpx==0.25.2`, which satisfies
+Ollama's declared range.
+
+The first local check after the dependency correction exposed one clean-folder
+timestamp flake (filesystem creation time 12 ms before host start). The
+creation-time tolerance is now 100 ms, while stage 6 still requires the target
+to appear as a new authorized snapshot entry. The complete local gate passed
+after this change: 261 C# tests, 103 Python tests, lint/type checks, and C#
+formatting.
+
 Close-out commands:
 
 ```powershell
@@ -294,6 +307,11 @@ dotnet test windows-host\tests\Jarvis.Verification.Tests\Jarvis.Verification.Tes
 - Directory metadata changes for the immediate parent of an authorized new
   entry are allowed only when that exact sibling creation is itself authorized;
   all other changed/deleted/created entries remain unauthorized side effects.
+- OS creation timestamps are tolerated up to 100 ms before the host start
+  anchor because filesystem timestamp metadata may lag the host clock; Stage 6
+  still requires the authorized target to be a new entry between the before and
+  after snapshots, so a pre-existing target cannot pass on timestamp tolerance
+  alone.
 - Snapshot verification covers only declared watch scopes. Files above 1 MiB
   are represented by size and mtime in snapshots and are not snapshot-hashed;
   the target file's independent evidence is SHA-256 hashed through an OS handle.
