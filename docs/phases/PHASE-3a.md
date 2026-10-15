@@ -276,8 +276,10 @@ scripts\check-all.ps1: 261 C# passed; 103 Python passed; formatting passed; ALL 
 ## CI close-out
 
 `.github/workflows/ci.yml` now runs on pushes to every branch and pull requests
-targeting every branch. Push commit and GitHub Actions run ID/result are
-recorded here after the remote workflow completes.
+targeting every branch. GitHub Actions run
+[38605608513](https://github.com/Preethamhj/agentic_worker/actions/runs/38605608513)
+completed successfully on branch `phase-3a`, commit `2f832a0`.
+Environment setup and `Run All Checks` both succeeded.
 
 The first Actions run (`38601729757`) reached the workflow but failed during
 environment setup because `ai-server/pyproject.toml` pinned `httpx==0.27.0`
@@ -303,7 +305,7 @@ The third Actions run (`38604609121`) passed environment setup but exposed an
 existing elevated-runner assumption in a Tools test. The app-launch executor
 correctly refused the hosted runner before PATH resolution; the test now
 asserts elevation rejection on elevated hosts and PATH rejection on
-non-elevated hosts. A fourth push run will validate the full gate.
+non-elevated hosts. The fourth run listed above passed the full gate.
 
 Close-out commands:
 
