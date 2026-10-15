@@ -17,5 +17,6 @@
     <ProjectReference Include="..\..\src\Jarvis.Verification\Jarvis.Verification.csproj" />
     <ProjectReference Include="..\..\src\Jarvis.Safety\Jarvis.Safety.csproj" />
     <ProjectReference Include="..\..\src\Jarvis.Infrastructure\Jarvis.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Jarvis.Tools\Jarvis.Tools.csproj" />
   </ItemGroup>
 </Project>

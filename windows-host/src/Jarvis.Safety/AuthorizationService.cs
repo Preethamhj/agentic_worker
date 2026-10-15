@@ -22,6 +22,7 @@ public enum AuthorizationLifecycleState
 /// </summary>
 public sealed class AuthorizationService : IAuthorizationVerifier
 {
+    private static readonly UTF8Encoding Utf8NoBom = new(false);
     private readonly IDpapiKeyStore _keyStore;
     private readonly IClock _clock;
     private readonly IAuditStore? _auditStore;
@@ -429,9 +430,7 @@ public sealed class AuthorizationService : IAuthorizationVerifier
                 if (args.TryGetValue("path", out var p)) expected["path"] = p;
                 if (args.TryGetValue("content", out var content) && content is string text)
                 {
-                    var contentBytes = Encoding.UTF8.GetPreamble()
-                        .Concat(Encoding.UTF8.GetBytes(text))
-                        .ToArray();
+                    var contentBytes = Utf8NoBom.GetBytes(text);
                     expected["size"] = contentBytes.LongLength;
                     expected["sha256"] = Convert.ToHexString(SHA256.HashData(contentBytes));
                 }

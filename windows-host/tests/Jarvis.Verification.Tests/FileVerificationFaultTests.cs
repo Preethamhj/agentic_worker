@@ -14,6 +14,7 @@ namespace Jarvis.Verification.Tests;
 public sealed class FileVerificationFaultTests : IDisposable
 {
     private const string Content = "authorized file contents";
+    private static readonly UTF8Encoding Utf8NoBom = new(false);
     private readonly string _root = Path.Combine(Path.GetTempPath(), $"jarvis-verify-{Guid.NewGuid():N}");
     private readonly TestClock _clock = new();
     private readonly AuthorizationService _authorizationService;
@@ -43,7 +44,7 @@ public sealed class FileVerificationFaultTests : IDisposable
     public async Task File_With_Wrong_Content_Is_Failed()
     {
         var setup = await PrepareAsync("fs.create_file", "wrong-content.txt");
-        File.WriteAllText(setup.Target, "different content", Encoding.UTF8);
+        File.WriteAllText(setup.Target, "different content", Utf8NoBom);
 
         var result = await VerifyAsync(setup);
 
@@ -54,7 +55,7 @@ public sealed class FileVerificationFaultTests : IDisposable
     public async Task Truncated_File_Is_Failed()
     {
         var setup = await PrepareAsync("fs.create_file", "truncated.txt");
-        File.WriteAllText(setup.Target, Content[..5], Encoding.UTF8);
+        File.WriteAllText(setup.Target, Content[..5], Utf8NoBom);
 
         var result = await VerifyAsync(setup);
 
@@ -65,7 +66,7 @@ public sealed class FileVerificationFaultTests : IDisposable
     public async Task File_Created_At_Wrong_Location_Is_Failed()
     {
         var setup = await PrepareAsync("fs.create_file", "wrong-location.txt");
-        File.WriteAllText(Path.Combine(_root, "elsewhere.txt"), Content, Encoding.UTF8);
+        File.WriteAllText(Path.Combine(_root, "elsewhere.txt"), Content, Utf8NoBom);
 
         var result = await VerifyAsync(setup);
 
@@ -76,8 +77,8 @@ public sealed class FileVerificationFaultTests : IDisposable
     public async Task Extra_Unauthorized_File_Is_Failed()
     {
         var setup = await PrepareAsync("fs.create_file", "expected.txt");
-        File.WriteAllText(setup.Target, Content, Encoding.UTF8);
-        File.WriteAllText(Path.Combine(_root, "unauthorized.txt"), "unexpected", Encoding.UTF8);
+        File.WriteAllText(setup.Target, Content, Utf8NoBom);
+        File.WriteAllText(Path.Combine(_root, "unauthorized.txt"), "unexpected", Utf8NoBom);
 
         var result = await VerifyAsync(setup);
 
@@ -89,10 +90,10 @@ public sealed class FileVerificationFaultTests : IDisposable
     public async Task Modified_Unauthorized_File_Is_Failed()
     {
         var modifiedPath = Path.Combine(_root, "modified.txt");
-        File.WriteAllText(modifiedPath, "before", Encoding.UTF8);
+        File.WriteAllText(modifiedPath, "before", Utf8NoBom);
         var setup = await PrepareAsync("fs.create_file", "authorized.txt");
-        File.WriteAllText(setup.Target, Content, Encoding.UTF8);
-        File.WriteAllText(modifiedPath, "after", Encoding.UTF8);
+        File.WriteAllText(setup.Target, Content, Utf8NoBom);
+        File.WriteAllText(modifiedPath, "after", Utf8NoBom);
 
         var result = await VerifyAsync(setup);
 
@@ -104,9 +105,9 @@ public sealed class FileVerificationFaultTests : IDisposable
     public async Task Deleted_Unauthorized_File_Is_Failed()
     {
         var deletedPath = Path.Combine(_root, "deleted.txt");
-        File.WriteAllText(deletedPath, "before", Encoding.UTF8);
+        File.WriteAllText(deletedPath, "before", Utf8NoBom);
         var setup = await PrepareAsync("fs.create_file", "authorized.txt");
-        File.WriteAllText(setup.Target, Content, Encoding.UTF8);
+        File.WriteAllText(setup.Target, Content, Utf8NoBom);
         File.Delete(deletedPath);
 
         var result = await VerifyAsync(setup);
@@ -143,7 +144,7 @@ public sealed class FileVerificationFaultTests : IDisposable
     public async Task Expired_Authorization_Is_Failed()
     {
         var setup = await PrepareAsync("fs.create_file", "expired.txt");
-        File.WriteAllText(setup.Target, Content, Encoding.UTF8);
+        File.WriteAllText(setup.Target, Content, Utf8NoBom);
         _clock.UtcNow = DateTimeOffset.Parse(setup.Authorization.VerifyBefore).AddSeconds(1);
 
         var result = await VerifyAsync(setup, advanceClock: false);
@@ -155,7 +156,7 @@ public sealed class FileVerificationFaultTests : IDisposable
     public async Task Unconsumed_Authorization_Is_Failed()
     {
         var setup = await PrepareAsync("fs.create_file", "unconsumed.txt", consume: false);
-        File.WriteAllText(setup.Target, Content, Encoding.UTF8);
+        File.WriteAllText(setup.Target, Content, Utf8NoBom);
 
         var result = await VerifyAsync(setup);
 
@@ -166,7 +167,7 @@ public sealed class FileVerificationFaultTests : IDisposable
     public async Task Replayed_Nonce_Is_Failed()
     {
         var setup = await PrepareAsync("fs.create_file", "replay.txt");
-        File.WriteAllText(setup.Target, Content, Encoding.UTF8);
+        File.WriteAllText(setup.Target, Content, Utf8NoBom);
         var first = await VerifyAsync(setup);
         first.Status.Should().Be("VERIFIED");
 
@@ -179,7 +180,7 @@ public sealed class FileVerificationFaultTests : IDisposable
     public async Task Stale_Evidence_Is_Failed()
     {
         var setup = await PrepareAsync("fs.create_file", "stale.txt");
-        File.WriteAllText(setup.Target, Content, Encoding.UTF8);
+        File.WriteAllText(setup.Target, Content, Utf8NoBom);
         var observation = CompleteObservation(setup);
         _clock.UtcNow = observation.CompletedAtUtc.AddSeconds(31);
 
@@ -206,7 +207,6 @@ public sealed class FileVerificationFaultTests : IDisposable
     {
         var setup = await PrepareAsync("fs.create_file", "locked.txt");
         using var locked = new FileStream(setup.Target, FileMode.CreateNew, FileAccess.Write, FileShare.None);
-        locked.Write(Encoding.UTF8.GetPreamble());
         locked.Write(Encoding.UTF8.GetBytes(Content));
         locked.Flush();
 
@@ -221,7 +221,7 @@ public sealed class FileVerificationFaultTests : IDisposable
         File.WriteAllText(Path.Combine(_root, "existing-a.txt"), "a");
         File.WriteAllText(Path.Combine(_root, "existing-b.txt"), "b");
         var setup = await PrepareAsync("fs.create_file", "capped.txt", maxSnapshotEntries: 1);
-        File.WriteAllText(setup.Target, Content, Encoding.UTF8);
+        File.WriteAllText(setup.Target, Content, Utf8NoBom);
 
         var result = await VerifyAsync(setup);
 
@@ -239,7 +239,7 @@ public sealed class FileVerificationFaultTests : IDisposable
         for (var i = 0; i < 50; i++)
         {
             var file = await PrepareAsync("fs.create_file", Path.Combine("nested", $"clean-{i}.txt"));
-            File.WriteAllText(file.Target, Content, Encoding.UTF8);
+            File.WriteAllText(file.Target, Content, Utf8NoBom);
             var fileTimer = Stopwatch.StartNew();
             var fileResult = await VerifyAsync(file);
             fileTimer.Stop();
@@ -271,7 +271,7 @@ public sealed class FileVerificationFaultTests : IDisposable
     public async Task Verification_Evidence_And_Result_Are_Persisted()
     {
         var setup = await PrepareAsync("fs.create_file", "persisted.txt");
-        File.WriteAllText(setup.Target, Content, Encoding.UTF8);
+        File.WriteAllText(setup.Target, Content, Utf8NoBom);
 
         var result = await VerifyAsync(setup);
 
@@ -306,7 +306,7 @@ public sealed class FileVerificationFaultTests : IDisposable
                 var token = await engine.BeginStepAsync(authorization);
                 authorizationService.Consume(authorization, authorization.StepId);
                 var started = DateTimeOffset.UtcNow;
-                File.WriteAllText(target, Content, Encoding.UTF8);
+                File.WriteAllText(target, Content, Utf8NoBom);
                 var completed = DateTimeOffset.UtcNow;
                 clock.UtcNow = completed;
                 var receipt = LyingReceipt(authorization);

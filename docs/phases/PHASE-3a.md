@@ -203,8 +203,8 @@ verification work:
 
 | Tool | Runs | p50 | p95 | Target |
 |---|---:|---:|---:|---:|
-| `fs.create_file` | 50 | 15.08 ms | 41.41 ms | p95 < 500 ms |
-| `fs.create_folder` | 50 | 17.77 ms | 35.39 ms | p95 < 500 ms |
+| `fs.create_file` | 50 | 31.95 ms | 61.11 ms | p95 < 500 ms |
+| `fs.create_folder` | 50 | 30.54 ms | 52.99 ms | p95 < 500 ms |
 
 Both targets pass.
 
@@ -213,17 +213,78 @@ Both targets pass.
 `scripts\check-all.ps1`: **PASS**
 
 - C# build: 0 warnings, 0 errors.
-- C# tests: 254 passed, 0 failed.
+- C# tests: 261 passed, 0 failed.
   - Contracts: 46
   - Core: 56
   - Safety: 92
   - Tools: 10
-  - Verification: 19
+  - Verification: 26
   - Architecture: 6
   - E2E: 25
 - Python tests: 103 passed, 1 existing Starlette/httpx deprecation warning.
 - Python lint/type checks: passed; no issues in 29 source files.
 - C# formatting verification: passed.
+
+## Phase 3a close-out round trips and scope measurement
+
+The Verification.Tests project references `Jarvis.Tools` for integration tests;
+the `Jarvis.Verification` production project still references only Contracts
+and Infrastructure. The added tests use a real `AuthorizationService`, the
+real `CreateFileExecutor` or `CreateFolderExecutor`, host timestamps from
+`SystemClock`, and the real `VerificationEngine`.
+
+`Jarvis.Verification.Tests.RealExecutorRoundTripTests`:
+
+- `Real_CreateFile_Executor_RoundTrips_And_Verifies_Exact_Utf8_Bytes` (five
+  data cases: Kannada text, CRLF, trailing CRLF, empty content, and 900 KiB).
+- `Real_CreateFolder_Executor_RoundTrips_And_Verifies`
+- `Default_WatchScope_Snapshot_Of_5000_Files_Reports_Time_And_Cap`
+
+All seven executions passed with `VERIFIED`. The first run exposed that
+`Encoding.UTF8` caused a UTF-8 BOM to be written; the file executor now writes
+UTF-8 without a BOM, and authorization derives the expected size and SHA-256
+from exactly `UTF8Encoding(false).GetBytes(content)`. Round-trip tests assert
+byte-for-byte file contents and the signed expected size/hash.
+
+For the real file and folder round trips, default `watch_scopes` is the
+immediate containing directory of the authorized target. Each run printed its
+temporary root; the test asserts exactly one scope and that it equals this
+parent directory. This scope is recursive for snapshot collection.
+
+On this Windows host, the 5,000-file scope produced 5,000 snapshot entries in
+**2,217.03 ms**; the default 10,000-entry cap **did not trigger**. The chosen
+large-folder behavior is conservative: keep the fixed cap, never truncate and
+pass; exceeding 10,000 entries escalates verification. A user working in a
+large folder must choose a narrower authorized folder/scope for a verified
+result. A 5,000-entry scope remains under the cap but incurs substantial
+latency (above the per-file-step 500 ms target); this measured performance
+limitation is recorded rather than hidden or bypassed.
+
+The focused Verification.Tests run passed **26/26**. The measured clean
+verification p95 after adding real round trips was 61.11 ms for file creation
+and 52.99 ms for folder creation (50 runs each).
+
+### Manual check output
+
+```text
+Real file round trips: 5/5 VERIFIED (Kannada, CRLF, trailing CRLF, empty, 900 KiB)
+Real folder round trip: VERIFIED
+5,000-entry default watch scope: entries=5000; elapsed=2217.03ms; cap=10000; cap_triggered=False
+scripts\check-all.ps1: 261 C# passed; 103 Python passed; formatting passed; ALL CHECKS PASSED
+```
+
+## CI close-out
+
+`.github/workflows/ci.yml` now runs on pushes to every branch and pull requests
+targeting every branch. Push commit and GitHub Actions run ID/result are
+recorded here after the remote workflow completes.
+
+Close-out commands:
+
+```powershell
+dotnet test windows-host\tests\Jarvis.Verification.Tests\Jarvis.Verification.Tests.csproj --configuration Release --no-build --logger "console;verbosity=detailed"
+.\scripts\check-all.ps1
+```
 
 ## Decisions, deviations, and limitations
 

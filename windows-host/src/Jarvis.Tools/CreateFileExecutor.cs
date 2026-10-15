@@ -15,6 +15,8 @@ namespace Jarvis.Tools;
 /// </summary>
 public sealed class CreateFileExecutor : IToolExecutor
 {
+    private static readonly UTF8Encoding Utf8NoBom = new(false);
+
     public string ToolId => "fs.create_file";
 
     private readonly PathPolicy _pathPolicy;
@@ -79,7 +81,7 @@ public sealed class CreateFileExecutor : IToolExecutor
                 return FailureReceipt(auth, startedAt, $"Target file '{path}' already exists. Overwrite prohibited.");
             }
 
-            await File.WriteAllTextAsync(tempFilePath, content, Encoding.UTF8, cancellationToken);
+            await File.WriteAllTextAsync(tempFilePath, content, Utf8NoBom, cancellationToken);
 
             // Atomic move without overwrite
             File.Move(tempFilePath, path, overwrite: false);
