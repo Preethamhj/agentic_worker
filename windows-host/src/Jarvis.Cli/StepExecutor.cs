@@ -14,10 +14,15 @@ public sealed class StepExecutor : IStepExecutor
 {
     private readonly AuthorizationService _authService;
     private readonly Dictionary<string, IToolExecutor> _executors;
+    private readonly ToolPolicy? _toolPolicy;
 
-    public StepExecutor(AuthorizationService authService, IEnumerable<IToolExecutor> executors)
+    public StepExecutor(
+        AuthorizationService authService,
+        IEnumerable<IToolExecutor> executors,
+        ToolPolicy? toolPolicy = null)
     {
         _authService = authService ?? throw new ArgumentNullException(nameof(authService));
+        _toolPolicy = toolPolicy;
         _executors = new Dictionary<string, IToolExecutor>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var executor in executors)
@@ -33,11 +38,31 @@ public sealed class StepExecutor : IStepExecutor
         IReadOnlyDictionary<string, object?> args,
         string risk)
     {
+        IReadOnlyDictionary<string, object?>? expected = null;
+        if (string.Equals(toolId, "app.launch", StringComparison.OrdinalIgnoreCase))
+        {
+            if (_toolPolicy is null
+                || !args.TryGetValue("app_id", out var appIdValue)
+                || appIdValue is not string appId
+                || !_toolPolicy.TryResolveAllowedExecutablePath(appId, out var imagePath)
+                || imagePath is null)
+            {
+                throw new InvalidOperationException("Cannot authorize app.launch without its resolved allowlisted image path.");
+            }
+            expected = new Dictionary<string, object?>
+            {
+                ["app_id"] = appId,
+                ["image_path"] = imagePath,
+                ["running"] = true
+            };
+        }
+
         return _authService.IssueAuthorization(
             taskId: taskId,
             stepId: stepId,
             toolId: toolId,
             rawArgs: args,
+            expected: expected,
             risk: risk,
             approvedBy: "user"
         );

@@ -51,12 +51,28 @@ public class CliEndToEndTests : IDisposable
             new CreateFileExecutor(_pathPolicy, _authService),
             new CreateFolderExecutor(_pathPolicy, _authService),
             new SearchFilesExecutor(_pathPolicy, _authService),
-            new AppLaunchExecutor(_toolPolicy, _authService, new WindowsElevationChecker())
+            new AppLaunchExecutor(_toolPolicy, _authService, new WindowsElevationChecker()),
+            new TaskScheduleReminderExecutor(_authService, new WindowsReminderTaskScheduler())
         };
 
-        _stepExecutor = new StepExecutor(_authService, executors);
+        _stepExecutor = new StepExecutor(_authService, executors, _toolPolicy);
         _stubVerifier = new StubVerifier();
         _queue = new ExecutionQueue();
+    }
+
+    [Fact]
+    public void StepExecutor_Signs_Resolved_Allowlisted_Image_Path_For_AppLaunch()
+    {
+        var executable = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "notepad.exe");
+
+        var authorization = _stepExecutor.PrepareAuthorization(
+            "task-app-path",
+            "step-app-path",
+            "app.launch",
+            new Dictionary<string, object?> { ["app_id"] = "notepad" },
+            "medium");
+
+        authorization.Expected["image_path"].Should().Be(Path.GetFullPath(executable));
     }
 
     [Fact]

@@ -67,14 +67,10 @@ public sealed class AppLaunchExecutor : IToolExecutor
         var appId = appIdObj.ToString()!;
 
         // 4. Map app_id to allowlist definition
-        if (!_toolPolicy.TryGetAllowedApp(appId, out var appDef) || appDef is null)
+        if (!_toolPolicy.TryResolveAllowedExecutablePath(appId, out var executablePath)
+            || string.IsNullOrEmpty(executablePath))
         {
-            return Task.FromResult(FailureReceipt(auth, startedAt, $"App ID '{appId}' is not in the allowed applications registry."));
-        }
-        var executablePath = ResolveExecutableFullPath(appDef.Executable);
-        if (string.IsNullOrEmpty(executablePath) || !File.Exists(executablePath))
-        {
-            return Task.FromResult(FailureReceipt(auth, startedAt, $"Executable '{appDef.Executable}' for app '{appId}' cannot be resolved to a verified absolute system path. PATH resolution is prohibited."));
+            return Task.FromResult(FailureReceipt(auth, startedAt, $"Executable for app '{appId}' cannot be resolved to a verified absolute system path. PATH resolution is prohibited."));
         }
 
         // 5. Launch with UseShellExecute = false
@@ -110,27 +106,6 @@ public sealed class AppLaunchExecutor : IToolExecutor
         {
             return Task.FromResult(FailureReceipt(auth, startedAt, $"Failed to launch app '{appId}': {ex.Message}"));
         }
-    }
-
-    private static string? ResolveExecutableFullPath(string executableName)
-    {
-        if (string.IsNullOrWhiteSpace(executableName)) return null;
-
-        if (Path.IsPathRooted(executableName) && File.Exists(executableName))
-            return Path.GetFullPath(executableName);
-
-        if (OperatingSystem.IsWindows())
-        {
-            var systemDir = Environment.GetFolderPath(Environment.SpecialFolder.System);
-            var pathInSystem = Path.Combine(systemDir, executableName);
-            if (File.Exists(pathInSystem)) return pathInSystem;
-
-            var windowsDir = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
-            var pathInWindows = Path.Combine(windowsDir, executableName);
-            if (File.Exists(pathInWindows)) return pathInWindows;
-        }
-
-        return null;
     }
 
     private static ExecutionReceiptDto FailureReceipt(VerifiedAuthorization auth, string startedAt, string error)

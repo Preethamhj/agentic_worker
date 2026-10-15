@@ -98,7 +98,7 @@ public sealed class AuthorizationService : IAuthorizationVerifier
 
             var exp = expected != null
                 ? new Dictionary<string, object?>(expected)
-                : DeriveExpected(toolId, canonicalArgs);
+                : DeriveExpected(toolId, canonicalArgs, authId);
 
             var effects = allowedEffects != null
                 ? allowedEffects.ToList()
@@ -420,7 +420,10 @@ public sealed class AuthorizationService : IAuthorizationVerifier
         return CryptographicOperations.FixedTimeEquals(expectedBytes, actualBytes);
     }
 
-    private static Dictionary<string, object?> DeriveExpected(string toolId, Dictionary<string, object?> args)
+    private static Dictionary<string, object?> DeriveExpected(
+        string toolId,
+        Dictionary<string, object?> args,
+        string authId)
     {
         var expected = new Dictionary<string, object?>(StringComparer.Ordinal);
         switch (toolId.ToLowerInvariant())
@@ -445,7 +448,13 @@ public sealed class AuthorizationService : IAuthorizationVerifier
                 break;
             case "task.schedule_reminder":
                 if (args.TryGetValue("task_name", out var tn)) expected["task_name"] = tn;
+                if (args.TryGetValue("time_iso", out var time)) expected["time_iso"] = time;
+                if (args.TryGetValue("message", out var message)) expected["message"] = message;
                 expected["scheduled"] = true;
+                expected["task_path"] = $@"\Jarvis\{authId}";
+                expected["action_path"] = Path.GetFullPath(
+                    Environment.ProcessPath
+                    ?? throw new InvalidOperationException("The host process path is unavailable for reminder authorization."));
                 break;
             default:
                 expected["status"] = "success";

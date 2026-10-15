@@ -80,6 +80,41 @@ public sealed class ToolPolicy
         return _allowedApps.TryGetValue(appId, out app);
     }
 
+    /// <summary>
+    /// Resolves an allowlisted app ID without searching the process PATH.
+    /// </summary>
+    public bool TryResolveAllowedExecutablePath(string appId, out string? executablePath)
+    {
+        executablePath = null;
+        if (!TryGetAllowedApp(appId, out var app) || app is null || string.IsNullOrWhiteSpace(app.Executable))
+            return false;
+
+        if (Path.IsPathRooted(app.Executable) && File.Exists(app.Executable))
+        {
+            executablePath = Path.GetFullPath(app.Executable);
+            return true;
+        }
+
+        if (!OperatingSystem.IsWindows())
+            return false;
+
+        var systemPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), app.Executable);
+        if (File.Exists(systemPath))
+        {
+            executablePath = Path.GetFullPath(systemPath);
+            return true;
+        }
+
+        var windowsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), app.Executable);
+        if (File.Exists(windowsPath))
+        {
+            executablePath = Path.GetFullPath(windowsPath);
+            return true;
+        }
+
+        return false;
+    }
+
     public static ToolPolicy FromFile(string toolsRegistryPath, string appsAllowlistPath)
     {
         if (!File.Exists(toolsRegistryPath))

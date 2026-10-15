@@ -8,6 +8,7 @@ using Jarvis.Core;
 using Jarvis.Infrastructure;
 using Jarvis.Safety;
 using Jarvis.Tools;
+using System.Windows.Forms;
 
 namespace Jarvis.Cli;
 
@@ -15,6 +16,9 @@ public static class Program
 {
     public static async Task<int> Main(string[] args)
     {
+        if (args.Length > 0 && args[0] == "--jarvis-reminder")
+            return ShowReminder(args);
+
         if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
         {
             PrintUsage();
@@ -43,7 +47,7 @@ public static class Program
 
     private static void PrintUsage()
     {
-        Console.WriteLine("Jarvis CLI - Windows Assistant (Phase 2b)");
+        Console.WriteLine("Jarvis CLI - Windows Assistant");
         Console.WriteLine("Usage: jarvis <command> [arguments]");
         Console.WriteLine();
         Console.WriteLine("Commands:");
@@ -51,6 +55,30 @@ public static class Program
         Console.WriteLine("  history      Display audit trail of recent tasks and transitions");
         Console.WriteLine("  doctor       Run diagnostic health checks on host environment");
         Console.WriteLine();
+    }
+
+    private static int ShowReminder(string[] args)
+    {
+        if (args.Length != 3 || string.IsNullOrWhiteSpace(args[1]) || string.IsNullOrWhiteSpace(args[2]))
+            return 2;
+
+        using var notification = new NotifyIcon
+        {
+            Icon = System.Drawing.SystemIcons.Information,
+            Visible = true,
+            BalloonTipTitle = args[1],
+            BalloonTipText = args[2]
+        };
+        using var timer = new System.Windows.Forms.Timer { Interval = 15_000 };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            Application.ExitThread();
+        };
+        timer.Start();
+        notification.ShowBalloonTip(10_000);
+        Application.Run();
+        return 0;
     }
 
     private static int HandleUnknownCommand(string command)
@@ -101,10 +129,11 @@ public static class Program
             new CreateFileExecutor(pathPolicy, authService),
             new CreateFolderExecutor(pathPolicy, authService),
             new SearchFilesExecutor(pathPolicy, authService),
-            new AppLaunchExecutor(toolPolicy, authService, new WindowsElevationChecker())
+            new AppLaunchExecutor(toolPolicy, authService, new WindowsElevationChecker()),
+            new TaskScheduleReminderExecutor(authService, new WindowsReminderTaskScheduler())
         };
 
-        var stepExecutor = new StepExecutor(authService, executors);
+        var stepExecutor = new StepExecutor(authService, executors, toolPolicy);
         var approvalHandler = new ConsoleApprovalHandler();
         var stubVerifier = new StubVerifier();
 

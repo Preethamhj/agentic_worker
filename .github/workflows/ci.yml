@@ -28,6 +28,11 @@ jobs:
         run: |
           .\scripts\setup-windows.ps1 -SkipOllamaPull -SkipOllamaCheck
 
+      - name: Show Locked Python Client Versions
+        shell: powershell
+        run: |
+          .\ai-server\.venv\Scripts\python.exe -m pip show ollama httpx
+
       - name: Run All Checks
         shell: powershell
         run: |

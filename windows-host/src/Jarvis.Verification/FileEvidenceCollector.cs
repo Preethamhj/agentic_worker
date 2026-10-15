@@ -45,9 +45,18 @@ public sealed class FileEvidenceCollector
         IReadOnlyList<string> allowedRoots,
         CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
         if (!authorization.CanonicalArgs.TryGetValue("path", out var pathValue) || pathValue is not string targetPath)
             throw new ArgumentException("Authorization is missing the canonical path argument.", nameof(authorization));
+        return Collect(targetPath, allowedRoots, cancellationToken);
+    }
+
+    public FileSystemObservation Collect(
+        string targetPath,
+        IReadOnlyList<string> allowedRoots,
+        CancellationToken cancellationToken = default,
+        bool hashFile = true)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
         if (allowedRoots.Count == 0)
             throw new ArgumentException("Authorization has no allowed watch root.", nameof(allowedRoots));
 
@@ -76,8 +85,8 @@ public sealed class FileEvidenceCollector
 
         using var targetHandle = OpenHandle(
             target,
-            isDirectory ? FileReadAttributes : GenericRead | FileReadAttributes,
-            isDirectory ? ShareRead | ShareWrite | ShareDelete : ShareRead,
+            isDirectory || !hashFile ? FileReadAttributes : GenericRead | FileReadAttributes,
+            isDirectory || !hashFile ? ShareRead | ShareWrite | ShareDelete : ShareRead,
             isDirectory ? FileFlagBackupSemantics : 0,
             out var openError);
         if (targetHandle.IsInvalid)
@@ -93,7 +102,7 @@ public sealed class FileEvidenceCollector
         var insideRoot = finalRoots.Any(finalRoot => IsWithinRoot(finalTarget, finalRoot));
         var size = ((long)info.FileSizeHigh << 32) | info.FileSizeLow;
         string? hash = null;
-        if (!isDirectory && !isReparsePoint)
+        if (hashFile && !isDirectory && !isReparsePoint)
         {
             cancellationToken.ThrowIfCancellationRequested();
             using var stream = new FileStream(targetHandle, FileAccess.Read, 81920, isAsync: false);

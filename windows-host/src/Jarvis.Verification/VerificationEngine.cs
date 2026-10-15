@@ -9,8 +9,8 @@ using Jarvis.Infrastructure;
 namespace Jarvis.Verification;
 
 /// <summary>
-/// Independently verifies file and folder creation using host observations and OS evidence.
-/// Stages 7 and 8 are intentionally deferred beyond Phase 3a.
+/// Independently verifies filesystem, process, search, and scheduled-task effects using OS evidence.
+/// Persistence and drift stages are deferred to Phase 6.
 /// </summary>
 public sealed class VerificationEngine : IVerifier
 {
@@ -25,6 +25,9 @@ public sealed class VerificationEngine : IVerifier
     private readonly IClock _clock;
     private readonly SnapshotService _snapshots;
     private readonly FileEvidenceCollector _fileCollector;
+    private readonly SearchEvidenceCollector _searchCollector;
+    private readonly ProcessEvidenceCollector _processCollector;
+    private readonly ScheduledTaskEvidenceCollector _scheduledTaskCollector;
     private readonly TimeSpan _evidenceWindow;
     private readonly object _nonceLock = new();
     private readonly HashSet<string> _verifiedNonces = new(StringComparer.Ordinal);
@@ -42,6 +45,9 @@ public sealed class VerificationEngine : IVerifier
         _clock = clock ?? SystemClock.Instance;
         _snapshots = new SnapshotService(maxSnapshotEntries, noiseExclusions);
         _fileCollector = new FileEvidenceCollector();
+        _searchCollector = new SearchEvidenceCollector(_fileCollector);
+        _processCollector = new ProcessEvidenceCollector();
+        _scheduledTaskCollector = new ScheduledTaskEvidenceCollector();
         _evidenceWindow = evidenceWindow ?? TimeSpan.FromSeconds(30);
         if (_evidenceWindow <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(evidenceWindow));
@@ -53,13 +59,18 @@ public sealed class VerificationEngine : IVerifier
     {
         ArgumentNullException.ThrowIfNull(authorization);
         cancellationToken.ThrowIfCancellationRequested();
-        var target = authorization.CanonicalArgs.TryGetValue("path", out var path) && path is string targetPath
-            ? targetPath
-            : null;
-        var snapshot = _snapshots.Capture(
-            authorization.WatchScopes,
-            cancellationToken,
-            authorizedTarget: target);
+        var isFilesystemMutation = authorization.ToolId is "fs.create_file" or "fs.create_folder";
+        var target = isFilesystemMutation
+            && authorization.CanonicalArgs.TryGetValue("path", out var path)
+            && path is string targetPath
+                ? targetPath
+                : null;
+        var snapshot = isFilesystemMutation
+            ? _snapshots.Capture(
+                authorization.WatchScopes,
+                cancellationToken,
+                authorizedTarget: target)
+            : new SnapshotCaptureResult([], false, null);
         return Task.FromResult(new StepToken(
             authorization,
             authorization.Nonce,
@@ -110,31 +121,28 @@ public sealed class VerificationEngine : IVerifier
             reasons.Add(triggerFailure);
         }
 
-        FileSystemObservation? observedFile = null;
-        DateTimeOffset? collectedAt = null;
         if (authorizationVerified)
         {
             try
             {
-                observedFile = _fileCollector.Collect(
+                var collected = CollectIndependentEvidence(
                     authorization,
-                    authorization.WatchScopes,
+                    receipt,
+                    observation,
                     cancellationToken);
-                collectedAt = _clock.UtcNow;
-                var attributeMatch = MatchesExpected(authorization, observedFile, observation, out var attributeDetail);
-                var item = CreateEvidence(authorization, token, observedFile, collectedAt.Value, attributeMatch);
+                var item = CreateEvidence(authorization, token, collected, _clock.UtcNow);
                 evidence.Add(item);
-                stages.Add(Stage(3, "IndependentEvidenceCollection", true, "Filesystem state was collected from OS handles."));
+                stages.Add(Stage(3, "IndependentEvidenceCollection", true,
+                    $"OS evidence was collected by {collected.Collector}."));
 
                 var evidenceValid = ValidateEvidence(item, token, observation, out var evidenceFailure);
                 stages.Add(Stage(4, "EvidenceValidation", evidenceValid, evidenceFailure));
                 if (!evidenceValid)
                     reasons.Add(evidenceFailure);
 
-                stages.Add(Stage(5, "AttributeVerification", attributeMatch,
-                    attributeDetail));
-                if (!attributeMatch)
-                    reasons.Add($"Observed filesystem state differs from authorization.expected: {attributeDetail}");
+                stages.Add(Stage(5, "AttributeVerification", collected.Match, collected.Detail));
+                if (!collected.Match)
+                    reasons.Add(collected.Detail);
             }
             catch (OperationCanceledException)
             {
@@ -170,7 +178,14 @@ public sealed class VerificationEngine : IVerifier
             }
             catch (ArgumentException ex)
             {
-                reasons.Add($"Filesystem evidence collection failed: {ex.Message}");
+                reasons.Add($"Independent evidence collection failed: {ex.Message}");
+                stages.Add(Stage(3, "IndependentEvidenceCollection", false, ex.Message, Escalate));
+                stages.Add(NotRunStage(4, "EvidenceValidation", "Evidence collection did not complete."));
+                stages.Add(NotRunStage(5, "AttributeVerification", "Evidence collection did not complete."));
+            }
+            catch (System.Xml.XmlException ex)
+            {
+                reasons.Add($"Scheduled-task evidence could not be parsed: {ex.Message}");
                 stages.Add(Stage(3, "IndependentEvidenceCollection", false, ex.Message, Escalate));
                 stages.Add(NotRunStage(4, "EvidenceValidation", "Evidence collection did not complete."));
                 stages.Add(NotRunStage(5, "AttributeVerification", "Evidence collection did not complete."));
@@ -183,22 +198,36 @@ public sealed class VerificationEngine : IVerifier
             stages.Add(NotRunStage(5, "AttributeVerification", "Authorization validation failed."));
         }
 
-        var beforeEntries = token.BeforeSnapshots.ToDictionary(entry => entry.Path, StringComparer.OrdinalIgnoreCase);
-        var targetPath = authorization.CanonicalArgs.TryGetValue("path", out var path) && path is string target
-            ? target
-            : null;
-        var afterSnapshot = _snapshots.Capture(
-            authorization.WatchScopes,
-            cancellationToken,
-            beforeEntries,
-            targetPath);
-        var sideEffectOutcome = CompareSnapshots(token, afterSnapshot, authorization, sideEffects, reasons);
-        stages.Add(Stage(6, "SideEffectDetection", sideEffectOutcome == "PASSED",
-            sideEffectOutcome == "PASSED" ? "Watched filesystem changes are within allowed_effects." : string.Join("; ", reasons.Where(r => r.Contains("side effect", StringComparison.OrdinalIgnoreCase) || r.Contains("snapshot", StringComparison.OrdinalIgnoreCase) || r.Contains("authorized creation", StringComparison.OrdinalIgnoreCase))),
-            sideEffectOutcome));
+        var sideEffectOutcome = "PASSED";
+        if (authorization.ToolId is "fs.create_file" or "fs.create_folder")
+        {
+            var beforeEntries = token.BeforeSnapshots.ToDictionary(entry => entry.Path, StringComparer.OrdinalIgnoreCase);
+            var targetPath = authorization.CanonicalArgs.TryGetValue("path", out var path) && path is string target
+                ? target
+                : null;
+            var afterSnapshot = _snapshots.Capture(
+                authorization.WatchScopes,
+                cancellationToken,
+                beforeEntries,
+                targetPath);
+            sideEffectOutcome = CompareSnapshots(token, afterSnapshot, authorization, sideEffects, reasons);
+            stages.Add(Stage(6, "SideEffectDetection", sideEffectOutcome == "PASSED",
+                sideEffectOutcome == "PASSED"
+                    ? "Watched filesystem changes are within allowed_effects."
+                    : string.Join("; ", reasons.Where(r =>
+                        r.Contains("side effect", StringComparison.OrdinalIgnoreCase)
+                        || r.Contains("snapshot", StringComparison.OrdinalIgnoreCase)
+                        || r.Contains("authorized creation", StringComparison.OrdinalIgnoreCase))),
+                sideEffectOutcome));
+        }
+        else
+        {
+            stages.Add(Stage(6, "SideEffectDetection", true,
+                "No filesystem snapshot applies; side effects for this tool are checked by its independent OS collector."));
+        }
 
-        stages.Add(NotRunStage(7, "PersistenceCheck", "Stage 7 is not implemented in Phase 3a."));
-        stages.Add(NotRunStage(8, "DriftCheck", "Stage 8 is not implemented in Phase 3a."));
+        stages.Add(NotRunStage(7, "PersistenceCheck", "Stage 7 is deferred to Phase 6."));
+        stages.Add(NotRunStage(8, "DriftCheck", "Stage 8 is deferred to Phase 6."));
 
         var status = Aggregate(stages);
         stages.Add(Stage(9, "DecisionAggregation", status == Verified,
@@ -254,9 +283,10 @@ public sealed class VerificationEngine : IVerifier
         AuthorizationRecordDto authorization,
         out string detail)
     {
-        if (authorization.ToolId is not ("fs.create_file" or "fs.create_folder"))
+        if (authorization.ToolId is not (
+            "fs.create_file" or "fs.create_folder" or "fs.search_files" or "app.launch" or "task.schedule_reminder"))
         {
-            detail = $"Unsupported Phase 3a tool '{authorization.ToolId}'.";
+            detail = $"Unsupported verifier tool '{authorization.ToolId}'.";
             return false;
         }
         if (!string.Equals(receipt.StepId, authorization.StepId, StringComparison.Ordinal)
@@ -271,14 +301,106 @@ public sealed class VerificationEngine : IVerifier
             detail = "Host execution observation has an invalid time range.";
             return false;
         }
-        if (!authorization.CanonicalArgs.TryGetValue("path", out var path) || path is not string || authorization.WatchScopes.Count == 0)
+        if (authorization.ToolId is "fs.create_file" or "fs.create_folder")
         {
-            detail = "Signed authorization is missing a target path or watch scope.";
+            if (!authorization.CanonicalArgs.TryGetValue("path", out var path)
+                || path is not string
+                || authorization.WatchScopes.Count == 0)
+            {
+                detail = "Signed authorization is missing a target path or watch scope.";
+                return false;
+            }
+        }
+        else if (authorization.ToolId == "fs.search_files")
+        {
+            if (!authorization.CanonicalArgs.TryGetValue("root_path", out var rootPath)
+                || rootPath is not string root
+                || !Path.IsPathRooted(root)
+                || !authorization.CanonicalArgs.TryGetValue("pattern", out var pattern)
+                || pattern is not string
+                || !authorization.WatchScopes.Contains(root, StringComparer.OrdinalIgnoreCase))
+            {
+                detail = "Signed search authorization is missing its rooted search path, pattern, or matching allowed scope.";
+                return false;
+            }
+        }
+        else if (authorization.ToolId == "app.launch")
+        {
+            if (!authorization.CanonicalArgs.TryGetValue("app_id", out var appId)
+                || appId is not string
+                || !authorization.Expected.TryGetValue("image_path", out var imagePath)
+                || imagePath is not string image
+                || !Path.IsPathRooted(image))
+            {
+                detail = "Signed app-launch authorization is missing its app ID or absolute allowlisted image path.";
+                return false;
+            }
+        }
+        else if (!authorization.CanonicalArgs.TryGetValue("task_name", out var taskName)
+            || taskName is not string
+            || !authorization.CanonicalArgs.TryGetValue("time_iso", out var timeValue)
+            || timeValue is not string time
+            || !DateTimeOffset.TryParse(time, out _)
+            || !authorization.CanonicalArgs.TryGetValue("message", out var message)
+            || message is not string
+            || !authorization.Expected.TryGetValue("task_path", out var taskPath)
+            || taskPath is not string taskPathValue
+            || !string.Equals(
+                taskPathValue,
+                $@"\Jarvis\{authorization.AuthId}",
+                StringComparison.OrdinalIgnoreCase)
+            || !authorization.Expected.TryGetValue("action_path", out var actionPath)
+            || actionPath is not string actionPathValue
+            || !Path.IsPathRooted(actionPathValue))
+        {
+            detail = "Signed reminder authorization is missing its task identity, schedule, message, or action path.";
             return false;
         }
 
         detail = "Receipt identity and host execution observation match the authorized step.";
         return true;
+    }
+
+    private IndependentEvidenceObservation CollectIndependentEvidence(
+        AuthorizationRecordDto authorization,
+        ExecutionReceiptDto receipt,
+        ExecutionObservation observation,
+        CancellationToken cancellationToken)
+    {
+        if (authorization.ToolId is "fs.create_file" or "fs.create_folder")
+        {
+            var observedFile = _fileCollector.Collect(
+                authorization,
+                authorization.WatchScopes,
+                cancellationToken);
+            var match = MatchesExpected(authorization, observedFile, observation, out var detail);
+            return new IndependentEvidenceObservation(
+                authorization.ToolId == "fs.create_folder" ? "dir_exists" : "file_exists",
+                nameof(FileEvidenceCollector),
+                new Dictionary<string, object?>
+                {
+                    ["path"] = observedFile.Path,
+                    ["exists"] = observedFile.Exists,
+                    ["is_directory"] = observedFile.IsDirectory,
+                    ["is_reparse_point"] = observedFile.IsReparsePoint,
+                    ["is_inside_allowed_root"] = observedFile.IsInsideAllowedRoot,
+                    ["final_path"] = observedFile.FinalPath,
+                    ["size"] = observedFile.Size,
+                    ["sha256"] = observedFile.Sha256,
+                    ["creation_time_utc"] = observedFile.CreationTimeUtc,
+                    ["last_write_time_utc"] = observedFile.LastWriteTimeUtc
+                },
+                match,
+                detail);
+        }
+
+        return authorization.ToolId switch
+        {
+            "fs.search_files" => _searchCollector.Collect(authorization, receipt.Stdout, cancellationToken),
+            "app.launch" => _processCollector.Collect(authorization, observation, cancellationToken),
+            "task.schedule_reminder" => _scheduledTaskCollector.Collect(authorization, cancellationToken),
+            _ => throw new ArgumentException($"Unsupported verification tool '{authorization.ToolId}'.", nameof(authorization))
+        };
     }
 
     private static bool MatchesExpected(
@@ -362,37 +484,40 @@ public sealed class VerificationEngine : IVerifier
     private EvidenceDto CreateEvidence(
         AuthorizationRecordDto authorization,
         StepToken token,
-        FileSystemObservation observed,
-        DateTimeOffset collectedAt,
-        bool match)
+        IndependentEvidenceObservation observed,
+        DateTimeOffset collectedAt)
     {
-        var observedValues = new Dictionary<string, object?>
-        {
-            ["path"] = observed.Path,
-            ["exists"] = observed.Exists,
-            ["is_directory"] = observed.IsDirectory,
-            ["is_reparse_point"] = observed.IsReparsePoint,
-            ["is_inside_allowed_root"] = observed.IsInsideAllowedRoot,
-            ["final_path"] = observed.FinalPath,
-            ["size"] = observed.Size,
-            ["sha256"] = observed.Sha256,
-            ["creation_time_utc"] = observed.CreationTimeUtc,
-            ["last_write_time_utc"] = observed.LastWriteTimeUtc,
-            ["noise_exclusions"] = token.NoiseExclusions ?? Array.Empty<string>()
-        };
         var unsigned = new EvidenceDto(
             1,
             $"evidence-{Guid.NewGuid():N}",
             authorization.StepId,
-            new CheckDto(authorization.ToolId == "fs.create_folder" ? "dir_exists" : "file_exists", new Dictionary<string, object?> { ["path"] = observed.Path }),
-            nameof(FileEvidenceCollector),
+            new CheckDto(observed.CheckType, CreateCheckParameters(authorization)),
+            observed.Collector,
             collectedAt.ToString("o"),
-            observedValues,
+            new Dictionary<string, object?>(observed.Observed)
+            {
+                ["noise_exclusions"] = token.NoiseExclusions ?? Array.Empty<string>()
+            },
             new Dictionary<string, object?>(authorization.Expected),
-            match,
+            observed.Match,
             token.Nonce,
             string.Empty);
         return unsigned with { RecordSha256 = ComputeEvidenceHash(unsigned) };
+    }
+
+    private static Dictionary<string, object?> CreateCheckParameters(AuthorizationRecordDto authorization)
+    {
+        var keys = authorization.ToolId switch
+        {
+            "fs.create_file" or "fs.create_folder" => new[] { "path" },
+            "fs.search_files" => new[] { "root_path", "pattern" },
+            "app.launch" => new[] { "app_id" },
+            "task.schedule_reminder" => new[] { "task_name", "time_iso" },
+            _ => Array.Empty<string>()
+        };
+        return keys
+            .Where(authorization.CanonicalArgs.ContainsKey)
+            .ToDictionary(key => key, key => authorization.CanonicalArgs[key], StringComparer.Ordinal);
     }
 
     private static string CompareSnapshots(

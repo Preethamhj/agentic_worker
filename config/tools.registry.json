@@ -92,9 +92,9 @@
       "args_schema": {
         "type": "object",
         "properties": {
-          "task_name": { "type": "string" },
-          "time_iso": { "type": "string" },
-          "message": { "type": "string" }
+          "task_name": { "type": "string", "minLength": 1, "maxLength": 63 },
+          "time_iso": { "type": "string", "format": "date-time" },
+          "message": { "type": "string", "minLength": 1, "maxLength": 255 }
         },
         "required": ["task_name", "time_iso", "message"],
         "additionalProperties": false
