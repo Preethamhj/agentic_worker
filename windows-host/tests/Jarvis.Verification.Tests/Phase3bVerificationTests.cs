@@ -20,6 +20,7 @@ public sealed class Phase3bVerificationTests : IDisposable
     private readonly string _root = Path.Combine(Path.GetTempPath(), $"jarvis-3b-{Guid.NewGuid():N}");
     private readonly TestClock _clock = new();
     private readonly InMemoryAuditStore _auditStore = new();
+    private readonly ReminderDataFileStore _reminderDataFileStore = new();
     private readonly AuthorizationService _authorizationService;
     private readonly VerificationEngine _engine;
     private readonly ITestOutputHelper _output;
@@ -413,6 +414,8 @@ public sealed class Phase3bVerificationTests : IDisposable
             registered = true;
             var result = await VerifyReminder(authorization, token);
             result.Status.Should().Be("FAILED");
+            result.Evidence.Single().Observed["time_matches"].Should().Be(false);
+            result.Evidence.Single().Observed["action_matches"].Should().Be(true);
             result.Evidence.Single().Observed["scheduler_method"].Should().Be("COM");
         }
         finally
@@ -443,6 +446,8 @@ public sealed class Phase3bVerificationTests : IDisposable
             registered = true;
             var result = await VerifyReminder(authorization, token);
             result.Status.Should().Be("FAILED");
+            result.Evidence.Single().Observed["time_matches"].Should().Be(true);
+            result.Evidence.Single().Observed["action_matches"].Should().Be(false);
         }
         finally
         {
@@ -507,7 +512,7 @@ public sealed class Phase3bVerificationTests : IDisposable
                 extraTaskPath[(extraTaskPath.LastIndexOf('\\') + 1)..],
                 extraTaskPath,
                 (string)authorization.Expected["action_path"]!,
-                "--jarvis-reminder \"unauthorized\" \"extra\"",
+                $"--jarvis-reminder {Guid.NewGuid():N}",
                 AppContext.BaseDirectory,
                 scheduledTime,
                 "unauthorized reminder"));
@@ -527,11 +532,51 @@ public sealed class Phase3bVerificationTests : IDisposable
         }
     }
 
-    [Fact]
-    public async AsyncTask ScheduleReminder_Executor_Creates_A_Task_That_Independent_Xml_Verification_Accepts()
+    public static IEnumerable<object[]> ReminderMessageCases()
     {
-        var taskName = "Jarvis \"quoted\" & 100%";
-        var message = "Line 1\r\nLine 2 & 100% ಕನ್ನಡ ನಮಸ್ಕಾರ";
+        yield return ["quotes", "Quotes", "A \"quoted\" reminder"];
+        yield return ["ampersand-percent", "Symbols", "Research & Development is 100%"];
+        yield return ["long-message", "Long reminder", new string('x', ToolPolicy.MaxReminderMessageLength)];
+        yield return ["kannada", "ಕನ್ನಡ", "ನಮಸ್ಕಾರ, ಜಾರ್ವಿಸ್"];
+    }
+
+    [Fact]
+    public void Reminder_Authorization_Derives_Action_And_Arguments_From_The_Record()
+    {
+        var scheduledAt = _clock.UtcNow.AddHours(1).ToString("O");
+        var authorization = _authorizationService.IssueAuthorization(
+            "task-reminder-authorization",
+            "step-reminder-authorization",
+            "task.schedule_reminder",
+            new Dictionary<string, object?>
+            {
+                ["task_name"] = "Review",
+                ["time_iso"] = scheduledAt,
+                ["message"] = "message"
+            },
+            expected: new Dictionary<string, object?>
+            {
+                ["action_path"] = @"C:\untrusted\command.exe",
+                ["action_arguments"] = "--arbitrary-command",
+                ["task_id"] = "attacker-controlled"
+            });
+        var taskId = authorization.AuthId["auth-".Length..];
+
+        authorization.Expected["action_path"].Should().Be(Path.GetFullPath(Environment.ProcessPath!));
+        authorization.Expected["task_id"].Should().Be(taskId);
+        authorization.Expected["action_arguments"].Should().Be($"--jarvis-reminder {taskId}");
+        authorization.Expected["reminder_data_path"].Should().Be(_reminderDataFileStore.GetFilePath(taskId));
+        authorization.CanonicalArgs.Should().NotContainKey("action_path");
+        authorization.CanonicalArgs.Should().NotContainKey("action_arguments");
+    }
+
+    [Theory]
+    [MemberData(nameof(ReminderMessageCases))]
+    public async AsyncTask ScheduleReminder_Executor_And_Independent_Verifier_Accept_Safe_Messages(
+        string suffix,
+        string taskName,
+        string message)
+    {
         var future = _clock.UtcNow.AddHours(1);
         var scheduledAt = new DateTimeOffset(
             future.Year,
@@ -542,8 +587,8 @@ public sealed class Phase3bVerificationTests : IDisposable
             future.Second,
             future.Offset);
         var authorization = _authorizationService.IssueAuthorization(
-            "task-reminder",
-            "step-reminder",
+            $"task-reminder-{suffix}",
+            $"step-reminder-{suffix}",
             "task.schedule_reminder",
             new Dictionary<string, object?>
             {
@@ -557,6 +602,8 @@ public sealed class Phase3bVerificationTests : IDisposable
             new WindowsReminderTaskScheduler(),
             _clock);
         var taskCreated = false;
+        var taskId = authorization.Expected["task_id"]!.ToString()!;
+        var taskPath = authorization.Expected["task_path"]!.ToString()!;
 
         try
         {
@@ -573,21 +620,121 @@ public sealed class Phase3bVerificationTests : IDisposable
             result.Evidence.Should().ContainSingle(item => item.Match);
             var observed = result.Evidence.Single().Observed;
             observed["scheduler_method"].Should().Be("COM");
-            observed["action_command"].Should().Be(Path.GetFullPath(Environment.ProcessPath!));
-            var expectedArguments = BuildExpectedReminderArguments(taskName, message);
-            var xmlArguments = observed["action_arguments"] as string ?? string.Empty;
-            NormalizeReminderXmlArguments(xmlArguments).Should().Be(NormalizeReminderXmlArguments(expectedArguments));
-            _output.WriteLine($"Scheduler method: {observed["scheduler_method"]}");
-            _output.WriteLine($"Task executable: {observed["action_command"]}");
-            _output.WriteLine($"Task arguments: {xmlArguments}");
+            var expectedActionPath = Path.GetFullPath(Environment.ProcessPath!);
+            observed["action_command"].Should().Be(expectedActionPath);
+            authorization.Expected["action_path"].Should().Be(expectedActionPath);
+            var expectedArguments = authorization.Expected["action_arguments"]!.ToString();
+            expectedArguments.Should().Be($"--jarvis-reminder {taskId}");
+            observed["action_arguments"].Should().Be(expectedArguments);
+            observed["reminder_data_matches_authorization"].Should().Be(true);
+            var execXml = observed["exec_action_xml"]!.ToString()!;
+            execXml.Should().Contain($"<Command>{System.Security.SecurityElement.Escape(expectedActionPath)}</Command>");
+            execXml.Should().Contain($"<Arguments>{expectedArguments}</Arguments>");
+            _output.WriteLine($"Registered Task Scheduler Exec element: {execXml}");
         }
         finally
         {
             if (taskCreated)
-            {
-                var taskPath = authorization.Expected["task_path"]!.ToString()!;
                 new WindowsReminderTaskScheduler().Delete(taskPath);
-            }
+            _reminderDataFileStore.Delete(taskId);
+        }
+    }
+
+    [Fact]
+    public async AsyncTask ScheduleReminder_Verifier_Fails_When_Reminder_Data_Is_Missing()
+    {
+        var authorization = IssueReminderAuthorization("missing-data");
+        var token = await _engine.BeginStepAsync(authorization);
+        var taskId = authorization.Expected["task_id"]!.ToString()!;
+        var taskPath = authorization.Expected["task_path"]!.ToString()!;
+        var taskCreated = false;
+
+        try
+        {
+            var verifiedAuthorization = _authorizationService.Consume(authorization, authorization.StepId);
+            var receipt = await new TaskScheduleReminderExecutor(
+                _authorizationService,
+                new WindowsReminderTaskScheduler(),
+                _clock).ExecuteAsync(verifiedAuthorization);
+            taskCreated = receipt.ReportedSuccess;
+            receipt.ReportedSuccess.Should().BeTrue();
+            _reminderDataFileStore.Delete(taskId);
+
+            var result = await _engine.VerifyAsync(receipt, HostObservation(), token);
+
+            result.Status.Should().Be("FAILED");
+            result.Evidence.Single().Observed["reminder_data_exists"].Should().Be(false);
+            result.Evidence.Single().Observed["reminder_data_matches_authorization"].Should().Be(false);
+        }
+        finally
+        {
+            if (taskCreated)
+                new WindowsReminderTaskScheduler().Delete(taskPath);
+            _reminderDataFileStore.Delete(taskId);
+        }
+    }
+
+    [Fact]
+    public async AsyncTask ScheduleReminder_Verifier_Fails_When_Reminder_Data_Differs_From_Authorization()
+    {
+        var authorization = IssueReminderAuthorization("altered-data");
+        var token = await _engine.BeginStepAsync(authorization);
+        var taskId = authorization.Expected["task_id"]!.ToString()!;
+        var taskPath = authorization.Expected["task_path"]!.ToString()!;
+        var taskCreated = false;
+
+        try
+        {
+            var verifiedAuthorization = _authorizationService.Consume(authorization, authorization.StepId);
+            var receipt = await new TaskScheduleReminderExecutor(
+                _authorizationService,
+                new WindowsReminderTaskScheduler(),
+                _clock).ExecuteAsync(verifiedAuthorization);
+            taskCreated = receipt.ReportedSuccess;
+            receipt.ReportedSuccess.Should().BeTrue();
+            await File.WriteAllTextAsync(
+                _reminderDataFileStore.GetFilePath(taskId),
+                """{"task_name":"Reminder altered-data","message":"different message"}""");
+
+            var result = await _engine.VerifyAsync(receipt, HostObservation(), token);
+
+            result.Status.Should().Be("FAILED");
+            result.Evidence.Single().Observed["reminder_data_exists"].Should().Be(true);
+            result.Evidence.Single().Observed["reminder_data_matches_authorization"].Should().Be(false);
+        }
+        finally
+        {
+            if (taskCreated)
+                new WindowsReminderTaskScheduler().Delete(taskPath);
+            _reminderDataFileStore.Delete(taskId);
+        }
+    }
+
+    [Fact]
+    public async AsyncTask ScheduleReminder_Executor_Rejects_Control_Characters_Without_Registering()
+    {
+        const string message = "line one\nline two";
+        var authorization = IssueReminderAuthorization("newline", message: message);
+        var taskId = authorization.Expected["task_id"]!.ToString()!;
+        var scheduler = new RecordingTaskScheduler();
+
+        try
+        {
+            var verifiedAuthorization = _authorizationService.Consume(authorization, authorization.StepId);
+            var receipt = await new TaskScheduleReminderExecutor(
+                _authorizationService,
+                scheduler,
+                _clock,
+                _reminderDataFileStore).ExecuteAsync(verifiedAuthorization);
+
+            receipt.ReportedSuccess.Should().BeFalse();
+            receipt.Stderr.Should().Contain("non-control");
+            scheduler.WasRegistered.Should().BeFalse();
+            File.Exists(_reminderDataFileStore.GetFilePath(taskId)).Should().BeFalse();
+        }
+        finally
+        {
+            _reminderDataFileStore.Delete(taskId);
         }
     }
 
@@ -622,7 +769,10 @@ public sealed class Phase3bVerificationTests : IDisposable
             approvedBy: "auto");
     }
 
-    private AuthorizationRecordDto IssueReminderAuthorization(string suffix)
+    private AuthorizationRecordDto IssueReminderAuthorization(
+        string suffix,
+        string message = "message",
+        string? taskName = null)
     {
         var future = _clock.UtcNow.AddHours(1);
         var scheduledAt = new DateTimeOffset(
@@ -639,9 +789,9 @@ public sealed class Phase3bVerificationTests : IDisposable
             "task.schedule_reminder",
             new Dictionary<string, object?>
             {
-                ["task_name"] = $"Reminder {suffix}",
+                ["task_name"] = taskName ?? $"Reminder {suffix}",
                 ["time_iso"] = scheduledAt.ToString("O"),
-                ["message"] = "message"
+                ["message"] = message
             });
     }
 
@@ -699,40 +849,7 @@ public sealed class Phase3bVerificationTests : IDisposable
     }
 
     private static string ExpectedReminderArguments(AuthorizationRecordDto authorization) =>
-        BuildExpectedReminderArguments(
-            (string)authorization.CanonicalArgs["task_name"]!,
-            (string)authorization.CanonicalArgs["message"]!);
-
-    private static string BuildExpectedReminderArguments(string taskName, string message) =>
-        $"--jarvis-reminder {QuoteWindowsArgument(taskName)} {QuoteWindowsArgument(message)}";
-
-    private static string NormalizeReminderXmlArguments(string value) =>
-        value.Replace("\r\n", "\n", StringComparison.Ordinal)
-            .Replace("\r", "\n", StringComparison.Ordinal);
-
-    private static string QuoteWindowsArgument(string value)
-    {
-        var result = new System.Text.StringBuilder("\"");
-        var slashCount = 0;
-        foreach (var character in value)
-        {
-            if (character == '\\')
-            {
-                slashCount++;
-                continue;
-            }
-            if (character == '"')
-            {
-                result.Append('\\', slashCount * 2 + 1).Append('"');
-                slashCount = 0;
-                continue;
-            }
-            result.Append('\\', slashCount).Append(character);
-            slashCount = 0;
-        }
-        result.Append('\\', slashCount * 2).Append('"');
-        return result.ToString();
-    }
+        authorization.Expected["action_arguments"]!.ToString()!;
 
     private static ExecutionReceiptDto LyingReceipt(AuthorizationRecordDto authorization) => new(
         1,

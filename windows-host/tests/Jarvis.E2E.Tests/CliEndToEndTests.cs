@@ -174,6 +174,7 @@ public class CliEndToEndTests : IDisposable
     [Fact]
     public async Task Cli_Runs_AppLaunch_EndToEnd_UpTo_StubVerifier()
     {
+        var calculatorProcessesBefore = CaptureCalculatorProcessIds();
         var planner = new StaticPlanner(new PlanStepDto(
             SchemaVersion: 1,
             StepId: "step-1",
@@ -188,22 +189,29 @@ public class CliEndToEndTests : IDisposable
         var approval = new ConsoleApprovalHandler(autoApprove: true);
         var orchestrator = new TaskOrchestrator(planner, _safetyGate, approval, _queue, _stepExecutor, _stubVerifier, _auditStore);
 
-        var result = await orchestrator.RunTaskAsync("launch calculator");
-
-        var isElevated = OperatingSystem.IsWindows() && new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator);
-        if (isElevated)
+        try
         {
-            result.Receipts[0].ReportedSuccess.Should().BeFalse();
-            result.Receipts[0].Stderr.Should().Contain("elevated");
-        }
-        else
-        {
-            result.Receipts[0].ReportedSuccess.Should().BeTrue();
-        }
+            var result = await orchestrator.RunTaskAsync("launch calculator");
 
-        result.VerificationResults[0].Status.Should().Be("ESCALATE");
-        result.FinalState.Should().Be(TaskState.Failed);
-        result.StatusMessage.Should().Contain("not verified");
+            var isElevated = OperatingSystem.IsWindows() && new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator);
+            if (isElevated)
+            {
+                result.Receipts[0].ReportedSuccess.Should().BeFalse();
+                result.Receipts[0].Stderr.Should().Contain("elevated");
+            }
+            else
+            {
+                result.Receipts[0].ReportedSuccess.Should().BeTrue();
+            }
+
+            result.VerificationResults[0].Status.Should().Be("ESCALATE");
+            result.FinalState.Should().Be(TaskState.Failed);
+            result.StatusMessage.Should().Contain("not verified");
+        }
+        finally
+        {
+            KillCalculatorProcessesStartedByTest(calculatorProcessesBefore);
+        }
     }
 
     [Fact]
@@ -224,16 +232,49 @@ public class CliEndToEndTests : IDisposable
     {
         _auditStore.Dispose();
         _queue.DisposeAsync().AsTask().GetAwaiter().GetResult();
-        try
+        if (Directory.Exists(_tempRoot))
+            Directory.Delete(_tempRoot, recursive: true);
+    }
+
+    private static HashSet<int> CaptureCalculatorProcessIds()
+    {
+        var processIds = new HashSet<int>();
+        foreach (var name in new[] { "calc", "CalculatorApp" })
         {
-            if (Directory.Exists(_tempRoot))
+            foreach (var process in Process.GetProcessesByName(name))
             {
-                Directory.Delete(_tempRoot, recursive: true);
+                using (process)
+                    processIds.Add(process.Id);
             }
         }
-        catch
+        return processIds;
+    }
+
+    private static void KillCalculatorProcessesStartedByTest(IReadOnlySet<int> processIdsBefore)
+    {
+        foreach (var name in new[] { "calc", "CalculatorApp" })
         {
-            // Best effort cleanup
+            foreach (var process in Process.GetProcessesByName(name))
+            {
+                using (process)
+                {
+                    if (processIdsBefore.Contains(process.Id))
+                        continue;
+
+                    if (process.HasExited)
+                        continue;
+                    try
+                    {
+                        process.Kill();
+                        if (!process.WaitForExit(5_000))
+                            throw new TimeoutException($"Test-launched calculator process {process.Id} did not exit.");
+                    }
+                    catch (InvalidOperationException) when (process.HasExited)
+                    {
+                        // The test-launched process exited between enumeration and termination.
+                    }
+                }
+            }
         }
     }
 

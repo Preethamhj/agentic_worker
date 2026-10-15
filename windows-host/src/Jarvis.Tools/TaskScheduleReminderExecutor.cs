@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text;
 using Jarvis.Contracts;
 using Jarvis.Safety;
 
@@ -12,15 +11,18 @@ public sealed class TaskScheduleReminderExecutor : IToolExecutor
 {
     private readonly AuthorizationService _authorizationService;
     private readonly IReminderTaskScheduler _scheduler;
+    private readonly ReminderDataFileStore _dataFileStore;
     private readonly IClock _clock;
 
     public TaskScheduleReminderExecutor(
         AuthorizationService authorizationService,
         IReminderTaskScheduler scheduler,
-        IClock? clock = null)
+        IClock? clock = null,
+        ReminderDataFileStore? dataFileStore = null)
     {
         _authorizationService = authorizationService ?? throw new ArgumentNullException(nameof(authorizationService));
         _scheduler = scheduler ?? throw new ArgumentNullException(nameof(scheduler));
+        _dataFileStore = dataFileStore ?? new ReminderDataFileStore();
         _clock = clock ?? SystemClock.Instance;
     }
 
@@ -51,21 +53,33 @@ public sealed class TaskScheduleReminderExecutor : IToolExecutor
         if (scheduledAt.Ticks % TimeSpan.TicksPerSecond != 0)
             return Task.FromResult(Failure(authorization, startedAt, "Reminder time must have whole-second precision."));
 
-        if (string.IsNullOrWhiteSpace(taskName) || taskName.Length > 63
-            || string.IsNullOrWhiteSpace(message) || message.Length > 255)
+        if (string.IsNullOrWhiteSpace(taskName) || taskName.Length > 63 || taskName.Any(char.IsControl)
+            || !ToolPolicy.IsValidReminderMessage(message))
         {
             return Task.FromResult(Failure(
                 authorization,
                 startedAt,
-                "Reminder title must contain 1-63 characters and message must contain 1-255 characters."));
+                $"Reminder title must contain 1-63 non-control characters and message must contain 1-{ToolPolicy.MaxReminderMessageLength} non-control characters."));
         }
 
         if (!authorization.Record.Expected.TryGetValue("task_path", out var taskPathValue)
             || taskPathValue is not string taskPath
             || !authorization.Record.Expected.TryGetValue("action_path", out var actionPathValue)
-            || actionPathValue is not string actionPath)
+            || actionPathValue is not string actionPath
+            || !authorization.Record.Expected.TryGetValue("task_id", out var taskIdValue)
+            || taskIdValue is not string taskId
+            || !authorization.Record.Expected.TryGetValue("action_arguments", out var actionArgumentsValue)
+            || actionArgumentsValue is not string actionArguments
+            || !authorization.Record.Expected.TryGetValue("reminder_data_path", out var dataPathValue)
+            || dataPathValue is not string dataPath)
         {
-            return Task.FromResult(Failure(authorization, startedAt, "Signed authorization is missing the task path or action executable."));
+            return Task.FromResult(Failure(authorization, startedAt, "Signed authorization is missing reminder action or data-file fields."));
+        }
+        if (!ToolPolicy.IsValidReminderTaskId(taskId)
+            || !string.Equals(actionArguments, $"--jarvis-reminder {taskId}", StringComparison.Ordinal)
+            || !string.Equals(dataPath, _dataFileStore.GetFilePath(taskId), StringComparison.OrdinalIgnoreCase))
+        {
+            return Task.FromResult(Failure(authorization, startedAt, "Signed reminder task ID, arguments, or data-file path is invalid."));
         }
         if (!Path.IsPathRooted(actionPath)
             || !string.Equals(actionPath, Path.GetFullPath(actionPath), StringComparison.OrdinalIgnoreCase))
@@ -75,6 +89,11 @@ public sealed class TaskScheduleReminderExecutor : IToolExecutor
                 startedAt,
                 "Signed reminder action executable must be a fixed absolute path."));
         }
+        var hostPath = Path.GetFullPath(
+            Environment.ProcessPath
+            ?? throw new InvalidOperationException("The host process path is unavailable for reminder execution."));
+        if (!string.Equals(actionPath, hostPath, StringComparison.OrdinalIgnoreCase))
+            return Task.FromResult(Failure(authorization, startedAt, "Signed reminder action executable does not match this host."));
 
         var separator = taskPath.LastIndexOf('\\');
         if (separator <= 0 || separator == taskPath.Length - 1
@@ -86,15 +105,23 @@ public sealed class TaskScheduleReminderExecutor : IToolExecutor
             return Task.FromResult(Failure(authorization, startedAt, "Signed task path is outside the Jarvis Task Scheduler folder."));
         }
 
-        var actionArguments = BuildReminderArguments(taskName, message);
-        _scheduler.Register(new ReminderTaskRegistration(
-            taskPath[(separator + 1)..],
-            taskPath,
-            actionPath,
-            actionArguments,
-            Path.GetDirectoryName(actionPath) ?? AppContext.BaseDirectory,
-            scheduledAt,
-            $"Jarvis reminder: {taskName}"));
+        _dataFileStore.Create(taskId, taskName, message);
+        try
+        {
+            _scheduler.Register(new ReminderTaskRegistration(
+                taskPath[(separator + 1)..],
+                taskPath,
+                actionPath,
+                actionArguments,
+                Path.GetDirectoryName(actionPath) ?? AppContext.BaseDirectory,
+                scheduledAt,
+                "Jarvis reminder"));
+        }
+        catch
+        {
+            _dataFileStore.Delete(taskId);
+            throw;
+        }
 
         var completedAt = _clock.UtcNow.ToString("O");
         return Task.FromResult(new ExecutionReceiptDto(
@@ -113,36 +140,6 @@ public sealed class TaskScheduleReminderExecutor : IToolExecutor
         authorization.CanonicalArgs.TryGetValue(key, out var value) && value is string text
             ? text
             : throw new ArgumentException($"Authorization is missing canonical '{key}'.", nameof(authorization));
-
-    private static string BuildReminderArguments(string taskName, string message) =>
-        $"--jarvis-reminder {QuoteArgument(taskName)} {QuoteArgument(message)}";
-
-    private static string QuoteArgument(string value)
-    {
-        var result = new StringBuilder("\"");
-        var backslashes = 0;
-        foreach (var character in value)
-        {
-            if (character == '\\')
-            {
-                backslashes++;
-                continue;
-            }
-            if (character == '"')
-            {
-                result.Append('\\', backslashes * 2 + 1);
-                result.Append('"');
-                backslashes = 0;
-                continue;
-            }
-            result.Append('\\', backslashes);
-            result.Append(character);
-            backslashes = 0;
-        }
-        result.Append('\\', backslashes * 2);
-        result.Append('"');
-        return result.ToString();
-    }
 
     private ExecutionReceiptDto Failure(
         VerifiedAuthorization authorization,

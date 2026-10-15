@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using System.Xml.Linq;
 using Jarvis.Contracts;
 
@@ -187,15 +188,15 @@ internal sealed class ScheduledTaskEvidenceCollector
             DateTimeStyles.AssumeLocal,
             out var actualTime);
         var expectedAction = Path.GetFullPath(ReadExpected(authorization, "action_path"));
-        var expectedArguments = BuildReminderArguments(
-            ReadCanonical(authorization, "task_name"),
-            ReadCanonical(authorization, "message"));
+        var expectedArguments = ReadExpected(authorization, "action_arguments");
         var normalizedArguments = NormalizeReminderArguments(arguments);
         var normalizedExpectedArguments = NormalizeReminderArguments(expectedArguments);
         var actionMatches = command is not null
             && string.Equals(Path.GetFullPath(command), expectedAction, StringComparison.OrdinalIgnoreCase)
             && string.Equals(normalizedArguments, normalizedExpectedArguments, StringComparison.Ordinal);
         var timeMatches = hasTime && actualTime.ToUniversalTime() == expectedTime.ToUniversalTime();
+        var dataFilePath = ReadExpected(authorization, "reminder_data_path");
+        var dataFileMatches = ReminderDataMatchesAuthorization(authorization, dataFilePath);
         var unexpectedTasks = CaptureTaskPaths(cancellationToken)
             .Where(path => !beforeTaskPaths.Contains(path, StringComparer.OrdinalIgnoreCase)
                 && !string.Equals(path, taskPath, StringComparison.OrdinalIgnoreCase))
@@ -205,6 +206,7 @@ internal sealed class ScheduledTaskEvidenceCollector
             && triggerEnabled
             && timeMatches
             && actionMatches
+            && dataFileMatches
             && unexpectedTasks.Length == 0;
         var observed = new Dictionary<string, object?>
         {
@@ -219,6 +221,12 @@ internal sealed class ScheduledTaskEvidenceCollector
             ["action_count"] = actions.Length,
             ["action_command"] = command,
             ["action_arguments"] = arguments,
+            ["exec_action_xml"] = execAction?.ToString(SaveOptions.DisableFormatting),
+            ["time_matches"] = timeMatches,
+            ["action_matches"] = actionMatches,
+            ["reminder_data_path"] = dataFilePath,
+            ["reminder_data_exists"] = File.Exists(dataFilePath),
+            ["reminder_data_matches_authorization"] = dataFileMatches,
             ["unexpected_new_tasks"] = unexpectedTasks,
             ["xml_valid"] = true
         };
@@ -231,7 +239,36 @@ internal sealed class ScheduledTaskEvidenceCollector
                 ? "Task Scheduler COM XML, one-time trigger, action, enabled state, and Jarvis-folder side effects match the signed authorization."
                 : unexpectedTasks.Length > 0
                     ? "Unauthorized additional tasks appeared in the Jarvis Task Scheduler folder."
-                    : "Scheduled task XML, trigger time, action, or enabled state differs from the signed authorization.");
+                    : "Scheduled task XML, trigger time, action, enabled state, or reminder data differs from the signed authorization.");
+    }
+
+    private static bool ReminderDataMatchesAuthorization(
+        AuthorizationRecordDto authorization,
+        string dataFilePath)
+    {
+        if (!Path.IsPathRooted(dataFilePath)
+            || !File.Exists(dataFilePath)
+            || (File.GetAttributes(dataFilePath) & FileAttributes.ReparsePoint) != 0)
+        {
+            return false;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(File.ReadAllText(dataFilePath));
+            var payload = document.RootElement;
+            return payload.ValueKind == JsonValueKind.Object
+                && payload.TryGetProperty("task_name", out var taskName)
+                && taskName.ValueKind == JsonValueKind.String
+                && string.Equals(taskName.GetString(), ReadCanonical(authorization, "task_name"), StringComparison.Ordinal)
+                && payload.TryGetProperty("message", out var message)
+                && message.ValueKind == JsonValueKind.String
+                && string.Equals(message.GetString(), ReadCanonical(authorization, "message"), StringComparison.Ordinal);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     private static IndependentEvidenceObservation Missing(string taskPath) =>
@@ -248,9 +285,6 @@ internal sealed class ScheduledTaskEvidenceCollector
             false,
             "The authorized scheduled task does not exist in the OS Task Scheduler.");
 
-    private static string BuildReminderArguments(string taskName, string message) =>
-        $"--jarvis-reminder {QuoteArgument(taskName)} {QuoteArgument(message)}";
-
     private static string NormalizeReminderArguments(string? value)
     {
         if (string.IsNullOrEmpty(value))
@@ -258,33 +292,6 @@ internal sealed class ScheduledTaskEvidenceCollector
 
         return value.Replace("\r\n", "\n", StringComparison.Ordinal)
             .Replace("\r", "\n", StringComparison.Ordinal);
-    }
-
-    private static string QuoteArgument(string value)
-    {
-        var result = new System.Text.StringBuilder("\"");
-        var backslashes = 0;
-        foreach (var character in value)
-        {
-            if (character == '\\')
-            {
-                backslashes++;
-                continue;
-            }
-            if (character == '"')
-            {
-                result.Append('\\', backslashes * 2 + 1);
-                result.Append('"');
-                backslashes = 0;
-                continue;
-            }
-            result.Append('\\', backslashes);
-            result.Append(character);
-            backslashes = 0;
-        }
-        result.Append('\\', backslashes * 2);
-        result.Append('"');
-        return result.ToString();
     }
 
     private static string ReadCanonical(AuthorizationRecordDto authorization, string key) =>

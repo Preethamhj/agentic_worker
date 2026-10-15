@@ -4,7 +4,7 @@
 
 Implemented independent OS-evidence verification for `fs.search_files`, `app.launch`, and `task.schedule_reminder`, plus the real reminder executor and Windows Task Scheduler adapter. `Jarvis.Verification` still references only `Jarvis.Contracts` and `Jarvis.Infrastructure`; its own process enumeration and Task Scheduler COM/XML inspection are intentionally separate from the execution-side implementation in `Jarvis.Tools`.
 
-The CLI now signs the allowlisted executable path for launches and registers the reminder executor. Reminder tasks are scheduled under the current user's `\Jarvis\<authorization-id>` task path and run the host in interactive, non-elevated mode. The notification host uses a `NotifyIcon` balloon. Verification stages 7 and 8 remain `NOT_RUN`; stages 1-6, 9, and 10 are applied as appropriate.
+The CLI now signs the allowlisted executable path for launches and registers the reminder executor. Reminder tasks are scheduled under the current user's `\Jarvis\<authorization-id>` task path and run the host in interactive, non-elevated mode. The action has exactly two arguments: `--jarvis-reminder` and a 32-hex task ID. Title and message are stored in a task-ID-keyed data file under `%LOCALAPPDATA%\Jarvis\reminders`, never in the command line. The notification host uses a `NotifyIcon` balloon. Verification stages 7 and 8 remain `NOT_RUN`; stages 1-6, 9, and 10 are applied as appropriate.
 
 ## Validation results
 
@@ -13,17 +13,17 @@ Phase 3b close-out validation on 2026-10-15 passed:
 | Gate | Result |
 |---|---:|
 | C# build | Passed, 0 warnings, 0 errors |
-| C# tests | 283 passed, 0 failed, 0 skipped |
-| Python tests | 103 passed, 0 failed |
+| C# tests | 305 passed, 0 failed, 0 skipped |
+| Python tests | 113 passed, 0 failed |
 | mypy | No issues in 29 source files |
 | C# formatting | Passed |
 | Python warnings | 4 deprecation warnings from the existing Starlette/HTTPX TestClient stack |
 
-The focused verifier suite passed 46/46 tests. The Phase 3b verification class passed 17/17, including its search evidence and process-launch cases. The E2E suite passed 26/26 and the architecture suite passed 6/6.
+The complete Verification suite passed 53/53 tests, including the real Task Scheduler reminder tests. The complete E2E suite passed 31/31 tests, including reminder dispatch tests. The class-specific reminder message cases passed 4/4 on the real executor, Windows Task Scheduler, and independent verifier.
 
 ### Phase 3b verifier tests
 
-All 17 tests in `Phase3bVerificationTests` passed locally:
+All 24 tests in `Phase3bVerificationTests` passed locally:
 
 - `Search_Verifies_Only_Existing_Matching_Paths_Inside_Signed_Root`
 - `Search_Verifies_A_Matching_Existing_Path_Without_Trusting_Receipt_Success_Fields`
@@ -41,13 +41,37 @@ All 17 tests in `Phase3bVerificationTests` passed locally:
 - `ScheduleReminder_With_Wrong_Action_Is_Failed`
 - `ScheduleReminder_Disabled_Task_Is_Failed`
 - `ScheduleReminder_Extra_Unauthorized_Task_Is_Failed`
-- `ScheduleReminder_Executor_Creates_A_Task_That_Independent_Xml_Verification_Accepts`
+- `Reminder_Authorization_Derives_Action_And_Arguments_From_The_Record`
+- `ScheduleReminder_Executor_And_Independent_Verifier_Accept_Safe_Messages` (`quotes`)
+- `ScheduleReminder_Executor_And_Independent_Verifier_Accept_Safe_Messages` (`ampersand-percent`)
+- `ScheduleReminder_Executor_And_Independent_Verifier_Accept_Safe_Messages` (`long-message`, exactly 200 characters)
+- `ScheduleReminder_Executor_And_Independent_Verifier_Accept_Safe_Messages` (`kannada`)
+- `ScheduleReminder_Verifier_Fails_When_Reminder_Data_Is_Missing`
+- `ScheduleReminder_Verifier_Fails_When_Reminder_Data_Differs_From_Authorization`
+- `ScheduleReminder_Executor_Rejects_Control_Characters_Without_Registering`
 
 Search receipts are intentionally untrusted. The engine passes the receipt's reported path list to `SearchEvidenceCollector`, which compares the claimed path set against an independent `FindFirstFileEx` enumeration of the signed root. Under-reporting and over-reporting fail; reaching the signed result cap escalates; exact claims, including nested Kannada paths, verify. Fifty consecutive clean runs produced no false failures.
 
 `AppLaunch_Verifies_Live_NonElevated_Child_By_OS_Image_And_Parent` uses `[NonElevatedFact]`; it ran locally with no skip. On an elevated Windows CI runner, this one fact is skipped because that test must verify a normal-integrity child. No test requires an elevated host, so `[ElevatedFact]` is not applied. The tests have no early returns.
 
-The complete 46-test Verification suite also includes the prior file/folder fault fixtures, real executor round trips, snapshot tests, persistence checks, and clean-run latency case. The E2E suite covers CLI registration and resolved-path authorization; architecture tests guard both direct and transitive project dependencies.
+Reminder argument/path authorization and verifier independence:
+
+- `AuthorizationService` derives the task ID from its generated authorization ID and signs `action_path`, `action_arguments`, `task_id`, `task_path`, and `reminder_data_path`. The action path is the full path of the current trusted host executable; in production this is the Jarvis CLI host. The executor consumes these signed expected fields and canonical title/message/time, not a command or path from the plan.
+- The verifier reads expected executable/arguments from the authorization record and compares them to the independently collected Task Scheduler XML. A fault test registers the same trigger time with a different executable and gets `FAILED`; extra arguments are not accepted by the exact argument comparison.
+- Verifier argument normalization is only CRLF-to-LF and CR-to-LF. This accommodates line-ending serialization differences without forgiving changes to the executable arguments.
+- Before `VERIFIED`, the verifier also reads the signed expected data path and checks its title/message against `CanonicalArgs`. Missing and altered payload fault tests both fail. This is point-in-time integrity evidence; a same-user process could alter the task or file after verification and before dispatch (see `docs/threat-model.md`).
+
+The real Task Scheduler tests print the registered XML `Exec` element. For example:
+
+```xml
+<Exec xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task"><Command>C:\Users\ASUS\Desktop\agentic worker\windows-host\tests\Jarvis.Verification.Tests\bin\Debug\net10.0\testhost.exe</Command><Arguments>--jarvis-reminder 2b7da864774148a4b2aa756694fccb0d</Arguments><WorkingDirectory>C:\Users\ASUS\Desktop\agentic worker\windows-host\tests\Jarvis.Verification.Tests\bin\Debug\net10.0</WorkingDirectory></Exec>
+```
+
+This integration test runs inside `testhost.exe`, so the registered command is that test host. A production CLI invocation signs its own absolute host executable. In both cases the arguments contain only the reminder switch and task ID, never title or message.
+
+`ReminderDispatcherTests` verifies valid dispatch displays the task-ID-keyed payload and deletes the file, while malformed and unknown IDs are refused without notification. Both the full suite and the focused real-scheduler tests cleaned up the task and payload they created.
+
+The complete 53-test Verification suite also includes the prior file/folder fault fixtures, real executor round trips, snapshot tests, persistence checks, and clean-run latency case. The E2E suite covers CLI registration and resolved-path authorization; architecture tests guard both direct and transitive project dependencies.
 
 ### Close-out reproduction and cleanup
 
@@ -58,7 +82,7 @@ schtasks.exe /Query /FO LIST | Select-String -Pattern 'Jarvis'
 Get-Process -Name notepad,calc,CalculatorApp,mspaint -ErrorAction SilentlyContinue
 ```
 
-The task and process checks returned no matches after verification tests completed. The test suite had launched two Calculator processes; both were closed by their specific process IDs before the final empty process check.
+After the complete suite, `schtasks /Query /FO LIST` filtered for Jarvis returned no matches. The suite left `CalculatorApp` PID 73332 running; it was stopped by that specific PID, after which `Get-Process -Name notepad,calc,CalculatorApp,mspaint` returned no processes. `%LOCALAPPDATA%\Jarvis\reminders` existed and contained no files. The subsequent focused real-scheduler run passed all four message cases and its post-run checks were also empty.
 
 The 5,000-file snapshot remeasurement enumerated 5,000 entries in **30.29 ms**, below the 10,000-entry cap. A large user's immediate parent folder is still fully enumerated non-recursively; if it exceeds the configured cap, verification escalates rather than passing. Create-tool default watch scope is the target's parent folder, non-recursive.
 
@@ -216,11 +240,13 @@ System.Xml.XPath.XDocument
 
 - The execution-side Task Scheduler adapter uses the `TaskScheduler` NuGet package, only from `Jarvis.Tools`. Verification independently inspects OS task state through its own COM/XML code; this deliberate duplication avoids a shared implementation or trust path.
 - Task Scheduler trigger XML has whole-second precision, so the reminder executor rejects subsecond times instead of silently rounding.
+- Reminder title/message are stored out-of-band in an exclusive-created, task-ID-keyed JSON file; the signed Task Scheduler action contains only the fixed host path and task ID switch. The registry, Python schema consumer, and `ToolPolicy` enforce the 200-character limit and reject control characters while allowing Unicode.
+- The independent verifier sources the expected action and data path from signed authorization fields, and the expected text from canonical arguments. It rejects a changed executable, arguments, missing data, or changed data. Its only argument normalization is line-ending normalization.
 - Reminder notifications use a `NotifyIcon` balloon rather than Windows app-identity Toast notifications.
 - Search verification reopens and checks each receipt-reported path as an untrusted claim (root containment, file attributes, reparse status, and pattern); it does not establish that the search result set is complete. Receipt success fields are not evidence.
 - App launch verification uses OS process state, image path, direct parent, start time, and token elevation. A positive result is not expected when the host/process is elevated.
 - The snapshot scope is non-recursive and limited to the signed watch scope. It cannot detect side effects elsewhere; metadata-first comparison can miss a same-size edit whose modification time is restored. The 100 ms timestamp tolerance and these limitations are recorded in `docs/threat-model.md`.
-- CI configuration triggers pushes to all branches and pull requests. The previously checked Actions run **38611609458** succeeded, but predates this unpushed Phase 3b working tree; it is not evidence that these changes passed CI. No new run was started.
+- CI configuration triggers pushes to all branches and pull requests. This Phase 3b close-out change is not complete until its commit is pushed and the single requested CI status check is recorded.
 
 ## Files added or changed
 

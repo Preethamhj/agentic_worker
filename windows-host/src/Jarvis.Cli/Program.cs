@@ -17,7 +17,22 @@ public static class Program
     public static async Task<int> Main(string[] args)
     {
         if (args.Length > 0 && args[0] == "--jarvis-reminder")
-            return ShowReminder(args);
+        {
+            try
+            {
+                return new ReminderDispatcher(
+                    new ReminderDataFileStore(),
+                    new WindowsReminderNotifier()).Dispatch(args);
+            }
+            catch (Exception exception) when (
+                exception is IOException
+                or UnauthorizedAccessException
+                or System.Text.Json.JsonException)
+            {
+                Console.Error.WriteLine($"Reminder dispatch failed: {exception.Message}");
+                return 1;
+            }
+        }
 
         if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
         {
@@ -55,30 +70,6 @@ public static class Program
         Console.WriteLine("  history      Display audit trail of recent tasks and transitions");
         Console.WriteLine("  doctor       Run diagnostic health checks on host environment");
         Console.WriteLine();
-    }
-
-    private static int ShowReminder(string[] args)
-    {
-        if (args.Length != 3 || string.IsNullOrWhiteSpace(args[1]) || string.IsNullOrWhiteSpace(args[2]))
-            return 2;
-
-        using var notification = new NotifyIcon
-        {
-            Icon = System.Drawing.SystemIcons.Information,
-            Visible = true,
-            BalloonTipTitle = args[1],
-            BalloonTipText = args[2]
-        };
-        using var timer = new System.Windows.Forms.Timer { Interval = 15_000 };
-        timer.Tick += (_, _) =>
-        {
-            timer.Stop();
-            Application.ExitThread();
-        };
-        timer.Start();
-        notification.ShowBalloonTip(10_000);
-        Application.Run();
-        return 0;
     }
 
     private static int HandleUnknownCommand(string command)

@@ -80,7 +80,8 @@ public sealed class AuthorizationService : IAuthorizationVerifier
     {
         lock (_lock)
         {
-            var authId = $"auth-{Guid.NewGuid():N}";
+            var authorizationGuid = Guid.NewGuid();
+            var authId = $"auth-{authorizationGuid:N}";
             var nonce = $"nonce-{Guid.NewGuid():N}";
             var now = _clock.UtcNow;
 
@@ -96,9 +97,11 @@ public sealed class AuthorizationService : IAuthorizationVerifier
                 canonicalArgs[kv.Key] = kv.Value;
             }
 
-            var exp = expected != null
-                ? new Dictionary<string, object?>(expected)
-                : DeriveExpected(toolId, canonicalArgs, authId);
+            var exp = string.Equals(toolId, "task.schedule_reminder", StringComparison.OrdinalIgnoreCase)
+                ? DeriveExpected(toolId, canonicalArgs, authId)
+                : expected != null
+                    ? new Dictionary<string, object?>(expected)
+                    : DeriveExpected(toolId, canonicalArgs, authId);
 
             var effects = allowedEffects != null
                 ? allowedEffects.ToList()
@@ -447,14 +450,18 @@ public sealed class AuthorizationService : IAuthorizationVerifier
                 expected["running"] = true;
                 break;
             case "task.schedule_reminder":
-                if (args.TryGetValue("task_name", out var tn)) expected["task_name"] = tn;
                 if (args.TryGetValue("time_iso", out var time)) expected["time_iso"] = time;
-                if (args.TryGetValue("message", out var message)) expected["message"] = message;
                 expected["scheduled"] = true;
                 expected["task_path"] = $@"\Jarvis\{authId}";
+                var reminderTaskId = authId["auth-".Length..];
+                if (!ToolPolicy.IsValidReminderTaskId(reminderTaskId))
+                    throw new InvalidOperationException("Authorization generated an invalid reminder task ID.");
                 expected["action_path"] = Path.GetFullPath(
                     Environment.ProcessPath
                     ?? throw new InvalidOperationException("The host process path is unavailable for reminder authorization."));
+                expected["task_id"] = reminderTaskId;
+                expected["action_arguments"] = $"--jarvis-reminder {reminderTaskId}";
+                expected["reminder_data_path"] = ReminderDataPaths.GetFilePath(reminderTaskId);
                 break;
             default:
                 expected["status"] = "success";

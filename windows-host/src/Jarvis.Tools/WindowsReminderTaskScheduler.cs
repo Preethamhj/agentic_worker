@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
 using Microsoft.Win32.TaskScheduler;
+using Jarvis.Safety;
 
 namespace Jarvis.Tools;
 
@@ -22,6 +23,20 @@ public sealed class WindowsReminderTaskScheduler : IReminderTaskScheduler
         var actionPath = Path.GetFullPath(registration.ActionPath);
         if (!File.Exists(actionPath))
             throw new FileNotFoundException("The signed reminder action executable does not exist.", actionPath);
+        const string argumentsPrefix = "--jarvis-reminder ";
+        var taskId = registration.ActionArguments.StartsWith(argumentsPrefix, StringComparison.Ordinal)
+            ? registration.ActionArguments[argumentsPrefix.Length..]
+            : string.Empty;
+        if (!ToolPolicy.IsValidReminderTaskId(taskId)
+            || !string.Equals(
+                registration.ActionArguments,
+                $"{argumentsPrefix}{taskId}",
+                StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                "Reminder action arguments must contain only --jarvis-reminder and one valid task ID.",
+                nameof(registration));
+        }
         if (!string.Equals(
                 registration.TaskPath,
                 $@"\Jarvis\{registration.TaskName}",

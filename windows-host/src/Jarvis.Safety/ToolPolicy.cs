@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using Json.Schema;
 
 namespace Jarvis.Safety;
@@ -34,6 +35,8 @@ public sealed class AllowedAppDefinition
 /// </summary>
 public sealed class ToolPolicy
 {
+    public const int MaxReminderMessageLength = 200;
+    private static readonly Regex ReminderTaskIdPattern = new(@"\A[0-9a-fA-F]{32}\z", RegexOptions.CultureInvariant);
     private readonly Dictionary<string, ToolDefinition> _tools = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, AllowedAppDefinition> _allowedApps = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _allowedAppIds = new(StringComparer.OrdinalIgnoreCase);
@@ -218,6 +221,16 @@ public sealed class ToolPolicy
             return ToolPolicyResult.Failure($"Tool arguments failed schema validation: {errorMessage}");
         }
 
+        if (string.Equals(toolId, "task.schedule_reminder", StringComparison.OrdinalIgnoreCase))
+        {
+            var message = argsNode["message"]?.GetValue<string>();
+            if (!IsValidReminderMessage(message))
+            {
+                return ToolPolicyResult.Failure(
+                    $"Reminder message must contain 1-{MaxReminderMessageLength} characters and no control characters.");
+            }
+        }
+
         // Specific application allowlist check for app.launch
         if (string.Equals(toolId, "app.launch", StringComparison.OrdinalIgnoreCase))
         {
@@ -230,4 +243,14 @@ public sealed class ToolPolicy
 
         return ToolPolicyResult.Success(tool.Risk);
     }
+
+    /// <summary>Checks the opaque task identifier embedded in the scheduled action.</summary>
+    public static bool IsValidReminderTaskId(string? taskId) =>
+        taskId is not null && ReminderTaskIdPattern.IsMatch(taskId);
+
+    /// <summary>Checks the reminder text length and excludes control characters.</summary>
+    public static bool IsValidReminderMessage(string? message) =>
+        !string.IsNullOrEmpty(message)
+        && message.Length <= MaxReminderMessageLength
+        && !message.Any(char.IsControl);
 }

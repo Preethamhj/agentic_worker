@@ -132,6 +132,7 @@ public class ExecutorTests
     [Fact]
     public async Task AppLaunchExecutor_Maps_AppId_And_Refuses_FreeForm_Args_Or_Elevation()
     {
+        var calculatorProcessesBefore = CaptureCalculatorProcessIds();
         var executor = new AppLaunchExecutor(_toolPolicy, _authService, new WindowsElevationChecker());
 
         var record = _authService.IssueAuthorization(
@@ -147,17 +148,24 @@ public class ExecutorTests
         // If the current process is elevated (e.g. admin shell in CI), executor must refuse
         var isElevated = OperatingSystem.IsWindows() && new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator);
 
-        var receipt = await executor.ExecuteAsync(auth);
+        try
+        {
+            var receipt = await executor.ExecuteAsync(auth);
 
-        if (isElevated)
-        {
-            receipt.ReportedSuccess.Should().BeFalse();
-            receipt.Stderr.Should().Contain("elevated");
+            if (isElevated)
+            {
+                receipt.ReportedSuccess.Should().BeFalse();
+                receipt.Stderr.Should().Contain("elevated");
+            }
+            else
+            {
+                receipt.ReportedSuccess.Should().BeTrue();
+                receipt.Stdout.Should().Contain("calc");
+            }
         }
-        else
+        finally
         {
-            receipt.ReportedSuccess.Should().BeTrue();
-            receipt.Stdout.Should().Contain("calc");
+            KillCalculatorProcessesStartedByTest(calculatorProcessesBefore);
         }
     }
 
@@ -302,6 +310,48 @@ public class ExecutorTests
         {
             CallCount++;
             return isElevated;
+        }
+    }
+
+    private static HashSet<int> CaptureCalculatorProcessIds()
+    {
+        var processIds = new HashSet<int>();
+        foreach (var name in new[] { "calc", "CalculatorApp" })
+        {
+            foreach (var process in Process.GetProcessesByName(name))
+            {
+                using (process)
+                    processIds.Add(process.Id);
+            }
+        }
+        return processIds;
+    }
+
+    private static void KillCalculatorProcessesStartedByTest(IReadOnlySet<int> processIdsBefore)
+    {
+        foreach (var name in new[] { "calc", "CalculatorApp" })
+        {
+            foreach (var process in Process.GetProcessesByName(name))
+            {
+                using (process)
+                {
+                    if (processIdsBefore.Contains(process.Id))
+                        continue;
+
+                    if (process.HasExited)
+                        continue;
+                    try
+                    {
+                        process.Kill();
+                        if (!process.WaitForExit(5_000))
+                            throw new TimeoutException($"Test-launched calculator process {process.Id} did not exit.");
+                    }
+                    catch (InvalidOperationException) when (process.HasExited)
+                    {
+                        // The test-launched process exited between enumeration and termination.
+                    }
+                }
+            }
         }
     }
 }

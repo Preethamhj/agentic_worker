@@ -94,7 +94,12 @@
         "properties": {
           "task_name": { "type": "string", "minLength": 1, "maxLength": 63 },
           "time_iso": { "type": "string", "format": "date-time" },
-          "message": { "type": "string", "minLength": 1, "maxLength": 255 }
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
+          }
         },
         "required": ["task_name", "time_iso", "message"],
         "additionalProperties": false

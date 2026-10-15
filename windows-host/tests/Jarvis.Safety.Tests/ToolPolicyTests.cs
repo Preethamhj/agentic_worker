@@ -130,6 +130,53 @@ public class ToolPolicyTests
     }
 
     [Theory]
+    [InlineData("line one\nline two")]
+    [InlineData("line one\rline two")]
+    [InlineData("column\tvalue")]
+    [InlineData("null\0byte")]
+    public void Reminder_Message_With_Control_Characters_Is_Rejected(string message)
+    {
+        var args = ReminderArgs(message);
+
+        var result = _toolPolicy.ValidateToolCall("task.schedule_reminder", args);
+
+        result.IsValid.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("schema");
+    }
+
+    [Fact]
+    public void Reminder_Message_Over_200_Characters_Is_Rejected()
+    {
+        var result = _toolPolicy.ValidateToolCall(
+            "task.schedule_reminder",
+            ReminderArgs(new string('x', ToolPolicy.MaxReminderMessageLength + 1)));
+
+        result.IsValid.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("schema");
+    }
+
+    [Fact]
+    public void Reminder_Message_Accepts_Punctuation_And_Kannada_Within_Limit()
+    {
+        var message = "Quote \" & 100% ಕನ್ನಡ ನಮಸ್ಕಾರ";
+
+        var result = _toolPolicy.ValidateToolCall("task.schedule_reminder", ReminderArgs(message));
+
+        result.IsValid.Should().BeTrue();
+        ToolPolicy.IsValidReminderMessage(message).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("0123456789abcdef0123456789abcdef", true)]
+    [InlineData("0123456789abcdef0123456789abcde", false)]
+    [InlineData("0123456789abcdef0123456789abcdef0", false)]
+    [InlineData("0123456789abcdef0123456789abcdeg", false)]
+    public void Reminder_Task_Id_Requires_Exactly_32_Hex_Characters(string taskId, bool expected)
+    {
+        ToolPolicy.IsValidReminderTaskId(taskId).Should().Be(expected);
+    }
+
+    [Theory]
     [InlineData("fs.search_files", "low")]
     [InlineData("fs.create_folder", "medium")]
     [InlineData("fs.create_file", "medium")]
@@ -141,4 +188,12 @@ public class ToolPolicyTests
         var risk = _toolPolicy.GetPolicyRisk(toolId);
         risk.Should().Be(expectedRisk);
     }
+
+    private static JsonObject ReminderArgs(string message) =>
+        new()
+        {
+            ["task_name"] = "Review",
+            ["time_iso"] = "2026-10-16T09:00:00Z",
+            ["message"] = message
+        };
 }
