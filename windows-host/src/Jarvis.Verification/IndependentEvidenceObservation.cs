@@ -5,4 +5,5 @@ internal sealed record IndependentEvidenceObservation(
     string Collector,
     Dictionary<string, object?> Observed,
     bool Match,
-    string Detail);
+    string Detail,
+    string? Outcome = null);

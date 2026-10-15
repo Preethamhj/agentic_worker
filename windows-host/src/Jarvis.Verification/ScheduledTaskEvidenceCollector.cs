@@ -12,8 +12,72 @@ internal sealed class ScheduledTaskEvidenceCollector
     private const int SchedulerTaskNotFound = unchecked((int)0x8004130F);
     private static readonly XNamespace TaskNamespace = "http://schemas.microsoft.com/windows/2004/02/mit/task";
 
+    public IReadOnlyList<string> CaptureTaskPaths(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!OperatingSystem.IsWindows())
+            throw new PlatformNotSupportedException("Scheduled-task evidence is available only on Windows.");
+
+        object? serviceObject = null;
+        object? folderObject = null;
+        object? tasksObject = null;
+        try
+        {
+            var schedulerType = Type.GetTypeFromProgID("Schedule.Service", throwOnError: true)
+                ?? throw new InvalidOperationException("Windows Task Scheduler COM service is unavailable.");
+            serviceObject = Activator.CreateInstance(schedulerType)
+                ?? throw new InvalidOperationException("Could not create the Task Scheduler COM service.");
+            dynamic service = serviceObject;
+            service.Connect();
+            try
+            {
+                folderObject = service.GetFolder(@"\Jarvis");
+            }
+            catch (COMException exception) when (IsNotFound(exception.HResult))
+            {
+                return [];
+            }
+            catch (FileNotFoundException)
+            {
+                return [];
+            }
+
+            dynamic folder = folderObject!;
+            tasksObject = folder.GetTasks(1);
+            dynamic tasks = tasksObject;
+            var paths = new List<string>();
+            for (var index = 1; index <= (int)tasks.Count; index++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                object? taskObject = null;
+                try
+                {
+                    taskObject = tasks.Item(index);
+                    dynamic task = taskObject;
+                    paths.Add($@"\Jarvis\{(string)task.Name}");
+                }
+                finally
+                {
+                    Release(taskObject);
+                }
+            }
+            return paths.OrderBy(path => path, StringComparer.OrdinalIgnoreCase).ToArray();
+        }
+        catch (COMException exception)
+        {
+            throw new IOException("Could not enumerate the Jarvis Task Scheduler folder through COM.", exception);
+        }
+        finally
+        {
+            Release(tasksObject);
+            Release(folderObject);
+            Release(serviceObject);
+        }
+    }
+
     public IndependentEvidenceObservation Collect(
         AuthorizationRecordDto authorization,
+        IReadOnlyList<string> beforeTaskPaths,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -74,7 +138,7 @@ internal sealed class ScheduledTaskEvidenceCollector
             dynamic task = taskObject!;
             var xml = (string)task.Xml;
             var enabled = (bool)task.Enabled;
-            return ReadTaskXml(authorization, taskPath, xml, enabled);
+            return ReadTaskXml(authorization, taskPath, xml, enabled, beforeTaskPaths, cancellationToken);
         }
         catch (COMException exception)
         {
@@ -88,11 +152,13 @@ internal sealed class ScheduledTaskEvidenceCollector
         }
     }
 
-    private static IndependentEvidenceObservation ReadTaskXml(
+    private IndependentEvidenceObservation ReadTaskXml(
         AuthorizationRecordDto authorization,
         string taskPath,
         string xml,
-        bool taskEnabled)
+        bool taskEnabled,
+        IReadOnlyList<string> beforeTaskPaths,
+        CancellationToken cancellationToken)
     {
         var root = XDocument.Parse(xml).Root
             ?? throw new IOException("Task Scheduler returned XML without a task root.");
@@ -121,22 +187,28 @@ internal sealed class ScheduledTaskEvidenceCollector
             DateTimeStyles.AssumeLocal,
             out var actualTime);
         var expectedAction = Path.GetFullPath(ReadExpected(authorization, "action_path"));
+        var expectedArguments = BuildReminderArguments(
+            ReadCanonical(authorization, "task_name"),
+            ReadCanonical(authorization, "message"));
+        var normalizedArguments = NormalizeReminderArguments(arguments);
+        var normalizedExpectedArguments = NormalizeReminderArguments(expectedArguments);
         var actionMatches = command is not null
             && string.Equals(Path.GetFullPath(command), expectedAction, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(
-                arguments,
-                BuildReminderArguments(
-                    ReadCanonical(authorization, "task_name"),
-                    ReadCanonical(authorization, "message")),
-                StringComparison.Ordinal);
+            && string.Equals(normalizedArguments, normalizedExpectedArguments, StringComparison.Ordinal);
         var timeMatches = hasTime && actualTime.ToUniversalTime() == expectedTime.ToUniversalTime();
+        var unexpectedTasks = CaptureTaskPaths(cancellationToken)
+            .Where(path => !beforeTaskPaths.Contains(path, StringComparer.OrdinalIgnoreCase)
+                && !string.Equals(path, taskPath, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
         var matches = taskEnabled
             && settingsEnabled
             && triggerEnabled
             && timeMatches
-            && actionMatches;
+            && actionMatches
+            && unexpectedTasks.Length == 0;
         var observed = new Dictionary<string, object?>
         {
+            ["scheduler_method"] = "COM",
             ["task_path"] = taskPath,
             ["task_enabled"] = taskEnabled,
             ["settings_enabled"] = settingsEnabled,
@@ -147,6 +219,7 @@ internal sealed class ScheduledTaskEvidenceCollector
             ["action_count"] = actions.Length,
             ["action_command"] = command,
             ["action_arguments"] = arguments,
+            ["unexpected_new_tasks"] = unexpectedTasks,
             ["xml_valid"] = true
         };
         return new IndependentEvidenceObservation(
@@ -155,8 +228,10 @@ internal sealed class ScheduledTaskEvidenceCollector
             observed,
             matches,
             matches
-                ? "Task Scheduler XML, one-time trigger, action, and enabled state match the signed authorization."
-                : "Scheduled task XML, trigger time, action, or enabled state differs from the signed authorization.");
+                ? "Task Scheduler COM XML, one-time trigger, action, enabled state, and Jarvis-folder side effects match the signed authorization."
+                : unexpectedTasks.Length > 0
+                    ? "Unauthorized additional tasks appeared in the Jarvis Task Scheduler folder."
+                    : "Scheduled task XML, trigger time, action, or enabled state differs from the signed authorization.");
     }
 
     private static IndependentEvidenceObservation Missing(string taskPath) =>
@@ -166,6 +241,7 @@ internal sealed class ScheduledTaskEvidenceCollector
             new Dictionary<string, object?>
             {
                 ["task_path"] = taskPath,
+                ["scheduler_method"] = "COM",
                 ["exists"] = false,
                 ["task_enabled"] = false
             },
@@ -174,6 +250,15 @@ internal sealed class ScheduledTaskEvidenceCollector
 
     private static string BuildReminderArguments(string taskName, string message) =>
         $"--jarvis-reminder {QuoteArgument(taskName)} {QuoteArgument(message)}";
+
+    private static string NormalizeReminderArguments(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return string.Empty;
+
+        return value.Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace("\r", "\n", StringComparison.Ordinal);
+    }
 
     private static string QuoteArgument(string value)
     {

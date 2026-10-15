@@ -152,7 +152,8 @@ public record StepToken(
     [property: JsonPropertyName("before_snapshots")] IReadOnlyList<SnapshotEntryDto> BeforeSnapshots,
     [property: JsonPropertyName("snapshot_limit_exceeded")] bool SnapshotLimitExceeded = false,
     [property: JsonPropertyName("snapshot_failure")] string? SnapshotFailure = null,
-    [property: JsonPropertyName("noise_exclusions")] IReadOnlyList<string>? NoiseExclusions = null
+    [property: JsonPropertyName("noise_exclusions")] IReadOnlyList<string>? NoiseExclusions = null,
+    [property: JsonPropertyName("before_scheduler_tasks")] IReadOnlyList<string>? BeforeSchedulerTasks = null
 );
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]

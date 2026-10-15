@@ -67,6 +67,14 @@ public sealed class TaskScheduleReminderExecutor : IToolExecutor
         {
             return Task.FromResult(Failure(authorization, startedAt, "Signed authorization is missing the task path or action executable."));
         }
+        if (!Path.IsPathRooted(actionPath)
+            || !string.Equals(actionPath, Path.GetFullPath(actionPath), StringComparison.OrdinalIgnoreCase))
+        {
+            return Task.FromResult(Failure(
+                authorization,
+                startedAt,
+                "Signed reminder action executable must be a fixed absolute path."));
+        }
 
         var separator = taskPath.LastIndexOf('\\');
         if (separator <= 0 || separator == taskPath.Length - 1

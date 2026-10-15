@@ -71,13 +71,17 @@ public sealed class VerificationEngine : IVerifier
                 cancellationToken,
                 authorizedTarget: target)
             : new SnapshotCaptureResult([], false, null);
+        var beforeSchedulerTasks = authorization.ToolId == "task.schedule_reminder"
+            ? _scheduledTaskCollector.CaptureTaskPaths(cancellationToken)
+            : (IReadOnlyList<string>?)null;
         return Task.FromResult(new StepToken(
             authorization,
             authorization.Nonce,
             snapshot.Entries,
             snapshot.EntryLimitExceeded,
             snapshot.FailureReason,
-            _snapshots.NoiseExclusions));
+            _snapshots.NoiseExclusions,
+            beforeSchedulerTasks));
     }
 
     public async Task<VerificationResultDto> VerifyAsync(
@@ -129,6 +133,7 @@ public sealed class VerificationEngine : IVerifier
                     authorization,
                     receipt,
                     observation,
+                    token,
                     cancellationToken);
                 var item = CreateEvidence(authorization, token, collected, _clock.UtcNow);
                 evidence.Add(item);
@@ -140,7 +145,7 @@ public sealed class VerificationEngine : IVerifier
                 if (!evidenceValid)
                     reasons.Add(evidenceFailure);
 
-                stages.Add(Stage(5, "AttributeVerification", collected.Match, collected.Detail));
+                stages.Add(Stage(5, "AttributeVerification", collected.Match, collected.Detail, collected.Outcome));
                 if (!collected.Match)
                     reasons.Add(collected.Detail);
             }
@@ -365,6 +370,7 @@ public sealed class VerificationEngine : IVerifier
         AuthorizationRecordDto authorization,
         ExecutionReceiptDto receipt,
         ExecutionObservation observation,
+        StepToken token,
         CancellationToken cancellationToken)
     {
         if (authorization.ToolId is "fs.create_file" or "fs.create_folder")
@@ -398,7 +404,10 @@ public sealed class VerificationEngine : IVerifier
         {
             "fs.search_files" => _searchCollector.Collect(authorization, receipt.Stdout, cancellationToken),
             "app.launch" => _processCollector.Collect(authorization, observation, cancellationToken),
-            "task.schedule_reminder" => _scheduledTaskCollector.Collect(authorization, cancellationToken),
+            "task.schedule_reminder" => _scheduledTaskCollector.Collect(
+                authorization,
+                token.BeforeSchedulerTasks ?? [],
+                cancellationToken),
             _ => throw new ArgumentException($"Unsupported verification tool '{authorization.ToolId}'.", nameof(authorization))
         };
     }
