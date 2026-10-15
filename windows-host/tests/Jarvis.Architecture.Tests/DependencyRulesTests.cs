@@ -47,9 +47,14 @@ public class DependencyRulesTests
                         var loaded = System.Reflection.Assembly.Load(refName);
                         queue.Enqueue(loaded);
                     }
-                    catch
+                    catch (System.IO.FileNotFoundException) when (!refName.Name.StartsWith("Jarvis.", StringComparison.OrdinalIgnoreCase))
                     {
-                        // External system assembly
+                    }
+                    catch (System.IO.FileLoadException) when (!refName.Name.StartsWith("Jarvis.", StringComparison.OrdinalIgnoreCase))
+                    {
+                    }
+                    catch (BadImageFormatException) when (!refName.Name.StartsWith("Jarvis.", StringComparison.OrdinalIgnoreCase))
+                    {
                     }
                 }
             }
@@ -62,6 +67,15 @@ public class DependencyRulesTests
         }
 
         visited.Should().NotContain("Jarvis.Tools", "Jarvis.Verification must never have transitive reachability to Jarvis.Tools");
+        visited.Should().NotContain("Jarvis.Safety", "Jarvis.Verification must not transitively depend on Jarvis.Safety");
+        visited.Should().NotContain("Jarvis.Core", "Jarvis.Verification must not transitively depend on Jarvis.Core");
+
+        var directReferences = verificationAsm.GetReferencedAssemblies()
+            .Where(reference => reference.Name?.StartsWith("Jarvis.", StringComparison.OrdinalIgnoreCase) == true)
+            .Select(reference => reference.Name)
+            .OrderBy(name => name)
+            .ToArray();
+        directReferences.Should().BeEquivalentTo("Jarvis.Contracts", "Jarvis.Infrastructure");
     }
 
     [Fact]

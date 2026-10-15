@@ -43,6 +43,16 @@ public interface IAuthorizationVerifier
 }
 
 /// <summary>
+/// Indicates that a signed authorization is invalid, expired, unconsumed, or replayed.
+/// </summary>
+public class AuthorizationVerificationException : Exception
+{
+    public AuthorizationVerificationException(string message) : base(message) { }
+
+    public AuthorizationVerificationException(string message, Exception innerException) : base(message, innerException) { }
+}
+
+/// <summary>
 /// Details of an action requiring approval.
 /// </summary>
 public sealed record ApprovalRequest(

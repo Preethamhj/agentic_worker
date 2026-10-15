@@ -115,7 +115,8 @@ public sealed class SqliteAuditStore : IAuditStore, IDisposable
                     match INTEGER NOT NULL,
                     collected_at TEXT NOT NULL,
                     nonce TEXT NOT NULL,
-                    record_sha256 TEXT NOT NULL
+                    record_sha256 TEXT NOT NULL,
+                    record_json TEXT NOT NULL DEFAULT '{}'
                 );
 
                 CREATE TABLE IF NOT EXISTS api_calls (
@@ -138,6 +139,23 @@ public sealed class SqliteAuditStore : IAuditStore, IDisposable
                 CREATE INDEX IF NOT EXISTS idx_api_calls_trace_id ON api_calls(trace_id);
             ";
             cmd.ExecuteNonQuery();
+
+            using var evidenceColumns = connection.CreateCommand();
+            evidenceColumns.CommandText = "PRAGMA table_info(evidence);";
+            using var reader = evidenceColumns.ExecuteReader();
+            var hasRecordJson = false;
+            while (reader.Read())
+            {
+                if (string.Equals(reader.GetString(1), "record_json", StringComparison.OrdinalIgnoreCase))
+                    hasRecordJson = true;
+            }
+            reader.Close();
+            if (!hasRecordJson)
+            {
+                using var migration = connection.CreateCommand();
+                migration.CommandText = "ALTER TABLE evidence ADD COLUMN record_json TEXT NOT NULL DEFAULT '{}';";
+                migration.ExecuteNonQuery();
+            }
         }
     }
 
@@ -294,8 +312,8 @@ public sealed class SqliteAuditStore : IAuditStore, IDisposable
 
         using var cmd = connection.CreateCommand();
         cmd.CommandText = @"
-            INSERT INTO evidence (evidence_id, step_id, collector, check_type, match, collected_at, nonce, record_sha256)
-            VALUES (@evidenceId, @stepId, @collector, @checkType, @match, @collectedAt, @nonce, @recordSha256);
+            INSERT INTO evidence (evidence_id, step_id, collector, check_type, match, collected_at, nonce, record_sha256, record_json)
+            VALUES (@evidenceId, @stepId, @collector, @checkType, @match, @collectedAt, @nonce, @recordSha256, @recordJson);
         ";
         cmd.Parameters.AddWithValue("@evidenceId", record.EvidenceId);
         cmd.Parameters.AddWithValue("@stepId", record.StepId);
@@ -305,6 +323,7 @@ public sealed class SqliteAuditStore : IAuditStore, IDisposable
         cmd.Parameters.AddWithValue("@collectedAt", record.CollectedAt.ToString("o"));
         cmd.Parameters.AddWithValue("@nonce", record.Nonce);
         cmd.Parameters.AddWithValue("@recordSha256", record.RecordSha256);
+        cmd.Parameters.AddWithValue("@recordJson", record.RecordJson);
 
         await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -541,8 +560,8 @@ public sealed class SqliteAuditStore : IAuditStore, IDisposable
 
         using var cmd = connection.CreateCommand();
         cmd.CommandText = stepId != null
-            ? "SELECT evidence_id, step_id, collector, check_type, match, collected_at, nonce, record_sha256 FROM evidence WHERE step_id = @stepId ORDER BY collected_at ASC"
-            : "SELECT evidence_id, step_id, collector, check_type, match, collected_at, nonce, record_sha256 FROM evidence ORDER BY collected_at ASC";
+            ? "SELECT evidence_id, step_id, collector, check_type, match, collected_at, nonce, record_sha256, record_json FROM evidence WHERE step_id = @stepId ORDER BY collected_at ASC"
+            : "SELECT evidence_id, step_id, collector, check_type, match, collected_at, nonce, record_sha256, record_json FROM evidence ORDER BY collected_at ASC";
 
         if (stepId != null) cmd.Parameters.AddWithValue("@stepId", stepId);
 
@@ -557,7 +576,8 @@ public sealed class SqliteAuditStore : IAuditStore, IDisposable
                 reader.GetInt32(4) == 1,
                 DateTimeOffset.Parse(reader.GetString(5)),
                 reader.GetString(6),
-                reader.GetString(7)
+                reader.GetString(7),
+                reader.GetString(8)
             ));
         }
 

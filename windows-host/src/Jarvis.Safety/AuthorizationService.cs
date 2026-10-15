@@ -256,6 +256,13 @@ public sealed class AuthorizationService : IAuthorizationVerifier
     /// </summary>
     public bool Verify(AuthorizationRecordDto record)
     {
+        var lifecycle = MarkVerified(record);
+        _auditStore?.RecordAuthorizationLifecycleAsync(lifecycle);
+        return true;
+    }
+
+    private AuthorizationLifecycleRecord MarkVerified(AuthorizationRecordDto record)
+    {
         lock (_lock)
         {
             // 1. Verify HMAC signature with current key first
@@ -295,27 +302,28 @@ public sealed class AuthorizationService : IAuthorizationVerifier
             // 4. Transition to Verified
             _recordStates[record.AuthId] = AuthorizationLifecycleState.Verified;
 
-            _auditStore?.RecordAuthorizationLifecycleAsync(new AuthorizationLifecycleRecord(
+            return new AuthorizationLifecycleRecord(
                 record.AuthId,
                 record.TaskId,
                 record.StepId,
                 "Verified",
                 record.Nonce,
                 now
-            ));
-
-            return true;
+            );
         }
     }
 
-    public Task VerifyAndMarkVerifiedAsync(
+    public async Task VerifyAndMarkVerifiedAsync(
         AuthorizationRecordDto authorization,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(authorization);
         cancellationToken.ThrowIfCancellationRequested();
-        Verify(authorization);
-        return Task.CompletedTask;
+        var lifecycle = MarkVerified(authorization);
+        if (_auditStore is not null)
+        {
+            await _auditStore.RecordAuthorizationLifecycleAsync(lifecycle, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     public static string ComputeCanonicalRepresentation(AuthorizationRecordDto record)
@@ -419,6 +427,14 @@ public sealed class AuthorizationService : IAuthorizationVerifier
             case "fs.create_file":
                 expected["exists"] = true;
                 if (args.TryGetValue("path", out var p)) expected["path"] = p;
+                if (args.TryGetValue("content", out var content) && content is string text)
+                {
+                    var contentBytes = Encoding.UTF8.GetPreamble()
+                        .Concat(Encoding.UTF8.GetBytes(text))
+                        .ToArray();
+                    expected["size"] = contentBytes.LongLength;
+                    expected["sha256"] = Convert.ToHexString(SHA256.HashData(contentBytes));
+                }
                 break;
             case "fs.create_folder":
                 expected["exists"] = true;
@@ -458,7 +474,12 @@ public sealed class AuthorizationService : IAuthorizationVerifier
         var list = new List<string>();
         if (args.TryGetValue("path", out var p) && p != null)
         {
-            list.Add(p.ToString()!);
+            var path = p.ToString()!;
+            var scope = toolId.Equals("fs.create_file", StringComparison.OrdinalIgnoreCase)
+                || toolId.Equals("fs.create_folder", StringComparison.OrdinalIgnoreCase)
+                ? Path.GetDirectoryName(Path.GetFullPath(path)) ?? path
+                : path;
+            list.Add(scope);
         }
         else if (args.TryGetValue("root_path", out var rp) && rp != null)
         {

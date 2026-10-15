@@ -118,6 +118,23 @@ public class OrchestratorAndQueueTests
     }
 
     [Fact]
+    public async Task TaskOrchestrator_Uses_Host_Observation_And_Does_Not_Trust_Receipt_Success_Claims()
+    {
+        var startedAt = new DateTimeOffset(2026, 10, 15, 0, 0, 0, TimeSpan.Zero);
+        var clock = new ManualClock(startedAt);
+        var verifier = new RecordingVerifiedVerifier();
+        var orchestrator = CreateTestOrchestrator(
+            verifier,
+            stepExecutor: new FakeStepExecutor(clock: clock, receiptReportsSuccess: false),
+            clock: clock);
+
+        var result = await orchestrator.RunTaskAsync("create a test file");
+
+        result.FinalState.Should().Be(TaskState.Completed);
+        verifier.Observation.Should().Be(new ExecutionObservation(startedAt, startedAt.AddMilliseconds(125)));
+    }
+
+    [Fact]
     public async Task TaskOrchestrator_Reaches_Terminal_Failed_When_Safety_Rejects()
     {
         var stubVerifier = new StubVerifier();
@@ -176,7 +193,8 @@ public class OrchestratorAndQueueTests
         IVerifier verifier,
         ISafetyGate? safetyGate = null,
         IApprovalHandler? approvalHandler = null,
-        IStepExecutor? stepExecutor = null)
+        IStepExecutor? stepExecutor = null,
+        IClock? clock = null)
     {
         var queue = new ExecutionQueue();
         var planner = new FakePlanner();
@@ -184,7 +202,7 @@ public class OrchestratorAndQueueTests
         var approval = approvalHandler ?? new FakeApprovalHandler(userApproved: true);
         var executor = stepExecutor ?? new FakeStepExecutor();
 
-        return new TaskOrchestrator(planner, safety, approval, queue, executor, verifier);
+        return new TaskOrchestrator(planner, safety, approval, queue, executor, verifier, clock: clock);
     }
 
     private class FakePlanner : IPlanner
@@ -261,10 +279,14 @@ public class OrchestratorAndQueueTests
     private class FakeStepExecutor : IStepExecutor
     {
         private readonly bool _shouldTimeout;
+        private readonly ManualClock? _clock;
+        private readonly bool _receiptReportsSuccess;
 
-        public FakeStepExecutor(bool shouldTimeout = false)
+        public FakeStepExecutor(bool shouldTimeout = false, ManualClock? clock = null, bool receiptReportsSuccess = true)
         {
             _shouldTimeout = shouldTimeout;
+            _clock = clock;
+            _receiptReportsSuccess = receiptReportsSuccess;
         }
 
         public AuthorizationRecordDto PrepareAuthorization(
@@ -302,7 +324,46 @@ public class OrchestratorAndQueueTests
             }
 
             await Task.Yield();
-            return CreateDummyReceipt(authorization.StepId);
+            if (_clock != null)
+                _clock.UtcNow = _clock.UtcNow.AddMilliseconds(125);
+            return CreateDummyReceipt(authorization.StepId) with
+            {
+                AuthId = authorization.AuthId,
+                StartedAt = DateTimeOffset.MaxValue.ToString("o"),
+                CompletedAt = DateTimeOffset.MaxValue.ToString("o"),
+                ReportedSuccess = _receiptReportsSuccess
+            };
+        }
+    }
+
+    private sealed class ManualClock(DateTimeOffset utcNow) : IClock
+    {
+        public DateTimeOffset UtcNow { get; set; } = utcNow;
+    }
+
+    private sealed class RecordingVerifiedVerifier : IVerifier
+    {
+        public ExecutionObservation? Observation { get; private set; }
+
+        public Task<StepToken> BeginStepAsync(AuthorizationRecordDto authorization, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new StepToken(authorization, authorization.Nonce, Array.Empty<SnapshotEntryDto>()));
+
+        public Task<VerificationResultDto> VerifyAsync(
+            ExecutionReceiptDto receipt,
+            ExecutionObservation observation,
+            StepToken token,
+            CancellationToken cancellationToken = default)
+        {
+            Observation = observation;
+            return Task.FromResult(new VerificationResultDto(
+                1,
+                receipt.StepId,
+                "VERIFIED",
+                new List<VerificationStageResultDto>(),
+                new List<EvidenceDto>(),
+                new List<string>(),
+                new List<string>(),
+                0));
         }
     }
 }

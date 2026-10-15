@@ -147,10 +147,12 @@ public record SnapshotEntryDto(
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public record StepToken(
-    [property: JsonPropertyName("authorization_id")] string AuthorizationId,
+    [property: JsonPropertyName("authorization")] AuthorizationRecordDto Authorization,
     [property: JsonPropertyName("nonce")] string Nonce,
     [property: JsonPropertyName("before_snapshots")] IReadOnlyList<SnapshotEntryDto> BeforeSnapshots,
-    [property: JsonPropertyName("snapshot_limit_exceeded")] bool SnapshotLimitExceeded = false
+    [property: JsonPropertyName("snapshot_limit_exceeded")] bool SnapshotLimitExceeded = false,
+    [property: JsonPropertyName("snapshot_failure")] string? SnapshotFailure = null,
+    [property: JsonPropertyName("noise_exclusions")] IReadOnlyList<string>? NoiseExclusions = null
 );
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]

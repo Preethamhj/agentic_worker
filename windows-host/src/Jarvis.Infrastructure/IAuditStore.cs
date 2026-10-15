@@ -99,7 +99,8 @@ public sealed record EvidenceAuditRecord(
     bool Match,
     DateTimeOffset CollectedAt,
     string Nonce,
-    string RecordSha256
+    string RecordSha256,
+    string RecordJson = "{}"
 );
 
 /// <summary>

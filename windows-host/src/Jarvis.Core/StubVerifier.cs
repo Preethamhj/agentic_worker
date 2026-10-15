@@ -13,7 +13,7 @@ public sealed class StubVerifier : IVerifier
     {
         cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult(new StepToken(
-            authorization.AuthId,
+            authorization,
             authorization.Nonce,
             Array.Empty<SnapshotEntryDto>()));
     }
@@ -31,9 +31,9 @@ public sealed class StubVerifier : IVerifier
             Status: "ESCALATE",
             Stages: new List<VerificationStageResultDto>
             {
-                new(1, "Precondition", true, "Precondition verified."),
-                new(2, "Authorization", true, "Authorization record validated."),
-                new(3, "IndependentEvidence", false, "Independent verification engine is stubbed in Phase 2b.")
+                new(1, "Precondition", true, "Precondition verified.", "PASSED"),
+                new(2, "Authorization", true, "Authorization record validated.", "PASSED"),
+                new(3, "IndependentEvidence", false, "Independent verification engine is stubbed in Phase 2b.", "ESCALATE")
             },
             Evidence: new List<EvidenceDto>(),
             SideEffects: new List<string>(),
