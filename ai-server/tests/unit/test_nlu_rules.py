@@ -1,3 +1,7 @@
+import datetime
+
+import pytest
+
 from jarvis_ai.nlu.rules import parse_rules_fast_path
 
 
@@ -41,3 +45,24 @@ def test_rule_schedule_reminder() -> None:
     assert intent is not None
     assert intent.action == "task.schedule_reminder"
     assert intent.entities["message"] == "buy groceries"
+
+
+def test_rule_schedule_reminder_in_relative_minutes() -> None:
+    before = datetime.datetime.now(datetime.UTC)
+    intent = parse_rules_fast_path("remind me Jarvis smoke delivery in 2 minutes")
+    after = datetime.datetime.now(datetime.UTC)
+
+    assert intent is not None
+    assert intent.action == "task.schedule_reminder"
+    assert intent.entities["message"] == "Jarvis smoke delivery"
+    scheduled_at = datetime.datetime.fromisoformat(intent.entities["time_iso"])
+    assert scheduled_at.microsecond == 0
+    assert before + datetime.timedelta(minutes=2) - datetime.timedelta(seconds=1) <= scheduled_at
+    assert scheduled_at <= after + datetime.timedelta(minutes=2)
+
+
+@pytest.mark.parametrize("delay", ["0", "1441"])
+def test_rule_schedule_reminder_rejects_out_of_range_relative_delay(delay: str) -> None:
+    intent = parse_rules_fast_path(f"remind me unsupported in {delay} minutes")
+
+    assert intent is None

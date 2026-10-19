@@ -101,13 +101,23 @@ def parse_rules_fast_path(text: str) -> IntentModel | None:
 
     # Rule 5: task.schedule_reminder
     m_remind = re.search(
-        r"(?:remind\s+me|schedule\s+reminder)\s+['\"]?([^'\"]+?)['\"]?\s+at\s+['\"]?([^'\"]+?)['\"]?$",
+        r"(?:remind\s+me|schedule\s+reminder)\s+['\"]?(.+?)['\"]?\s+"
+        r"(?:in\s+(\d{1,3})\s+minutes?|at\s+['\"]?([^'\"]+?)['\"]?)$",
         norm,
         re.IGNORECASE,
     )
     if m_remind:
         msg = m_remind.group(1).strip()
-        time_iso = datetime.datetime.now(datetime.UTC).isoformat()
+        now = datetime.datetime.now(datetime.UTC)
+        minutes = m_remind.group(2)
+        if minutes is not None:
+            delay = int(minutes)
+            if not 1 <= delay <= 1440:
+                return None
+            scheduled_at = now + datetime.timedelta(minutes=delay)
+        else:
+            scheduled_at = now
+        time_iso = scheduled_at.replace(microsecond=0).isoformat()
         risk_lvl, reasons = detect_keyword_risk(norm)
         return IntentModel(
             intent_id=intent_id,

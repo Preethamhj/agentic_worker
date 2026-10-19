@@ -320,8 +320,133 @@ public sealed class Phase3bVerificationTests : IDisposable
         }
         finally
         {
-            if (!child.HasExited)
-                child.Kill(entireProcessTree: true);
+            StopChild(child);
+        }
+    }
+
+    [NonElevatedFact]
+    public async AsyncTask AppLaunch_Exact_Clean_Processes_Verify_In_50_Consecutive_Runs()
+    {
+        var imagePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "ping.exe");
+        File.Exists(imagePath).Should().BeTrue();
+
+        for (var run = 0; run < 50; run++)
+        {
+            var runRoot = Path.Combine(_root, $"app-clean-run-{run}");
+            Directory.CreateDirectory(runRoot);
+            _clock.UtcNow = DateTimeOffset.UtcNow;
+            var authorization = IssueAppAuthorization($"clean-run-{run}", imagePath);
+            var token = await _engine.BeginStepAsync(authorization);
+            _authorizationService.Consume(authorization, authorization.StepId);
+            using var child = StartPingChild(imagePath);
+            var observation = new ExecutionObservation(_clock.UtcNow, _clock.UtcNow);
+
+            try
+            {
+                var result = await _engine.VerifyAsync(
+                    LyingReceipt(authorization),
+                    observation,
+                    token);
+
+                result.Status.Should().Be("VERIFIED", $"clean app.launch run {run + 1} should not fail");
+                result.Evidence.Should().ContainSingle(item => item.Match);
+            }
+            finally
+            {
+                StopChild(child);
+            }
+        }
+    }
+
+    [Fact]
+    public async AsyncTask AppLaunch_Fails_When_Child_Exits_Immediately()
+    {
+        var imagePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "where.exe");
+        var authorization = IssueAppAuthorization("exited-immediately", imagePath);
+        var token = await _engine.BeginStepAsync(authorization);
+        _authorizationService.Consume(authorization, authorization.StepId);
+        using var child = new Process
+        {
+            StartInfo = new ProcessStartInfo(imagePath)
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true
+            }
+        };
+        child.StartInfo.ArgumentList.Add("__jarvis_no_such_executable__");
+        child.Start().Should().BeTrue();
+
+        try
+        {
+            child.WaitForExit(5_000).Should().BeTrue("where.exe should exit immediately for a missing executable");
+            var result = await _engine.VerifyAsync(
+                LyingReceipt(authorization),
+                new ExecutionObservation(_clock.UtcNow, _clock.UtcNow),
+                token);
+
+            result.Status.Should().Be("FAILED");
+        }
+        finally
+        {
+            StopChild(child);
+        }
+    }
+
+    [Fact]
+    public async AsyncTask AppLaunch_Fails_When_Child_Image_Differs_From_Signed_Executable()
+    {
+        var expectedPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "ping.exe");
+        var wrongPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "where.exe");
+        var authorization = IssueAppAuthorization("wrong-executable", expectedPath);
+        var token = await _engine.BeginStepAsync(authorization);
+        _authorizationService.Consume(authorization, authorization.StepId);
+        using var child = new Process
+        {
+            StartInfo = new ProcessStartInfo(wrongPath)
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true
+            }
+        };
+        child.StartInfo.ArgumentList.Add("__jarvis_no_such_executable__");
+        child.Start().Should().BeTrue();
+        var observation = new ExecutionObservation(_clock.UtcNow, _clock.UtcNow);
+
+        try
+        {
+            var result = await _engine.VerifyAsync(LyingReceipt(authorization), observation, token);
+
+            result.Status.Should().Be("FAILED");
+            result.Evidence.Single().Observed["expected_image_path"].Should().Be(Path.GetFullPath(expectedPath));
+        }
+        finally
+        {
+            StopChild(child);
+        }
+    }
+
+    [Fact]
+    public async AsyncTask AppLaunch_Fails_When_Child_Started_Before_Evidence_Window()
+    {
+        var imagePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "ping.exe");
+        var authorization = IssueAppAuthorization("started-before-window", imagePath);
+        var token = await _engine.BeginStepAsync(authorization);
+        _authorizationService.Consume(authorization, authorization.StepId);
+        using var child = StartPingChild(imagePath);
+
+        try
+        {
+            _clock.UtcNow = DateTimeOffset.UtcNow.AddSeconds(1);
+            var result = await _engine.VerifyAsync(
+                LyingReceipt(authorization),
+                new ExecutionObservation(_clock.UtcNow, _clock.UtcNow),
+                token);
+
+            result.Status.Should().Be("FAILED");
+        }
+        finally
+        {
+            StopChild(child);
         }
     }
 
@@ -541,6 +666,46 @@ public sealed class Phase3bVerificationTests : IDisposable
     }
 
     [Fact]
+    public async AsyncTask ScheduleReminder_Exact_Clean_Tasks_Verify_In_50_Consecutive_Runs()
+    {
+        var scheduler = new WindowsReminderTaskScheduler();
+        for (var run = 0; run < 50; run++)
+        {
+            var authorization = IssueReminderAuthorization($"clean-run-{run}");
+            var token = await _engine.BeginStepAsync(authorization);
+            var taskId = authorization.Expected["task_id"]!.ToString()!;
+            var taskPath = authorization.Expected["task_path"]!.ToString()!;
+            var taskCreated = false;
+
+            try
+            {
+                var verifiedAuthorization = _authorizationService.Consume(authorization, authorization.StepId);
+                var receipt = await new TaskScheduleReminderExecutor(
+                    _authorizationService,
+                    scheduler,
+                    _clock,
+                    _reminderDataFileStore).ExecuteAsync(verifiedAuthorization);
+                taskCreated = receipt.ReportedSuccess;
+                receipt.ReportedSuccess.Should().BeTrue($"clean reminder run {run + 1} should register");
+
+                var result = await _engine.VerifyAsync(
+                    receipt,
+                    HostObservation(),
+                    token);
+
+                result.Status.Should().Be("VERIFIED", $"clean reminder run {run + 1} should not fail");
+                result.Evidence.Should().ContainSingle(item => item.Match);
+                result.Evidence.Single().Observed.Should().ContainKey("scheduler_method");
+                result.Evidence.Single().Observed["scheduler_method"].Should().Be("COM");
+            }
+            finally
+            {
+                CleanupReminder(scheduler, taskPath, taskId, taskCreated);
+            }
+        }
+    }
+
+    [Fact]
     public void Reminder_Authorization_Derives_Action_And_Arguments_From_The_Record()
     {
         var scheduledAt = _clock.UtcNow.AddHours(1).ToString("O");
@@ -619,6 +784,7 @@ public sealed class Phase3bVerificationTests : IDisposable
             result.Status.Should().Be("VERIFIED");
             result.Evidence.Should().ContainSingle(item => item.Match);
             var observed = result.Evidence.Single().Observed;
+            observed.Should().ContainKey("scheduler_method");
             observed["scheduler_method"].Should().Be("COM");
             var expectedActionPath = Path.GetFullPath(Environment.ProcessPath!);
             observed["action_command"].Should().Be(expectedActionPath);
@@ -634,9 +800,7 @@ public sealed class Phase3bVerificationTests : IDisposable
         }
         finally
         {
-            if (taskCreated)
-                new WindowsReminderTaskScheduler().Delete(taskPath);
-            _reminderDataFileStore.Delete(taskId);
+            CleanupReminder(new WindowsReminderTaskScheduler(), taskPath, taskId, taskCreated);
         }
     }
 
@@ -668,9 +832,7 @@ public sealed class Phase3bVerificationTests : IDisposable
         }
         finally
         {
-            if (taskCreated)
-                new WindowsReminderTaskScheduler().Delete(taskPath);
-            _reminderDataFileStore.Delete(taskId);
+            CleanupReminder(new WindowsReminderTaskScheduler(), taskPath, taskId, taskCreated);
         }
     }
 
@@ -704,9 +866,7 @@ public sealed class Phase3bVerificationTests : IDisposable
         }
         finally
         {
-            if (taskCreated)
-                new WindowsReminderTaskScheduler().Delete(taskPath);
-            _reminderDataFileStore.Delete(taskId);
+            CleanupReminder(new WindowsReminderTaskScheduler(), taskPath, taskId, taskCreated);
         }
     }
 
@@ -767,6 +927,68 @@ public sealed class Phase3bVerificationTests : IDisposable
             arguments,
             risk: "low",
             approvedBy: "auto");
+    }
+
+    private AuthorizationRecordDto IssueAppAuthorization(string suffix, string imagePath) =>
+        _authorizationService.IssueAuthorization(
+            $"task-app-{suffix}",
+            $"step-app-{suffix}",
+            "app.launch",
+            new Dictionary<string, object?> { ["app_id"] = "ping-fixture" },
+            expected: new Dictionary<string, object?>
+            {
+                ["app_id"] = "ping-fixture",
+                ["image_path"] = imagePath,
+                ["running"] = true
+            },
+            allowedEffects: ["launch:ping-fixture"],
+            risk: "medium");
+
+    private static Process StartPingChild(string imagePath)
+    {
+        var child = new Process
+        {
+            StartInfo = new ProcessStartInfo(imagePath)
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            }
+        };
+        child.StartInfo.ArgumentList.Add("-n");
+        child.StartInfo.ArgumentList.Add("20");
+        child.StartInfo.ArgumentList.Add("127.0.0.1");
+        if (!child.Start())
+        {
+            child.Dispose();
+            throw new InvalidOperationException("Could not start the ping child process.");
+        }
+        return child;
+    }
+
+    private void CleanupReminder(
+        IReminderTaskScheduler scheduler,
+        string taskPath,
+        string taskId,
+        bool taskCreated)
+    {
+        try
+        {
+            if (taskCreated)
+                scheduler.Delete(taskPath);
+        }
+        finally
+        {
+            _reminderDataFileStore.Delete(taskId);
+        }
+    }
+
+    private static void StopChild(Process child)
+    {
+        if (!child.HasExited)
+            child.Kill(entireProcessTree: true);
+        child.WaitForExit();
     }
 
     private AuthorizationRecordDto IssueReminderAuthorization(

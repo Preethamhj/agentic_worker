@@ -26,6 +26,39 @@ public class AuthorizationTests
     }
 
     [Fact]
+    public void ScheduleReminder_Refuses_Dotnet_Host_And_Signs_Injected_Published_Host()
+    {
+        var dotnetService = new AuthorizationService(
+            _keyStore,
+            _clock,
+            hostPathProvider: new FixedHostPathProvider(@"C:\\Program Files\\dotnet\\dotnet.exe"));
+        Action refusal = () => dotnetService.IssueAuthorization(
+            "task-reminder", "step-reminder", "task.schedule_reminder",
+            new Dictionary<string, object?>
+            {
+                ["task_name"] = "Reminder",
+                ["time_iso"] = "2026-10-09T10:05:00.0000000+00:00",
+                ["message"] = "message"
+            });
+        refusal.Should().Throw<InvalidOperationException>()
+            .WithMessage("*published Jarvis.Cli.exe*");
+
+        var publishedService = new AuthorizationService(
+            _keyStore,
+            _clock,
+            hostPathProvider: new FixedHostPathProvider(@"C:\\Jarvis\\Jarvis.Cli.exe"));
+        var record = publishedService.IssueAuthorization(
+            "task-reminder", "step-reminder", "task.schedule_reminder",
+            new Dictionary<string, object?>
+            {
+                ["task_name"] = "Reminder",
+                ["time_iso"] = "2026-10-09T10:05:00.0000000+00:00",
+                ["message"] = "message"
+            });
+        record.Expected["action_path"].Should().Be(@"C:\Jarvis\Jarvis.Cli.exe");
+    }
+
+    [Fact]
     public void Full_Happy_Path_Issue_Consume_Verify_Succeeds()
     {
         var record = _authService.IssueAuthorization(
@@ -328,5 +361,10 @@ public class AuthorizationTests
             watchScopes: new List<string> { @"C:\test.txt" },
             risk: "medium",
             approvedBy: "user");
+    }
+
+    private sealed class FixedHostPathProvider(string path) : IHostPathProvider
+    {
+        public string GetHostPath() => path;
     }
 }

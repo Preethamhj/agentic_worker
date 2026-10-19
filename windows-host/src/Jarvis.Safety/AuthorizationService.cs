@@ -26,6 +26,7 @@ public sealed class AuthorizationService : IAuthorizationVerifier
     private readonly IDpapiKeyStore _keyStore;
     private readonly IClock _clock;
     private readonly IAuditStore? _auditStore;
+    private readonly IHostPathProvider _hostPathProvider;
     private readonly TimeSpan _defaultExecuteWindow = TimeSpan.FromSeconds(60);
     private readonly TimeSpan _defaultVerifyWindow = TimeSpan.FromSeconds(120);
     private readonly TimeSpan _defaultTotalExpiry = TimeSpan.FromMinutes(5);
@@ -34,11 +35,16 @@ public sealed class AuthorizationService : IAuthorizationVerifier
     private readonly HashSet<string> _consumedNonces = new();
     private readonly object _lock = new();
 
-    public AuthorizationService(IDpapiKeyStore keyStore, IClock? clock = null, IAuditStore? auditStore = null)
+    public AuthorizationService(
+        IDpapiKeyStore keyStore,
+        IClock? clock = null,
+        IAuditStore? auditStore = null,
+        IHostPathProvider? hostPathProvider = null)
     {
         _keyStore = keyStore ?? throw new ArgumentNullException(nameof(keyStore));
         _clock = clock ?? SystemClock.Instance;
         _auditStore = auditStore;
+        _hostPathProvider = hostPathProvider ?? new EnvironmentHostPathProvider();
 
         if (_auditStore != null)
         {
@@ -423,7 +429,7 @@ public sealed class AuthorizationService : IAuthorizationVerifier
         return CryptographicOperations.FixedTimeEquals(expectedBytes, actualBytes);
     }
 
-    private static Dictionary<string, object?> DeriveExpected(
+    private Dictionary<string, object?> DeriveExpected(
         string toolId,
         Dictionary<string, object?> args,
         string authId)
@@ -456,9 +462,13 @@ public sealed class AuthorizationService : IAuthorizationVerifier
                 var reminderTaskId = authId["auth-".Length..];
                 if (!ToolPolicy.IsValidReminderTaskId(reminderTaskId))
                     throw new InvalidOperationException("Authorization generated an invalid reminder task ID.");
-                expected["action_path"] = Path.GetFullPath(
-                    Environment.ProcessPath
-                    ?? throw new InvalidOperationException("The host process path is unavailable for reminder authorization."));
+                var hostPath = _hostPathProvider.GetHostPath();
+                if (string.Equals(Path.GetFileName(hostPath), "dotnet.exe", StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException(
+                        "Cannot register a reminder from dotnet.exe. Run the published Jarvis.Cli.exe host instead.");
+                }
+                expected["action_path"] = Path.GetFullPath(hostPath);
                 expected["task_id"] = reminderTaskId;
                 expected["action_arguments"] = $"--jarvis-reminder {reminderTaskId}";
                 expected["reminder_data_path"] = ReminderDataPaths.GetFilePath(reminderTaskId);

@@ -13,17 +13,20 @@ public sealed class TaskScheduleReminderExecutor : IToolExecutor
     private readonly IReminderTaskScheduler _scheduler;
     private readonly ReminderDataFileStore _dataFileStore;
     private readonly IClock _clock;
+    private readonly IHostPathProvider _hostPathProvider;
 
     public TaskScheduleReminderExecutor(
         AuthorizationService authorizationService,
         IReminderTaskScheduler scheduler,
         IClock? clock = null,
-        ReminderDataFileStore? dataFileStore = null)
+        ReminderDataFileStore? dataFileStore = null,
+        IHostPathProvider? hostPathProvider = null)
     {
         _authorizationService = authorizationService ?? throw new ArgumentNullException(nameof(authorizationService));
         _scheduler = scheduler ?? throw new ArgumentNullException(nameof(scheduler));
         _dataFileStore = dataFileStore ?? new ReminderDataFileStore();
         _clock = clock ?? SystemClock.Instance;
+        _hostPathProvider = hostPathProvider ?? new EnvironmentHostPathProvider();
     }
 
     public string ToolId => "task.schedule_reminder";
@@ -89,9 +92,10 @@ public sealed class TaskScheduleReminderExecutor : IToolExecutor
                 startedAt,
                 "Signed reminder action executable must be a fixed absolute path."));
         }
-        var hostPath = Path.GetFullPath(
-            Environment.ProcessPath
-            ?? throw new InvalidOperationException("The host process path is unavailable for reminder execution."));
+        var hostPath = _hostPathProvider.GetHostPath();
+        if (string.Equals(Path.GetFileName(hostPath), "dotnet.exe", StringComparison.OrdinalIgnoreCase))
+            return Task.FromResult(Failure(authorization, startedAt, "Cannot register a reminder from dotnet.exe. Run the published Jarvis.Cli.exe host instead."));
+        hostPath = Path.GetFullPath(hostPath);
         if (!string.Equals(actionPath, hostPath, StringComparison.OrdinalIgnoreCase))
             return Task.FromResult(Failure(authorization, startedAt, "Signed reminder action executable does not match this host."));
 
