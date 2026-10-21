@@ -55,8 +55,11 @@ public sealed class PathPolicy
                 "Jarvis",
                 "workspace");
             var root = string.IsNullOrWhiteSpace(configured) ? defaultRoot : configured;
-            _allowedRoots.Add(Path.GetFullPath(Environment.ExpandEnvironmentVariables(root))
-                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            var normalizedRoot = Path.GetFullPath(Environment.ExpandEnvironmentVariables(root))
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (!string.IsNullOrWhiteSpace(configured))
+                ValidateConfiguredAllowedRoot(normalizedRoot);
+            _allowedRoots.Add(normalizedRoot);
         }
 
         foreach (var root in _allowedRoots)
@@ -168,6 +171,27 @@ public sealed class PathPolicy
         }
 
         return PathValidationResult.Success(fullPath);
+    }
+
+    /// <summary>Rejects unsafe broad roots supplied through JARVIS_ALLOWED_ROOT.</summary>
+    public static void ValidateConfiguredAllowedRoot(string root)
+    {
+        var normalized = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var userProfile = Path.GetFullPath(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile))
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var windows = Path.GetFullPath(Environment.GetFolderPath(Environment.SpecialFolder.Windows))
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var programFiles = Path.GetFullPath(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles))
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var rootOfDrive = Path.GetPathRoot(normalized)?.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (string.Equals(normalized, rootOfDrive, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalized, userProfile, StringComparison.OrdinalIgnoreCase)
+            || normalized.StartsWith(windows + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalized, windows, StringComparison.OrdinalIgnoreCase)
+            || normalized.StartsWith(programFiles + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalized, programFiles, StringComparison.OrdinalIgnoreCase)
+            || !normalized.StartsWith(userProfile + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("JARVIS_ALLOWED_ROOT must be a non-rooted subdirectory inside the current user profile and outside Windows and Program Files.", nameof(root));
     }
 
     /// <summary>
