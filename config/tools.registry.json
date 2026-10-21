@@ -101,7 +101,7 @@
             "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
           }
         },
-        "required": ["task_name", "time_iso", "message"],
+        "required": ["time_iso", "message"],
         "additionalProperties": false
       },
       "verification_template": {

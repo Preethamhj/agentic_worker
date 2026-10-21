@@ -19,6 +19,21 @@ public class ToolPolicyTests
     }
 
     [Fact]
+    public void ScheduleReminder_Missing_Title_Is_Canonicalized_From_Message()
+    {
+        var args = new JsonObject
+        {
+            ["time_iso"] = "2026-10-21T10:00:00Z",
+            ["message"] = "Review quarterly report"
+        };
+
+        var result = _toolPolicy.ValidateToolCall("task.schedule_reminder", args);
+
+        result.IsValid.Should().BeTrue();
+        args["task_name"]!.GetValue<string>().Should().Be("Review quarterly report");
+    }
+
+    [Fact]
     public void Enabled_Tool_With_Valid_Args_Succeeds()
     {
         var args = new JsonObject

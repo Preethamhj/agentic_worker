@@ -36,6 +36,7 @@ public sealed class AllowedAppDefinition
 public sealed class ToolPolicy
 {
     public const int MaxReminderMessageLength = 200;
+    public const int MaxReminderTaskNameLength = 63;
     private static readonly Regex ReminderTaskIdPattern = new(@"\A[0-9a-fA-F]{32}\z", RegexOptions.CultureInvariant);
     private readonly Dictionary<string, ToolDefinition> _tools = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, AllowedAppDefinition> _allowedApps = new(StringComparer.OrdinalIgnoreCase);
@@ -224,10 +225,23 @@ public sealed class ToolPolicy
         if (string.Equals(toolId, "task.schedule_reminder", StringComparison.OrdinalIgnoreCase))
         {
             var message = argsNode["message"]?.GetValue<string>();
-            if (!IsValidReminderMessage(message))
+            if (message is null || !IsValidReminderMessage(message))
             {
                 return ToolPolicyResult.Failure(
                     $"Reminder message must contain 1-{MaxReminderMessageLength} characters and no control characters.");
+            }
+            var taskName = argsNode["task_name"]?.GetValue<string>();
+            if (taskName is null)
+            {
+                // Title is optional at the planning boundary.  Canonicalize it before signing.
+                argsNode["task_name"] = message[..Math.Min(message.Length, MaxReminderTaskNameLength)];
+            }
+            else if (string.IsNullOrWhiteSpace(taskName)
+                || taskName.Length > MaxReminderTaskNameLength
+                || taskName.Any(char.IsControl))
+            {
+                return ToolPolicyResult.Failure(
+                    $"Reminder title must contain 1-{MaxReminderTaskNameLength} non-control characters.");
             }
         }
 

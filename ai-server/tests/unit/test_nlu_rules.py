@@ -44,6 +44,7 @@ def test_rule_schedule_reminder() -> None:
     intent = parse_rules_fast_path(text)
     assert intent is not None
     assert intent.action == "task.schedule_reminder"
+    assert "task_name" not in intent.entities
     assert intent.entities["message"] == "buy groceries"
 
 

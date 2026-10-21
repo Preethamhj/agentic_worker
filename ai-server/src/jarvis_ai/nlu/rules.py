@@ -124,7 +124,7 @@ def parse_rules_fast_path(text: str) -> IntentModel | None:
             kind="command",
             action="task.schedule_reminder",
             confidence=1.0,
-            entities={"task_name": "Reminder", "time_iso": time_iso, "message": msg},
+            entities={"time_iso": time_iso, "message": msg},
             risk=RiskModel(level=risk_lvl, reasons=reasons),
             source="rules",
         )
