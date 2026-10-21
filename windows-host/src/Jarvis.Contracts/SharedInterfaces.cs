@@ -90,7 +90,11 @@ public static class ApprovalHandlerExtensions
     }
 }
 
-public sealed record SafetyEvaluation(bool IsAllowed, string Risk, string? RejectionReason = null);
+public sealed record SafetyEvaluation(
+    bool IsAllowed,
+    string Risk,
+    string? RejectionReason = null,
+    IReadOnlyDictionary<string, object?>? CanonicalArgs = null);
 
 /// <summary>
 /// Evaluates tool invocations against path, tool, and rate policies.

@@ -60,6 +60,22 @@ public class SafetyGateTests
     }
 
     [Fact]
+    public async Task Reminder_Without_Title_Is_Canonicalized_Before_Human_Approval_And_Signing()
+    {
+        var args = new JsonObject
+        {
+            ["time_iso"] = "2026-10-21T12:00:00Z",
+            ["message"] = new string('a', 62) + "😀"
+        };
+        var result = await _safetyGate.EvaluateAndAuthorizeAsync("task-reminder", "step-reminder", "task.schedule_reminder", args, "medium");
+
+        result.Approved.Should().BeTrue();
+        _approvalProvider.LastRequest!.CanonicalArgs["task_name"].Should().Be(new string('a', 62));
+        result.Record!.CanonicalArgs["task_name"].Should().Be(new string('a', 62));
+        result.Record.Hmac.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
     public async Task Low_Risk_Tool_Is_Auto_Approved_Without_Provider_Prompt()
     {
         var args = new JsonObject

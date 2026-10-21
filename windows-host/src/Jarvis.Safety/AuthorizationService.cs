@@ -102,6 +102,13 @@ public sealed class AuthorizationService : IAuthorizationVerifier
             {
                 canonicalArgs[kv.Key] = kv.Value;
             }
+            if (string.Equals(toolId, "task.schedule_reminder", StringComparison.OrdinalIgnoreCase)
+                && !canonicalArgs.ContainsKey("task_name")
+                && canonicalArgs.TryGetValue("message", out var messageValue)
+                && messageValue is string message)
+            {
+                canonicalArgs["task_name"] = ToolPolicy.TruncateReminderTitle(message);
+            }
 
             var exp = string.Equals(toolId, "task.schedule_reminder", StringComparison.OrdinalIgnoreCase)
                 ? DeriveExpected(toolId, canonicalArgs, authId)

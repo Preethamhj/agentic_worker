@@ -95,7 +95,11 @@ public sealed class SafetyGate : ISafetyGate
 
         var policyRisk = validation.PolicyRisk ?? _toolPolicy.GetPolicyRisk(toolId) ?? "medium";
         await RecordAuditAsync(taskId, stepId, toolId, policyRisk, policyRisk, policyRisk, "system", true, null, cancellationToken).ConfigureAwait(false);
-        return new SafetyEvaluation(true, policyRisk);
+        var canonicalArgs = jsonArgs.ToDictionary(
+            item => item.Key,
+            item => item.Value is JsonValue value && value.TryGetValue<string>(out var text) ? (object?)text : item.Value?.ToString(),
+            StringComparer.Ordinal);
+        return new SafetyEvaluation(true, policyRisk, CanonicalArgs: canonicalArgs);
     }
 
     /// <summary>

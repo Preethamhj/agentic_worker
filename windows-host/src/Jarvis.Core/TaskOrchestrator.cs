@@ -104,10 +104,11 @@ public sealed class TaskOrchestrator
                 }
 
                 stateMachine.Transition(TaskState.Validated, $"Step '{step.StepId}' validated. Risk: {safetyEval.Risk}.");
+                var canonicalArgs = safetyEval.CanonicalArgs ?? step.ToolCall.Args;
 
                 // 3b. Approval
                 stateMachine.Transition(TaskState.AwaitingApproval, $"Step '{step.StepId}' awaiting approval.");
-                var approved = await _approvalHandler.RequestApprovalAsync(taskId, step.StepId, step.ToolCall.ToolId, step.ToolCall.Args, safetyEval.Risk, cancellationToken).ConfigureAwait(false);
+                var approved = await _approvalHandler.RequestApprovalAsync(taskId, step.StepId, step.ToolCall.ToolId, canonicalArgs, safetyEval.Risk, cancellationToken).ConfigureAwait(false);
                 if (!approved)
                 {
                     stateMachine.Transition(TaskState.Cancelled, $"User rejected approval for step '{step.StepId}'.");
@@ -120,7 +121,7 @@ public sealed class TaskOrchestrator
                     taskId,
                     step.StepId,
                     step.ToolCall.ToolId,
-                    step.ToolCall.Args,
+                    canonicalArgs,
                     safetyEval.Risk);
                 var stepToken = await _verifier.BeginStepAsync(authorization, cancellationToken).ConfigureAwait(false);
 
