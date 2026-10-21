@@ -34,6 +34,16 @@ public class ToolPolicyTests
     }
 
     [Fact]
+    public void Reminder_Title_Truncation_Preserves_Text_Element_Boundaries()
+    {
+        var message = new string('a', 62) + "😀" + "tail";
+        var title = ToolPolicy.TruncateReminderTitle(message);
+
+        title.Should().Be(new string('a', 62));
+        ToolPolicy.CountUtf16CodeUnits(title).Should().BeLessOrEqualTo(ToolPolicy.MaxReminderTaskNameLength);
+    }
+
+    [Fact]
     public void Enabled_Tool_With_Valid_Args_Succeeds()
     {
         var args = new JsonObject

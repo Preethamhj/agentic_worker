@@ -7,6 +7,11 @@ DATA_FIELDS = {"content", "message"}
 ALLOWED_APPS = {"notepad", "calc", "calculator", "mspaint", "paint"}
 
 
+def utf16_code_unit_count(value: str) -> int:
+    """Count UTF-16 code units, matching the Windows host string-length contract."""
+    return len(value.encode("utf-16-le")) // 2
+
+
 class ToolMapper:
 
     def __init__(self) -> None:
@@ -42,6 +47,11 @@ class ToolMapper:
                     f"Application '{app_id}' is not in the allowlist ({', '.join(sorted(ALLOWED_APPS))})",
                     {},
                 )
+
+        if action == "task.schedule_reminder":
+            message = raw_args.get("message")
+            if not isinstance(message, str) or utf16_code_unit_count(message) > 200:
+                return False, "clarify", "Reminder message exceeds the 200 UTF-16 code-unit limit", {}
 
         # 3. Scan non-data parameter fields for command injection patterns
         def contains_dangerous_cmd(val: Any) -> tuple[bool, str]:

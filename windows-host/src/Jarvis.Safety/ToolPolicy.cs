@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using System.Globalization;
 using Json.Schema;
 
 namespace Jarvis.Safety;
@@ -234,10 +235,10 @@ public sealed class ToolPolicy
             if (taskName is null)
             {
                 // Title is optional at the planning boundary.  Canonicalize it before signing.
-                argsNode["task_name"] = message[..Math.Min(message.Length, MaxReminderTaskNameLength)];
+                argsNode["task_name"] = TruncateReminderTitle(message);
             }
             else if (string.IsNullOrWhiteSpace(taskName)
-                || taskName.Length > MaxReminderTaskNameLength
+                || CountUtf16CodeUnits(taskName) > MaxReminderTaskNameLength
                 || taskName.Any(char.IsControl))
             {
                 return ToolPolicyResult.Failure(
@@ -265,6 +266,24 @@ public sealed class ToolPolicy
     /// <summary>Checks the reminder text length and excludes control characters.</summary>
     public static bool IsValidReminderMessage(string? message) =>
         !string.IsNullOrEmpty(message)
-        && message.Length <= MaxReminderMessageLength
+        && CountUtf16CodeUnits(message) <= MaxReminderMessageLength
         && !message.Any(char.IsControl);
+
+    /// <summary>Counts UTF-16 code units, the shared reminder length contract with Python.</summary>
+    public static int CountUtf16CodeUnits(string value) => value.Length;
+
+    /// <summary>Truncates at text-element boundaries while preserving the UTF-16 title limit.</summary>
+    public static string TruncateReminderTitle(string message)
+    {
+        var builder = new System.Text.StringBuilder();
+        var enumerator = StringInfo.GetTextElementEnumerator(message);
+        while (enumerator.MoveNext())
+        {
+            var element = enumerator.GetTextElement();
+            if (builder.Length + element.Length > MaxReminderTaskNameLength)
+                break;
+            builder.Append(element);
+        }
+        return builder.ToString();
+    }
 }

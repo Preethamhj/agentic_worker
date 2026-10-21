@@ -1,6 +1,11 @@
 import pytest
 
-from jarvis_ai.planning.tool_mapper import ToolMapper
+from jarvis_ai.planning.tool_mapper import ToolMapper, utf16_code_unit_count
+
+
+@pytest.mark.parametrize("value,expected", [("ಕನ್ನಡ", 5), ("e\u0301", 2), ("😀", 2)])
+def test_utf16_code_unit_count_matches_windows(value: str, expected: int) -> None:
+    assert utf16_code_unit_count(value) == expected
 
 
 @pytest.fixture

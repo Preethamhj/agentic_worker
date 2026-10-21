@@ -112,6 +112,7 @@ public class CliEndToEndTests : IDisposable
         result.FinalState.Should().NotBe(TaskState.Completed);
         result.FinalState.Should().Be(TaskState.Failed);
         result.StatusMessage.Should().Contain("not verified");
+        AssertFailedOnlyForNotVerified(result);
     }
 
     [Fact]
@@ -139,6 +140,7 @@ public class CliEndToEndTests : IDisposable
         result.VerificationResults[0].Status.Should().Be("ESCALATE");
         result.FinalState.Should().Be(TaskState.Failed);
         result.StatusMessage.Should().Contain("not verified");
+        AssertFailedOnlyForNotVerified(result);
     }
 
     [Fact]
@@ -169,6 +171,7 @@ public class CliEndToEndTests : IDisposable
         result.VerificationResults[0].Status.Should().Be("ESCALATE");
         result.FinalState.Should().Be(TaskState.Failed);
         result.StatusMessage.Should().Contain("not verified");
+        AssertFailedOnlyForNotVerified(result);
     }
 
     [Fact]
@@ -207,6 +210,7 @@ public class CliEndToEndTests : IDisposable
             result.VerificationResults[0].Status.Should().Be("ESCALATE");
             result.FinalState.Should().Be(TaskState.Failed);
             result.StatusMessage.Should().Contain("not verified");
+            AssertFailedOnlyForNotVerified(result);
         }
         finally
         {
@@ -276,6 +280,15 @@ public class CliEndToEndTests : IDisposable
                 }
             }
         }
+    }
+
+    private void AssertFailedOnlyForNotVerified(TaskOrchestratorResult result)
+    {
+        var terminalTransition = _auditStore.GetStateTransitions(result.TaskId)
+            .Last(transition => string.Equals(transition.ToState, "failed", StringComparison.OrdinalIgnoreCase));
+        terminalTransition.Reason.Should().NotBeNull();
+        terminalTransition.Reason.Should().Contain("not verified");
+        terminalTransition.Reason.Should().NotContain("execution error");
     }
 
     private class StaticPlanner : IPlanner
