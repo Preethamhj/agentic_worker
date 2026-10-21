@@ -90,7 +90,7 @@ public class CliEndToEndTests : IDisposable
             AdvisoryRisk: "medium"
         ));
 
-        var approval = new ConsoleApprovalHandler(autoApprove: true);
+        var approval = new TestApprovalHandler();
         var orchestrator = new TaskOrchestrator(planner, _safetyGate, approval, _queue, _stepExecutor, _stubVerifier, _auditStore);
 
         var result = await orchestrator.RunTaskAsync("create notes file");
@@ -129,7 +129,7 @@ public class CliEndToEndTests : IDisposable
             AdvisoryRisk: "medium"
         ));
 
-        var approval = new ConsoleApprovalHandler(autoApprove: true);
+        var approval = new TestApprovalHandler();
         var orchestrator = new TaskOrchestrator(planner, _safetyGate, approval, _queue, _stepExecutor, _stubVerifier, _auditStore);
 
         var result = await orchestrator.RunTaskAsync("create projects folder");
@@ -158,7 +158,7 @@ public class CliEndToEndTests : IDisposable
             AdvisoryRisk: "low"
         ));
 
-        var approval = new ConsoleApprovalHandler(autoApprove: true);
+        var approval = new TestApprovalHandler();
         var orchestrator = new TaskOrchestrator(planner, _safetyGate, approval, _queue, _stepExecutor, _stubVerifier, _auditStore);
 
         var result = await orchestrator.RunTaskAsync("search text files");
@@ -186,7 +186,7 @@ public class CliEndToEndTests : IDisposable
             AdvisoryRisk: "medium"
         ));
 
-        var approval = new ConsoleApprovalHandler(autoApprove: true);
+        var approval = new TestApprovalHandler();
         var orchestrator = new TaskOrchestrator(planner, _safetyGate, approval, _queue, _stepExecutor, _stubVerifier, _auditStore);
 
         try
@@ -299,5 +299,11 @@ public class CliEndToEndTests : IDisposable
             );
             return Task.FromResult(plan);
         }
+    }
+
+    private sealed class TestApprovalHandler : IApprovalHandler
+    {
+        public Task<bool> RequestApprovalAsync(ApprovalRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromResult(true);
     }
 }

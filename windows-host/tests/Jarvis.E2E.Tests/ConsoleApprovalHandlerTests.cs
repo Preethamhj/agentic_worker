@@ -19,18 +19,6 @@ public class ConsoleApprovalHandlerTests
     }
 
     [Fact]
-    public async Task HighRisk_NeverAutoApproves_EvenWhen_ForceAutoApprove_IsTrue()
-    {
-        // Invariant: High risk must NEVER auto-approve under any circumstances
-        var handler = new ConsoleApprovalHandler(autoApprove: true, reader: new StringReader("n\n"));
-        var request = CreateRequest("high");
-
-        var approved = await handler.RequestApprovalAsync(request);
-
-        approved.Should().BeFalse("High risk must never auto-approve even if forceAutoApprove is true");
-    }
-
-    [Fact]
     public async Task HighRisk_NeverAutoApproves_EvenWith_JarvisAutoApprove_EnvVar()
     {
         Environment.SetEnvironmentVariable("JARVIS_AUTO_APPROVE", "1");

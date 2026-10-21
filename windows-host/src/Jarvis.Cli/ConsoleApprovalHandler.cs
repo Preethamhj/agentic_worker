@@ -12,34 +12,27 @@ namespace Jarvis.Cli;
 /// </summary>
 public sealed class ConsoleApprovalHandler : IApprovalHandler
 {
-    private readonly bool _forceAutoApprove;
     private readonly TextReader? _reader;
 
-    public ConsoleApprovalHandler(bool? autoApprove = null, TextReader? reader = null)
+    public ConsoleApprovalHandler(TextReader? reader = null)
     {
-        _forceAutoApprove = autoApprove ?? false;
         _reader = reader;
     }
 
     public Task<bool> RequestApprovalAsync(ApprovalRequest request, CancellationToken cancellationToken = default)
     {
-        var isHighRisk = string.Equals(request.Risk, "high", StringComparison.OrdinalIgnoreCase);
         var isLowRisk = string.Equals(request.Risk, "low", StringComparison.OrdinalIgnoreCase);
 
         bool canAutoApprove = false;
 
         // Invariant: High risk must NEVER auto-approve under any circumstances!
-        if (!isHighRisk)
+        if (isLowRisk)
         {
-            if (_forceAutoApprove)
-            {
-                canAutoApprove = true;
-            }
 #if DEBUG
             // In Debug builds, JARVIS_AUTO_APPROVE environment variable can auto-approve ONLY risk=low.
             // Medium risk cannot be auto-approved via JARVIS_AUTO_APPROVE.
             // In Release builds, this entire block is compiled out.
-            else if (isLowRisk)
+            if (isLowRisk)
             {
                 var env = Environment.GetEnvironmentVariable("JARVIS_AUTO_APPROVE");
                 if (string.Equals(env, "1", StringComparison.OrdinalIgnoreCase) ||
