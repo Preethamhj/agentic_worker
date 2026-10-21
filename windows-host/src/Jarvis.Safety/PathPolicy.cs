@@ -46,12 +46,21 @@ public sealed class PathPolicy
             }
         }
 
-        // Default root if none provided: %USERPROFILE%\Documents\Jarvis
+        // Default outside Documents/OneDrive; deployments may configure JARVIS_ALLOWED_ROOT.
         if (_allowedRoots.Count == 0)
         {
-            var myDocs = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-            _allowedRoots.Add(Path.Combine(myDocs, "Jarvis"));
+            var configured = Environment.GetEnvironmentVariable("JARVIS_ALLOWED_ROOT");
+            var defaultRoot = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Jarvis",
+                "workspace");
+            var root = string.IsNullOrWhiteSpace(configured) ? defaultRoot : configured;
+            _allowedRoots.Add(Path.GetFullPath(Environment.ExpandEnvironmentVariables(root))
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
         }
+
+        foreach (var root in _allowedRoots)
+            Directory.CreateDirectory(root);
     }
 
     public PathValidationResult ValidatePath(string? inputPath)

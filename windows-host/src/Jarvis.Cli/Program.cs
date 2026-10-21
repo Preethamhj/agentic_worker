@@ -16,6 +16,7 @@ public static class Program
 {
     public static async Task<int> Main(string[] args)
     {
+        Console.OutputEncoding = System.Text.Encoding.UTF8;
         if (args.Length > 0 && args[0] == "--jarvis-reminder")
         {
             try
@@ -312,7 +313,11 @@ public static class Program
         foreach (var r in pathPolicy.AllowedRoots)
         {
             var exists = Directory.Exists(r);
-            Console.WriteLine($"       - {r} (Exists: {exists})");
+            var inOneDrive = r.Contains($"{Path.DirectorySeparatorChar}OneDrive{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase);
+            var status = !exists || inOneDrive ? "WARN" : "PASS";
+            Console.WriteLine($"[{status}] Root: {r} (Exists: {exists}, OneDrive: {inOneDrive})");
+            if (!exists || inOneDrive)
+                Console.WriteLine("       Use a local, non-synced JARVIS_ALLOWED_ROOT for tests and evaluation.");
         }
 
         // 7. SQLite Audit Store

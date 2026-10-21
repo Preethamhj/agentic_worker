@@ -118,6 +118,18 @@ public class PathPolicyTests
     }
 
     [Fact]
+    public void Nfd_Input_Is_Normalized_To_Nfc_Inside_Allowed_Root()
+    {
+        var nfc = "café";
+        var nfd = nfc.Normalize(System.Text.NormalizationForm.FormD);
+        var result = _policy.ValidatePath(Path.Combine(TempRoot, nfd, "note.txt"));
+
+        result.IsValid.Should().BeTrue();
+        result.NormalizedPath.Should().Contain(nfc);
+        result.NormalizedPath.Should().NotContain(nfd);
+    }
+
+    [Fact]
     public void ReparsePoint_Junction_Or_Symlink_Is_Blocked()
     {
         var testDir = Path.Combine(TempRoot, "normal_dir_test");
