@@ -53,10 +53,14 @@ public sealed class WindowsReminderTaskScheduler : IReminderTaskScheduler
             definition.RegistrationInfo.Author = "Jarvis";
             definition.RegistrationInfo.Description = registration.Description;
             definition.Principal.UserId = userSid;
-            definition.Principal.LogonType = TaskLogonType.InteractiveToken;
-            definition.Principal.RunLevel = TaskRunLevel.LUA;
+            definition.Principal.LogonType = registration.LogonType;
+            definition.Principal.RunLevel = registration.RunLevel;
             definition.Settings.Enabled = true;
-            definition.Settings.StartWhenAvailable = true;
+            definition.Settings.DisallowStartIfOnBatteries = registration.DisallowStartIfOnBatteries;
+            definition.Settings.StopIfGoingOnBatteries = registration.StopIfGoingOnBatteries;
+            definition.Settings.ExecutionTimeLimit = registration.ExecutionTimeLimit ?? ReminderTaskPolicy.ExecutionTimeLimit;
+            definition.Settings.StartWhenAvailable = registration.StartWhenAvailable;
+            definition.Settings.MultipleInstances = registration.MultipleInstancesPolicy;
             definition.Triggers.Add(new TimeTrigger(registration.ScheduledAtUtc.ToLocalTime().DateTime)
             {
                 Enabled = true
@@ -71,7 +75,7 @@ public sealed class WindowsReminderTaskScheduler : IReminderTaskScheduler
                 TaskCreation.CreateOrUpdate,
                 userSid,
                 null,
-                TaskLogonType.InteractiveToken);
+                registration.LogonType);
         }
         catch (UnauthorizedAccessException)
         {

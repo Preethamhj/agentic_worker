@@ -119,7 +119,14 @@ public sealed class TaskScheduleReminderExecutor : IToolExecutor
                 actionArguments,
                 Path.GetDirectoryName(actionPath) ?? AppContext.BaseDirectory,
                 scheduledAt,
-                "Jarvis reminder"));
+                "Jarvis reminder",
+                ReminderTaskPolicy.DisallowStartIfOnBatteries,
+                ReminderTaskPolicy.StopIfGoingOnBatteries,
+                ReminderTaskPolicy.ExecutionTimeLimit,
+                ReminderTaskPolicy.StartWhenAvailable,
+                ReminderTaskPolicy.MultipleInstancesPolicy,
+                ReminderTaskPolicy.LogonType,
+                ReminderTaskPolicy.RunLevel));
         }
         catch
         {
