@@ -16,11 +16,12 @@ public static class ReminderDataPaths
     }
 
     /// <summary>Builds a data-file path using only a validated 32-character task ID.</summary>
-    public static string GetFilePath(string taskId)
+    public static string GetFilePath(string taskId, string? baseDirectory = null)
     {
         if (!ToolPolicy.IsValidReminderTaskId(taskId))
             throw new ArgumentException("Reminder task ID must contain exactly 32 hexadecimal characters.", nameof(taskId));
 
-        return Path.GetFullPath(Path.Combine(DirectoryPath, $"{taskId}.json"));
+        var directory = baseDirectory ?? DirectoryPath;
+        return Path.GetFullPath(Path.Combine(directory, $"{taskId}.json"));
     }
 }

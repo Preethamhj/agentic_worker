@@ -26,6 +26,30 @@ public class AuthorizationTests
     }
 
     [Fact]
+    public void Reminder_Authorization_Uses_Injected_Data_Location()
+    {
+        var location = new FixedReminderDataLocation(Path.Combine(Path.GetTempPath(), "jarvis-reminder-test", Guid.NewGuid().ToString("N")));
+        var service = new AuthorizationService(_keyStore, _clock, hostPathProvider: new FixedHostPathProvider(@"C:\Jarvis\Jarvis.Cli.exe"), reminderDataLocation: location);
+        var record = service.IssueAuthorization("task", "step", "task.schedule_reminder", new Dictionary<string, object?>
+        {
+            ["time_iso"] = "2026-10-09T10:05:00.0000000+00:00", ["message"] = "message"
+        });
+
+        record.Expected["reminder_data_path"].Should().Be(ReminderDataPaths.GetFilePath(record.Expected["task_id"]!.ToString()!, location.DirectoryPath));
+    }
+
+    [Fact]
+    public void Default_Reminder_Data_Location_Uses_LocalAppData_Convention()
+    {
+        new DefaultReminderDataLocation().DirectoryPath.Should().Be(ReminderDataPaths.DirectoryPath);
+    }
+
+    private sealed class FixedReminderDataLocation(string directoryPath) : IReminderDataLocation
+    {
+        public string DirectoryPath => directoryPath;
+    }
+
+    [Fact]
     public void ScheduleReminder_Refuses_Dotnet_Host_And_Signs_Injected_Published_Host()
     {
         var dotnetService = new AuthorizationService(

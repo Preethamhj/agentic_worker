@@ -27,6 +27,7 @@ public sealed class AuthorizationService : IAuthorizationVerifier
     private readonly IClock _clock;
     private readonly IAuditStore? _auditStore;
     private readonly IHostPathProvider _hostPathProvider;
+    private readonly IReminderDataLocation _reminderDataLocation;
     private readonly TimeSpan _defaultExecuteWindow = TimeSpan.FromSeconds(60);
     private readonly TimeSpan _defaultVerifyWindow = TimeSpan.FromSeconds(120);
     private readonly TimeSpan _defaultTotalExpiry = TimeSpan.FromMinutes(5);
@@ -39,12 +40,14 @@ public sealed class AuthorizationService : IAuthorizationVerifier
         IDpapiKeyStore keyStore,
         IClock? clock = null,
         IAuditStore? auditStore = null,
-        IHostPathProvider? hostPathProvider = null)
+        IHostPathProvider? hostPathProvider = null,
+        IReminderDataLocation? reminderDataLocation = null)
     {
         _keyStore = keyStore ?? throw new ArgumentNullException(nameof(keyStore));
         _clock = clock ?? SystemClock.Instance;
         _auditStore = auditStore;
         _hostPathProvider = hostPathProvider ?? new EnvironmentHostPathProvider();
+        _reminderDataLocation = reminderDataLocation ?? new DefaultReminderDataLocation();
 
         if (_auditStore != null)
         {
@@ -478,7 +481,7 @@ public sealed class AuthorizationService : IAuthorizationVerifier
                 expected["action_path"] = Path.GetFullPath(hostPath);
                 expected["task_id"] = reminderTaskId;
                 expected["action_arguments"] = $"--jarvis-reminder {reminderTaskId}";
-                expected["reminder_data_path"] = ReminderDataPaths.GetFilePath(reminderTaskId);
+                expected["reminder_data_path"] = ReminderDataPaths.GetFilePath(reminderTaskId, _reminderDataLocation.DirectoryPath);
                 break;
             default:
                 expected["status"] = "success";

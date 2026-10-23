@@ -21,8 +21,9 @@ public static class Program
         {
             try
             {
+                var reminderLocation = new DefaultReminderDataLocation();
                 return new ReminderDispatcher(
-                    new ReminderDataFileStore(),
+                    new ReminderDataFileStore(reminderLocation),
                     new WindowsReminderNotifier()).Dispatch(args);
             }
             catch (Exception exception) when (
@@ -108,7 +109,8 @@ public static class Program
         var dbPath = Path.Combine(repoRoot, "audit.db");
         using var auditStore = new SqliteAuditStore(dbPath);
         IDpapiKeyStore keyStore = OperatingSystem.IsWindows() ? new DpapiKeyStore() : new InMemoryDpapiKeyStore();
-        var authService = new AuthorizationService(keyStore, SystemClock.Instance, auditStore);
+        var reminderLocation = new DefaultReminderDataLocation();
+        var authService = new AuthorizationService(keyStore, SystemClock.Instance, auditStore, reminderDataLocation: reminderLocation);
 
         // 3. Setup Policies & Safety
         var pathPolicy = new PathPolicy();
@@ -122,7 +124,7 @@ public static class Program
             new CreateFolderExecutor(pathPolicy, authService),
             new SearchFilesExecutor(pathPolicy, authService),
             new AppLaunchExecutor(toolPolicy, authService, new WindowsElevationChecker()),
-            new TaskScheduleReminderExecutor(authService, new WindowsReminderTaskScheduler())
+            new TaskScheduleReminderExecutor(authService, new WindowsReminderTaskScheduler(), dataFileStore: new ReminderDataFileStore(reminderLocation))
         };
 
         var stepExecutor = new StepExecutor(authService, executors, toolPolicy);

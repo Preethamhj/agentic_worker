@@ -12,7 +12,15 @@ public sealed class ReminderDataFileStore
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
-    private readonly PathPolicy _pathPolicy = new([ReminderDataPaths.DirectoryPath]);
+    private readonly string _baseDirectory;
+    private readonly PathPolicy _pathPolicy;
+    public string BaseDirectory => _baseDirectory;
+
+    public ReminderDataFileStore(IReminderDataLocation? location = null)
+    {
+        _baseDirectory = Path.GetFullPath((location ?? new DefaultReminderDataLocation()).DirectoryPath);
+        _pathPolicy = new PathPolicy([_baseDirectory]);
+    }
 
     /// <summary>Creates a new file without replacing an existing reminder payload.</summary>
     public void Create(string taskId, string title, string message)
@@ -27,7 +35,7 @@ public sealed class ReminderDataFileStore
                 nameof(message));
 
         var path = ValidatePath(taskId);
-        Directory.CreateDirectory(ReminderDataPaths.DirectoryPath);
+        Directory.CreateDirectory(_baseDirectory);
         path = ValidatePath(taskId);
 
         using var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
@@ -64,7 +72,7 @@ public sealed class ReminderDataFileStore
 
     private string ValidatePath(string taskId)
     {
-        var validation = _pathPolicy.ValidatePath(ReminderDataPaths.GetFilePath(taskId));
+        var validation = _pathPolicy.ValidatePath(ReminderDataPaths.GetFilePath(taskId, _baseDirectory));
         if (!validation.IsValid || validation.NormalizedPath is null)
             throw new UnauthorizedAccessException(validation.ErrorMessage ?? "Reminder data path is invalid.");
         return validation.NormalizedPath;
