@@ -101,11 +101,65 @@ public sealed class ReminderDataLocationContractTests
         }
     }
 
+    [Fact]
+    public async Task Executor_Registers_The_Signed_Scheduler_Policy()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var location = new FixedReminderDataLocation(directory);
+            var service = CreateService(location);
+            var scheduler = new RecordingScheduler();
+            var record = IssueReminder(service, "signed-policy");
+            var executor = new TaskScheduleReminderExecutor(service, scheduler, new FixedClock(), new ReminderDataFileStore(location), new FixedHostPathProvider(@"C:\Jarvis\Jarvis.Cli.exe"));
+
+            (await executor.ExecuteAsync(service.Consume(record, record.StepId))).ReportedSuccess.Should().BeTrue();
+
+            var registration = scheduler.Registration;
+            registration.Should().NotBeNull();
+            var signedRegistration = registration!;
+            signedRegistration.TaskName.Should().Be((string)record.Expected["scheduler_task_name"]!);
+            signedRegistration.DisallowStartIfOnBatteries.Should().Be((bool)record.Expected["disallow_start_if_on_batteries"]!);
+            signedRegistration.StopIfGoingOnBatteries.Should().Be((bool)record.Expected["stop_if_going_on_batteries"]!);
+            signedRegistration.ExecutionTimeLimit.Should().Be(TimeSpan.FromSeconds((int)record.Expected["execution_time_limit_seconds"]!));
+            signedRegistration.StartWhenAvailable.Should().Be((bool)record.Expected["start_when_available"]!);
+            signedRegistration.MultipleInstancesPolicy.ToString().Should().Be((string)record.Expected["multiple_instances_policy"]!);
+            signedRegistration.LogonType.ToString().Should().Be((string)record.Expected["logon_type"]!);
+            signedRegistration.RunLevel.Should().Be(Microsoft.Win32.TaskScheduler.TaskRunLevel.LUA);
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
+    [Theory]
+    [MemberData(nameof(SignedSchedulerSettingKeys))]
+    public void Consume_Rejects_A_Tampered_Signed_Scheduler_Setting(string key, object replacement)
+    {
+        var service = CreateService(new FixedReminderDataLocation(CreateTempDirectory()));
+        var record = IssueReminder(service, $"tampered-{key}");
+        var expected = new Dictionary<string, object?>(record.Expected) { [key] = replacement };
+
+        Action consume = () => service.Consume(record with { Expected = expected }, record.StepId);
+
+        consume.Should().Throw<AuthorizationSecurityException>().WithMessage("*HMAC*");
+    }
+
     public static IEnumerable<object[]> OutsideBaseLocations()
     {
         yield return ["traversal", new Func<string, string>(baseDirectory => Path.Combine(baseDirectory, "..", "escape"))];
         yield return ["different-drive", new Func<string, string>(_ => @"D:\Jarvis\reminders")];
         yield return ["same-prefix-sibling", new Func<string, string>(baseDirectory => baseDirectory + "-evil")];
+    }
+
+    public static IEnumerable<object[]> SignedSchedulerSettingKeys()
+    {
+        yield return ["scheduler_task_name", "other"];
+        yield return ["disallow_start_if_on_batteries", true];
+        yield return ["stop_if_going_on_batteries", true];
+        yield return ["execution_time_limit_seconds", 1];
+        yield return ["start_when_available", false];
+        yield return ["multiple_instances_policy", "Parallel"];
+        yield return ["logon_type", "Password"];
+        yield return ["run_level", "Highest"];
     }
 
     private static AuthorizationService CreateService(IReminderDataLocation location) =>

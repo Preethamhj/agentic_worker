@@ -77,7 +77,8 @@ public sealed class TaskScheduleReminderExecutor : IToolExecutor
             || !authorization.Record.Expected.TryGetValue("action_arguments", out var actionArgumentsValue)
             || actionArgumentsValue is not string actionArguments
             || !authorization.Record.Expected.TryGetValue("reminder_data_path", out var dataPathValue)
-            || dataPathValue is not string dataPath)
+            || dataPathValue is not string dataPath
+            || !TryReadSchedulerPolicy(authorization.Record.Expected, out var schedulerPolicy))
         {
             return Task.FromResult(Failure(authorization, startedAt, "Signed authorization is missing reminder action or data-file fields."));
         }
@@ -116,20 +117,20 @@ public sealed class TaskScheduleReminderExecutor : IToolExecutor
         try
         {
             _scheduler.Register(new ReminderTaskRegistration(
-                taskPath[(separator + 1)..],
+                schedulerPolicy.TaskName,
                 taskPath,
                 actionPath,
                 actionArguments,
                 Path.GetDirectoryName(actionPath) ?? AppContext.BaseDirectory,
                 scheduledAt,
                 "Jarvis reminder",
-                ReminderTaskPolicy.DisallowStartIfOnBatteries,
-                ReminderTaskPolicy.StopIfGoingOnBatteries,
-                ReminderTaskPolicy.ExecutionTimeLimit,
-                ReminderTaskPolicy.StartWhenAvailable,
-                ReminderTaskPolicy.MultipleInstancesPolicy,
-                ReminderTaskPolicy.LogonType,
-                ReminderTaskPolicy.RunLevel));
+                schedulerPolicy.DisallowStartIfOnBatteries,
+                schedulerPolicy.StopIfGoingOnBatteries,
+                schedulerPolicy.ExecutionTimeLimit,
+                schedulerPolicy.StartWhenAvailable,
+                schedulerPolicy.MultipleInstancesPolicy,
+                schedulerPolicy.LogonType,
+                schedulerPolicy.RunLevel));
         }
         catch
         {
@@ -154,6 +155,38 @@ public sealed class TaskScheduleReminderExecutor : IToolExecutor
         authorization.CanonicalArgs.TryGetValue(key, out var value) && value is string text
             ? text
             : throw new ArgumentException($"Authorization is missing canonical '{key}'.", nameof(authorization));
+
+    private static bool TryReadSchedulerPolicy(IReadOnlyDictionary<string, object?> expected, out SchedulerPolicy policy)
+    {
+        policy = default!;
+        if (!TryRead(expected, "scheduler_task_name", out string? taskName)
+            || !TryRead(expected, "disallow_start_if_on_batteries", out bool disallowBattery)
+            || !TryRead(expected, "stop_if_going_on_batteries", out bool stopBattery)
+            || !TryRead(expected, "execution_time_limit_seconds", out int limitSeconds)
+            || !TryRead(expected, "start_when_available", out bool startAvailable)
+            || !TryRead(expected, "multiple_instances_policy", out string? multiple)
+            || !TryRead(expected, "logon_type", out string? logon)
+            || !TryRead(expected, "run_level", out string? runLevel)
+            || !Enum.TryParse<Microsoft.Win32.TaskScheduler.TaskInstancesPolicy>(multiple, out var multiplePolicy)
+            || !Enum.TryParse<Microsoft.Win32.TaskScheduler.TaskLogonType>(logon, out var logonType)
+            || !string.Equals(runLevel, ReminderSchedulerPolicy.RunLevel, StringComparison.Ordinal)
+            || string.IsNullOrWhiteSpace(taskName)
+            || limitSeconds <= 0)
+            return false;
+        policy = new SchedulerPolicy(taskName, disallowBattery, stopBattery, TimeSpan.FromSeconds(limitSeconds), startAvailable, multiplePolicy, logonType, Microsoft.Win32.TaskScheduler.TaskRunLevel.LUA);
+        return true;
+    }
+
+    private static bool TryRead<T>(IReadOnlyDictionary<string, object?> values, string key, out T value)
+    {
+        value = default!;
+        if (!values.TryGetValue(key, out var raw) || raw is not T typed)
+            return false;
+        value = typed;
+        return true;
+    }
+
+    private sealed record SchedulerPolicy(string TaskName, bool DisallowStartIfOnBatteries, bool StopIfGoingOnBatteries, TimeSpan ExecutionTimeLimit, bool StartWhenAvailable, Microsoft.Win32.TaskScheduler.TaskInstancesPolicy MultipleInstancesPolicy, Microsoft.Win32.TaskScheduler.TaskLogonType LogonType, Microsoft.Win32.TaskScheduler.TaskRunLevel RunLevel);
 
     private ExecutionReceiptDto Failure(
         VerifiedAuthorization authorization,

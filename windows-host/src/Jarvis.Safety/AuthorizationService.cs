@@ -485,6 +485,14 @@ public sealed class AuthorizationService : IAuthorizationVerifier
                 expected["task_id"] = reminderTaskId;
                 expected["action_arguments"] = $"--jarvis-reminder {reminderTaskId}";
                 expected["reminder_data_path"] = ReminderDataPaths.GetFilePath(reminderTaskId, _reminderDataLocation.DirectoryPath);
+                expected["scheduler_task_name"] = authId;
+                expected["disallow_start_if_on_batteries"] = ReminderSchedulerPolicy.DisallowStartIfOnBatteries;
+                expected["stop_if_going_on_batteries"] = ReminderSchedulerPolicy.StopIfGoingOnBatteries;
+                expected["execution_time_limit_seconds"] = ReminderSchedulerPolicy.ExecutionTimeLimitSeconds;
+                expected["start_when_available"] = ReminderSchedulerPolicy.StartWhenAvailable;
+                expected["multiple_instances_policy"] = ReminderSchedulerPolicy.MultipleInstances;
+                expected["logon_type"] = ReminderSchedulerPolicy.LogonType;
+                expected["run_level"] = ReminderSchedulerPolicy.RunLevel;
                 break;
             default:
                 expected["status"] = "success";
