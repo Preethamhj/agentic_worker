@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Jarvis.Safety;
 using Jarvis.Tools;
 using System.Windows.Forms;
@@ -9,14 +10,19 @@ public sealed class ReminderDispatcher
 {
     private readonly ReminderDataFileStore _dataFileStore;
     private readonly IReminderNotifier _notifier;
+    private readonly IReminderTaskScheduler _scheduler;
 
     /// <summary>Gets the deterministic payload directory resolved by this dispatcher process.</summary>
     public string ReminderDataDirectory => _dataFileStore.BaseDirectory;
 
-    public ReminderDispatcher(ReminderDataFileStore dataFileStore, IReminderNotifier notifier)
+    public ReminderDispatcher(
+        ReminderDataFileStore dataFileStore,
+        IReminderNotifier notifier,
+        IReminderTaskScheduler scheduler)
     {
         _dataFileStore = dataFileStore ?? throw new ArgumentNullException(nameof(dataFileStore));
         _notifier = notifier ?? throw new ArgumentNullException(nameof(notifier));
+        _scheduler = scheduler ?? throw new ArgumentNullException(nameof(scheduler));
     }
 
     /// <summary>Dispatches exactly one valid task ID and removes its payload after display.</summary>
@@ -47,6 +53,19 @@ public sealed class ReminderDispatcher
         {
             _dataFileStore.Delete(args[1]);
         }
+
+        try
+        {
+            _scheduler.Delete($@"\Jarvis\reminder-{args[1]}");
+        }
+        catch (Exception exception) when (
+            exception is IOException
+            or UnauthorizedAccessException
+            or COMException)
+        {
+            Console.Error.WriteLine($"Reminder displayed, but its scheduled task could not be removed: {exception.Message}");
+        }
+
         return 0;
     }
 }

@@ -24,7 +24,8 @@ public static class Program
                 var reminderLocation = new DefaultReminderDataLocation();
                 return new ReminderDispatcher(
                     new ReminderDataFileStore(reminderLocation),
-                    new WindowsReminderNotifier()).Dispatch(args);
+                    new WindowsReminderNotifier(),
+                    new WindowsReminderTaskScheduler()).Dispatch(args);
             }
             catch (Exception exception) when (
                 exception is IOException
