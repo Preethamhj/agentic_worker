@@ -202,13 +202,17 @@ public static class Program
 
         using var auditStore = new SqliteAuditStore(dbPath);
         var transitions = auditStore.GetStateTransitions();
-        var safetyDecisions = auditStore.GetSafetyDecisions();
+        var policyValidations = auditStore.GetPolicyValidations();
+        var approvalDecisions = auditStore.GetApprovalDecisions();
+        var legacySafetyDecisions = auditStore.GetSafetyDecisions();
 
         Console.WriteLine("============================================================");
         Console.WriteLine("                   TASK AUDIT HISTORY");
         Console.WriteLine("============================================================");
         Console.WriteLine($"Total State Transitions Recorded: {transitions.Count}");
-        Console.WriteLine($"Total Safety Decisions Recorded:   {safetyDecisions.Count}");
+        Console.WriteLine($"Total Policy Validations Recorded: {policyValidations.Count}");
+        Console.WriteLine($"Total Approval Decisions Recorded: {approvalDecisions.Count}");
+        Console.WriteLine($"Legacy Combined Safety Decisions:   {legacySafetyDecisions.Count}");
         Console.WriteLine();
 
         Console.WriteLine("Recent State Transitions:");
@@ -218,10 +222,25 @@ public static class Program
         }
 
         Console.WriteLine();
-        Console.WriteLine("Recent Safety Decisions:");
-        foreach (var s in safetyDecisions.TakeLast(10))
+        Console.WriteLine("Recent Policy Validations:");
+        foreach (var validation in policyValidations.TakeLast(10))
         {
-            Console.WriteLine($"  [{s.Timestamp:yyyy-MM-dd HH:mm:ss}] {s.TaskId,-14} Step: {s.StepId} Tool: {s.ToolId} Risk: {s.FinalRisk} Approved: {s.Approved} ({s.ApprovedBy})");
+            Console.WriteLine($"  [{validation.Timestamp:yyyy-MM-dd HH:mm:ss}] {validation.TaskId,-14} Step: {validation.StepId} Tool: {validation.ToolId} Risk: {validation.FinalRisk} Valid: {validation.IsValid} ({validation.Reason ?? "none"})");
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("Recent Approval Decisions:");
+        foreach (var approval in approvalDecisions.TakeLast(10))
+        {
+            Console.WriteLine($"  [{approval.Timestamp:yyyy-MM-dd HH:mm:ss}] {approval.TaskId,-14} Step: {approval.StepId} Approved: {approval.Approved} Approver: {approval.Approver} ({approval.Reason ?? "none"})");
+        }
+
+        if (legacySafetyDecisions.Count > 0)
+        {
+            Console.WriteLine();
+            Console.WriteLine("Legacy Combined Safety Decisions (historical rows):");
+            foreach (var legacy in legacySafetyDecisions.TakeLast(10))
+                Console.WriteLine($"  [{legacy.Timestamp:yyyy-MM-dd HH:mm:ss}] {legacy.TaskId,-14} Step: {legacy.StepId} Approved: {legacy.Approved} RecordedBy: {legacy.ApprovedBy}");
         }
         Console.WriteLine("============================================================");
 

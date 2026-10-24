@@ -29,7 +29,8 @@ public class ConsoleApprovalHandlerTests
 
             var approved = await handler.RequestApprovalAsync(request);
 
-            approved.Should().BeFalse("High risk must never auto-approve even when JARVIS_AUTO_APPROVE is set");
+            approved.Approved.Should().BeFalse("High risk must never auto-approve even when JARVIS_AUTO_APPROVE is set");
+            approved.Approver.Should().Be(Environment.UserName);
         }
         finally
         {
@@ -48,7 +49,7 @@ public class ConsoleApprovalHandlerTests
 
             var approved = await handler.RequestApprovalAsync(request);
 
-            approved.Should().BeFalse("JARVIS_AUTO_APPROVE must be restricted strictly to risk=low; medium must not auto-approve");
+            approved.Approved.Should().BeFalse("JARVIS_AUTO_APPROVE must be restricted strictly to risk=low; medium must not auto-approve");
         }
         finally
         {
@@ -68,9 +69,10 @@ public class ConsoleApprovalHandlerTests
             var approved = await handler.RequestApprovalAsync(request);
 
 #if DEBUG
-            approved.Should().BeTrue("JARVIS_AUTO_APPROVE allows risk=low in Debug builds");
+            approved.Approved.Should().BeTrue("JARVIS_AUTO_APPROVE allows risk=low in Debug builds");
+            approved.Approver.Should().Be("auto-low");
 #else
-            approved.Should().BeFalse("JARVIS_AUTO_APPROVE is compiled out of Release builds");
+            approved.Approved.Should().BeFalse("JARVIS_AUTO_APPROVE is compiled out of Release builds");
 #endif
         }
         finally
@@ -89,6 +91,29 @@ public class ConsoleApprovalHandlerTests
 
         var approved = await handler.RequestApprovalAsync(request);
 
-        approved.Should().BeFalse("Without JARVIS_AUTO_APPROVE or forceAutoApprove, low risk must prompt / not auto-approve");
+        approved.Approved.Should().BeFalse("Without JARVIS_AUTO_APPROVE or forceAutoApprove, low risk must prompt / not auto-approve");
+    }
+
+    [Fact]
+    public async Task Approval_Read_Timeout_Is_Reported_As_Timeout()
+    {
+        var handler = new ConsoleApprovalHandler(new PendingTextReader(), TimeSpan.FromMilliseconds(20));
+
+        var decision = await handler.RequestApprovalAsync(CreateRequest("medium"));
+
+        decision.Approved.Should().BeFalse();
+        decision.Approver.Should().Be("timeout");
+        decision.Reason.Should().Be("Approval timed out.");
+    }
+
+    private sealed class PendingTextReader : StringReader
+    {
+        public PendingTextReader() : base(string.Empty) { }
+
+        public override async ValueTask<string?> ReadLineAsync(CancellationToken cancellationToken)
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return null;
+        }
     }
 }

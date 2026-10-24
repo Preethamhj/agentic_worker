@@ -108,11 +108,24 @@ public sealed class TaskOrchestrator
 
                 // 3b. Approval
                 stateMachine.Transition(TaskState.AwaitingApproval, $"Step '{step.StepId}' awaiting approval.");
-                var approved = await _approvalHandler.RequestApprovalAsync(taskId, step.StepId, step.ToolCall.ToolId, canonicalArgs, safetyEval.Risk, cancellationToken).ConfigureAwait(false);
-                if (!approved)
+                var approval = await _approvalHandler.RequestApprovalAsync(taskId, step.StepId, step.ToolCall.ToolId, canonicalArgs, safetyEval.Risk, cancellationToken).ConfigureAwait(false);
+                if (_auditStore is not null)
                 {
-                    stateMachine.Transition(TaskState.Cancelled, $"User rejected approval for step '{step.StepId}'.");
-                    return new TaskOrchestratorResult(taskId, stateMachine.CurrentState, receipts, verifications, "User rejected approval.");
+                    await _auditStore.RecordApprovalDecisionAsync(new ApprovalDecisionRecord(
+                        taskId,
+                        step.StepId,
+                        approval.Approved,
+                        approval.Approver,
+                        approval.Reason,
+                        _clock.UtcNow), cancellationToken).ConfigureAwait(false);
+                }
+                if (!approval.Approved)
+                {
+                    var terminalState = string.Equals(approval.Approver, "timeout", StringComparison.Ordinal)
+                        ? TaskState.Timeout
+                        : TaskState.Cancelled;
+                    stateMachine.Transition(terminalState, approval.Reason ?? $"Approval was not granted for step '{step.StepId}'.");
+                    return new TaskOrchestratorResult(taskId, stateMachine.CurrentState, receipts, verifications, approval.Reason ?? "Approval was not granted.");
                 }
 
                 stateMachine.Transition(TaskState.Approved, $"Step '{step.StepId}' approved.");
@@ -122,7 +135,8 @@ public sealed class TaskOrchestrator
                     step.StepId,
                     step.ToolCall.ToolId,
                     canonicalArgs,
-                    safetyEval.Risk);
+                    safetyEval.Risk,
+                    approval.Approver);
                 var stepToken = await _verifier.BeginStepAsync(authorization, cancellationToken).ConfigureAwait(false);
 
                 // 3c. Queue & Execute

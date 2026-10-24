@@ -13,14 +13,19 @@ namespace Jarvis.Cli;
 public sealed class ConsoleApprovalHandler : IApprovalHandler
 {
     private readonly TextReader? _reader;
+    private readonly TimeSpan _timeout;
 
-    public ConsoleApprovalHandler(TextReader? reader = null)
+    public ConsoleApprovalHandler(TextReader? reader = null, TimeSpan? timeout = null)
     {
         _reader = reader;
+        _timeout = timeout ?? TimeSpan.FromMinutes(2);
+        if (_timeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(timeout));
     }
 
-    public Task<bool> RequestApprovalAsync(ApprovalRequest request, CancellationToken cancellationToken = default)
+    public async Task<ApprovalDecision> RequestApprovalAsync(ApprovalRequest request, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var isLowRisk = string.Equals(request.Risk, "low", StringComparison.OrdinalIgnoreCase);
 
         bool canAutoApprove = false;
@@ -47,7 +52,7 @@ public sealed class ConsoleApprovalHandler : IApprovalHandler
         if (canAutoApprove)
         {
             Console.WriteLine($"[Auto-Approved risk '{request.Risk}' for step '{request.StepId}']");
-            return Task.FromResult(true);
+            return new ApprovalDecision(true, "auto-low");
         }
 
         Console.WriteLine();
@@ -68,19 +73,26 @@ public sealed class ConsoleApprovalHandler : IApprovalHandler
 
         Console.Write("Approve execution? [y/N]: ");
         var reader = _reader ?? Console.In;
-        var input = reader.ReadLine();
+        using var timeoutTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutTokenSource.CancelAfter(_timeout);
+        string? input;
+        try
+        {
+            input = await reader.ReadLineAsync(timeoutTokenSource.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return new ApprovalDecision(false, "timeout", "Approval timed out.");
+        }
         var approved = string.Equals(input?.Trim(), "y", StringComparison.OrdinalIgnoreCase)
                     || string.Equals(input?.Trim(), "yes", StringComparison.OrdinalIgnoreCase);
 
         if (!approved)
         {
             Console.WriteLine("[Execution REJECTED by user]");
+            return new ApprovalDecision(false, Environment.UserName, "User denied execution.");
         }
-        else
-        {
-            Console.WriteLine("[Execution APPROVED by user]");
-        }
-
-        return Task.FromResult(approved);
+        Console.WriteLine("[Execution APPROVED by user]");
+        return new ApprovalDecision(true, Environment.UserName);
     }
 }

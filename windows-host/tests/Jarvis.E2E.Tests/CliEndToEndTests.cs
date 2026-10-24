@@ -316,7 +316,7 @@ public class CliEndToEndTests : IDisposable
 
     private sealed class TestApprovalHandler : IApprovalHandler
     {
-        public Task<bool> RequestApprovalAsync(ApprovalRequest request, CancellationToken cancellationToken = default) =>
-            Task.FromResult(true);
+        public Task<ApprovalDecision> RequestApprovalAsync(ApprovalRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new ApprovalDecision(true, Environment.UserName));
     }
 }

@@ -27,6 +27,29 @@ public sealed record SafetyDecisionRecord(
     DateTimeOffset Timestamp
 );
 
+/// <summary>Audit event recording the result of tool policy validation.</summary>
+public sealed record PolicyValidationRecord(
+    string TaskId,
+    string StepId,
+    string ToolId,
+    string AdvisoryRisk,
+    string PolicyRisk,
+    string FinalRisk,
+    bool IsValid,
+    string? Reason,
+    DateTimeOffset Timestamp
+);
+
+/// <summary>Audit event recording the approval decision separately from policy validation.</summary>
+public sealed record ApprovalDecisionRecord(
+    string TaskId,
+    string StepId,
+    bool Approved,
+    string Approver,
+    string? Reason,
+    DateTimeOffset Timestamp
+);
+
 /// <summary>
 /// Audit record for authorization lifecycle transitions (Issued, Consumed, Verified).
 /// </summary>
@@ -123,6 +146,8 @@ public interface IAuditStore
 {
     Task RecordStateTransitionAsync(StateTransitionRecord record, CancellationToken cancellationToken = default);
     Task RecordSafetyDecisionAsync(SafetyDecisionRecord record, CancellationToken cancellationToken = default);
+    Task RecordPolicyValidationAsync(PolicyValidationRecord record, CancellationToken cancellationToken = default);
+    Task RecordApprovalDecisionAsync(ApprovalDecisionRecord record, CancellationToken cancellationToken = default);
     Task RecordAuthorizationLifecycleAsync(AuthorizationLifecycleRecord record, CancellationToken cancellationToken = default);
     Task RecordTaskAsync(TaskAuditRecord record, CancellationToken cancellationToken = default);
     Task RecordStepAsync(StepAuditRecord record, CancellationToken cancellationToken = default);
@@ -133,6 +158,8 @@ public interface IAuditStore
 
     IReadOnlyList<StateTransitionRecord> GetStateTransitions(string? taskId = null);
     IReadOnlyList<SafetyDecisionRecord> GetSafetyDecisions(string? taskId = null);
+    IReadOnlyList<PolicyValidationRecord> GetPolicyValidations(string? taskId = null);
+    IReadOnlyList<ApprovalDecisionRecord> GetApprovalDecisions(string? taskId = null);
     IReadOnlyList<AuthorizationLifecycleRecord> GetAuthorizationLifecycle(string? authId = null);
     IReadOnlyList<TaskAuditRecord> GetTasks();
     IReadOnlyList<StepAuditRecord> GetSteps(string? taskId = null);

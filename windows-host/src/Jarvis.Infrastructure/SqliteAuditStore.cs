@@ -57,6 +57,34 @@ public sealed class SqliteAuditStore : IAuditStore, IDisposable
                     timestamp TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS policy_validations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id TEXT NOT NULL,
+                    step_id TEXT NOT NULL,
+                    tool_id TEXT NOT NULL,
+                    advisory_risk TEXT NOT NULL,
+                    policy_risk TEXT NOT NULL,
+                    final_risk TEXT NOT NULL,
+                    is_valid INTEGER NOT NULL,
+                    reason TEXT,
+                    timestamp TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS approval_decisions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id TEXT NOT NULL,
+                    step_id TEXT NOT NULL,
+                    approved INTEGER NOT NULL,
+                    approver TEXT NOT NULL,
+                    reason TEXT,
+                    timestamp TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS audit_migrations (
+                    version INTEGER PRIMARY KEY,
+                    applied_at TEXT NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS auth_lifecycles (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     auth_id TEXT NOT NULL,
@@ -131,6 +159,8 @@ public sealed class SqliteAuditStore : IAuditStore, IDisposable
 
                 CREATE INDEX IF NOT EXISTS idx_state_transitions_task_id ON state_transitions(task_id);
                 CREATE INDEX IF NOT EXISTS idx_safety_decisions_task_id ON safety_decisions(task_id);
+                CREATE INDEX IF NOT EXISTS idx_policy_validations_task_id ON policy_validations(task_id);
+                CREATE INDEX IF NOT EXISTS idx_approval_decisions_task_id ON approval_decisions(task_id);
                 CREATE INDEX IF NOT EXISTS idx_auth_lifecycles_auth_id ON auth_lifecycles(auth_id);
                 CREATE INDEX IF NOT EXISTS idx_steps_task_id ON steps(task_id);
                 CREATE INDEX IF NOT EXISTS idx_executions_step_id ON executions(step_id);
@@ -139,6 +169,15 @@ public sealed class SqliteAuditStore : IAuditStore, IDisposable
                 CREATE INDEX IF NOT EXISTS idx_api_calls_trace_id ON api_calls(trace_id);
             ";
             cmd.ExecuteNonQuery();
+
+            using (var migration = connection.CreateCommand())
+            {
+                migration.CommandText = @"
+                    INSERT OR IGNORE INTO audit_migrations (version, applied_at)
+                    VALUES (2, @appliedAt);";
+                migration.Parameters.AddWithValue("@appliedAt", DateTimeOffset.UtcNow.ToString("o"));
+                migration.ExecuteNonQuery();
+            }
 
             using var evidenceColumns = connection.CreateCommand();
             evidenceColumns.CommandText = "PRAGMA table_info(evidence);";
@@ -199,6 +238,46 @@ public sealed class SqliteAuditStore : IAuditStore, IDisposable
         cmd.Parameters.AddWithValue("@reason", (object?)record.Reason ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@timestamp", record.Timestamp.ToString("o"));
 
+        await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task RecordPolicyValidationAsync(PolicyValidationRecord record, CancellationToken cancellationToken = default)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = @"
+            INSERT INTO policy_validations (
+                task_id, step_id, tool_id, advisory_risk, policy_risk, final_risk, is_valid, reason, timestamp
+            ) VALUES (
+                @taskId, @stepId, @toolId, @advisoryRisk, @policyRisk, @finalRisk, @isValid, @reason, @timestamp
+            );";
+        cmd.Parameters.AddWithValue("@taskId", record.TaskId);
+        cmd.Parameters.AddWithValue("@stepId", record.StepId);
+        cmd.Parameters.AddWithValue("@toolId", record.ToolId);
+        cmd.Parameters.AddWithValue("@advisoryRisk", record.AdvisoryRisk);
+        cmd.Parameters.AddWithValue("@policyRisk", record.PolicyRisk);
+        cmd.Parameters.AddWithValue("@finalRisk", record.FinalRisk);
+        cmd.Parameters.AddWithValue("@isValid", record.IsValid ? 1 : 0);
+        cmd.Parameters.AddWithValue("@reason", (object?)record.Reason ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@timestamp", record.Timestamp.ToString("o"));
+        await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task RecordApprovalDecisionAsync(ApprovalDecisionRecord record, CancellationToken cancellationToken = default)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = @"
+            INSERT INTO approval_decisions (task_id, step_id, approved, approver, reason, timestamp)
+            VALUES (@taskId, @stepId, @approved, @approver, @reason, @timestamp);";
+        cmd.Parameters.AddWithValue("@taskId", record.TaskId);
+        cmd.Parameters.AddWithValue("@stepId", record.StepId);
+        cmd.Parameters.AddWithValue("@approved", record.Approved ? 1 : 0);
+        cmd.Parameters.AddWithValue("@approver", record.Approver);
+        cmd.Parameters.AddWithValue("@reason", (object?)record.Reason ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@timestamp", record.Timestamp.ToString("o"));
         await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -407,6 +486,52 @@ public sealed class SqliteAuditStore : IAuditStore, IDisposable
             ));
         }
 
+        return list;
+    }
+
+    public IReadOnlyList<PolicyValidationRecord> GetPolicyValidations(string? taskId = null)
+    {
+        var list = new List<PolicyValidationRecord>();
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = taskId is null
+            ? "SELECT task_id, step_id, tool_id, advisory_risk, policy_risk, final_risk, is_valid, reason, timestamp FROM policy_validations ORDER BY id ASC"
+            : "SELECT task_id, step_id, tool_id, advisory_risk, policy_risk, final_risk, is_valid, reason, timestamp FROM policy_validations WHERE task_id = @taskId ORDER BY id ASC";
+        if (taskId is not null)
+            cmd.Parameters.AddWithValue("@taskId", taskId);
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            list.Add(new PolicyValidationRecord(
+                reader.GetString(0), reader.GetString(1), reader.GetString(2),
+                reader.GetString(3), reader.GetString(4), reader.GetString(5),
+                reader.GetInt32(6) == 1,
+                reader.IsDBNull(7) ? null : reader.GetString(7),
+                DateTimeOffset.Parse(reader.GetString(8))));
+        }
+        return list;
+    }
+
+    public IReadOnlyList<ApprovalDecisionRecord> GetApprovalDecisions(string? taskId = null)
+    {
+        var list = new List<ApprovalDecisionRecord>();
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = taskId is null
+            ? "SELECT task_id, step_id, approved, approver, reason, timestamp FROM approval_decisions ORDER BY id ASC"
+            : "SELECT task_id, step_id, approved, approver, reason, timestamp FROM approval_decisions WHERE task_id = @taskId ORDER BY id ASC";
+        if (taskId is not null)
+            cmd.Parameters.AddWithValue("@taskId", taskId);
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            list.Add(new ApprovalDecisionRecord(
+                reader.GetString(0), reader.GetString(1), reader.GetInt32(2) == 1,
+                reader.GetString(3), reader.IsDBNull(4) ? null : reader.GetString(4),
+                DateTimeOffset.Parse(reader.GetString(5))));
+        }
         return list;
     }
 

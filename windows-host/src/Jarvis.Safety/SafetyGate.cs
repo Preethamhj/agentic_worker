@@ -67,7 +67,7 @@ public sealed class SafetyGate : ISafetyGate
         var validation = _toolPolicy.ValidateToolCall(toolId, jsonArgs);
         if (!validation.IsValid)
         {
-            await RecordAuditAsync(taskId, stepId, toolId, "unknown", "high", "high", "system", false, validation.ErrorMessage, cancellationToken).ConfigureAwait(false);
+            await RecordPolicyValidationAsync(taskId, stepId, toolId, "unknown", "high", "high", false, validation.ErrorMessage, cancellationToken).ConfigureAwait(false);
             return new SafetyEvaluation(false, "high", validation.ErrorMessage);
         }
 
@@ -78,7 +78,7 @@ public sealed class SafetyGate : ISafetyGate
                 var pathVal = _pathPolicy.ValidatePath(p);
                 if (!pathVal.IsValid)
                 {
-                    await RecordAuditAsync(taskId, stepId, toolId, "unknown", "high", "high", "system", false, pathVal.ErrorMessage, cancellationToken).ConfigureAwait(false);
+                    await RecordPolicyValidationAsync(taskId, stepId, toolId, "unknown", "high", "high", false, pathVal.ErrorMessage, cancellationToken).ConfigureAwait(false);
                     return new SafetyEvaluation(false, "high", pathVal.ErrorMessage);
                 }
             }
@@ -87,14 +87,14 @@ public sealed class SafetyGate : ISafetyGate
                 var pathVal = _pathPolicy.ValidatePath(rp);
                 if (!pathVal.IsValid)
                 {
-                    await RecordAuditAsync(taskId, stepId, toolId, "unknown", "high", "high", "system", false, pathVal.ErrorMessage, cancellationToken).ConfigureAwait(false);
+                    await RecordPolicyValidationAsync(taskId, stepId, toolId, "unknown", "high", "high", false, pathVal.ErrorMessage, cancellationToken).ConfigureAwait(false);
                     return new SafetyEvaluation(false, "high", pathVal.ErrorMessage);
                 }
             }
         }
 
         var policyRisk = validation.PolicyRisk ?? _toolPolicy.GetPolicyRisk(toolId) ?? "medium";
-        await RecordAuditAsync(taskId, stepId, toolId, policyRisk, policyRisk, policyRisk, "system", true, null, cancellationToken).ConfigureAwait(false);
+        await RecordPolicyValidationAsync(taskId, stepId, toolId, policyRisk, policyRisk, policyRisk, true, null, cancellationToken).ConfigureAwait(false);
         var canonicalArgs = jsonArgs.ToDictionary(
             item => item.Key,
             item => item.Value is JsonValue value && value.TryGetValue<string>(out var text) ? (object?)text : item.Value?.ToString(),
@@ -137,12 +137,13 @@ public sealed class SafetyGate : ISafetyGate
         var validation = _toolPolicy.ValidateToolCall(toolId, rawArgs);
         if (!validation.IsValid)
         {
-            await RecordAuditAsync(taskId, stepId, toolId, advisoryRisk, validation.PolicyRisk ?? "unknown", "high", "system", false, validation.ErrorMessage, cancellationToken);
+            await RecordPolicyValidationAsync(taskId, stepId, toolId, advisoryRisk, validation.PolicyRisk ?? "unknown", "high", false, validation.ErrorMessage, cancellationToken);
             return SafetyGateResult.Denied(validation.ErrorMessage ?? "Tool policy rejected invocation.");
         }
 
         var policyRisk = validation.PolicyRisk ?? _toolPolicy.GetPolicyRisk(toolId) ?? "medium";
         var finalRisk = MaxRisk(advisoryRisk, policyRisk);
+        await RecordPolicyValidationAsync(taskId, stepId, toolId, advisoryRisk, policyRisk, finalRisk, true, null, cancellationToken).ConfigureAwait(false);
 
         // 2. Extract arguments to dictionary
         var argsDict = new Dictionary<string, object?>(StringComparer.Ordinal);
@@ -166,10 +167,10 @@ public sealed class SafetyGate : ISafetyGate
         }
 
         // 3. Approval decision based on final authoritative risk
-        string approvedBy;
+        ApprovalDecision decision;
         if (finalRisk == "low")
         {
-            approvedBy = "auto";
+            decision = new ApprovalDecision(true, "auto-low");
         }
         else
         {
@@ -183,15 +184,14 @@ public sealed class SafetyGate : ISafetyGate
                 finalRisk
             );
 
-            var approved = _approvalHandler != null && await _approvalHandler.RequestApprovalAsync(approvalRequest, cancellationToken);
-            if (!approved)
-            {
-                await RecordAuditAsync(taskId, stepId, toolId, advisoryRisk, policyRisk, finalRisk, "user", false, "User denied execution.", cancellationToken);
-                return SafetyGateResult.Denied($"Execution denied by approval handler for step '{stepId}'.");
-            }
-
-            approvedBy = "user";
+            decision = _approvalHandler is null
+                ? new ApprovalDecision(false, "timeout", "No approval handler was available.")
+                : await _approvalHandler.RequestApprovalAsync(approvalRequest, cancellationToken).ConfigureAwait(false);
         }
+
+        await RecordApprovalDecisionAsync(taskId, stepId, decision, cancellationToken).ConfigureAwait(false);
+        if (!decision.Approved)
+            return SafetyGateResult.Denied(decision.Reason ?? $"Execution denied by approval handler for step '{stepId}'.");
 
         // 4. Issue signed AuthorizationRecord
         var record = _authService.IssueAuthorization(
@@ -200,33 +200,49 @@ public sealed class SafetyGate : ISafetyGate
             toolId: toolId,
             rawArgs: argsDict,
             risk: finalRisk,
-            approvedBy: approvedBy
+            approvedBy: decision.Approver
         );
 
-        await RecordAuditAsync(taskId, stepId, toolId, advisoryRisk, policyRisk, finalRisk, approvedBy, true, null, cancellationToken);
         return SafetyGateResult.Success(record);
     }
 
-    private async Task RecordAuditAsync(
+    private async Task RecordPolicyValidationAsync(
         string taskId, string stepId, string toolId,
         string advisoryRisk, string policyRisk, string finalRisk,
-        string approvedBy, bool approved, string? reason,
+        bool isValid, string? reason,
         CancellationToken cancellationToken)
     {
         if (_auditStore != null)
         {
-            await _auditStore.RecordSafetyDecisionAsync(new SafetyDecisionRecord(
+            await _auditStore.RecordPolicyValidationAsync(new PolicyValidationRecord(
                 taskId,
                 stepId,
                 toolId,
                 advisoryRisk,
                 policyRisk,
                 finalRisk,
-                approvedBy,
-                approved,
+                isValid,
                 reason,
                 _clock.UtcNow
             ), cancellationToken);
+        }
+    }
+
+    private async Task RecordApprovalDecisionAsync(
+        string taskId,
+        string stepId,
+        ApprovalDecision decision,
+        CancellationToken cancellationToken)
+    {
+        if (_auditStore is not null)
+        {
+            await _auditStore.RecordApprovalDecisionAsync(new ApprovalDecisionRecord(
+                taskId,
+                stepId,
+                decision.Approved,
+                decision.Approver,
+                decision.Reason,
+                _clock.UtcNow), cancellationToken).ConfigureAwait(false);
         }
     }
 }

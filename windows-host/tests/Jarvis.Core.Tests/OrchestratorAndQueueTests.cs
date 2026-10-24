@@ -270,9 +270,12 @@ public class OrchestratorAndQueueTests
             _userApproved = userApproved;
         }
 
-        public Task<bool> RequestApprovalAsync(ApprovalRequest request, CancellationToken cancellationToken = default)
+        public Task<ApprovalDecision> RequestApprovalAsync(ApprovalRequest request, CancellationToken cancellationToken = default)
         {
-            return Task.FromResult(_userApproved);
+            return Task.FromResult(new ApprovalDecision(
+                _userApproved,
+                Environment.UserName,
+                _userApproved ? null : "User rejected approval."));
         }
     }
 
@@ -294,7 +297,8 @@ public class OrchestratorAndQueueTests
             string stepId,
             string toolId,
             IReadOnlyDictionary<string, object?> args,
-            string risk) =>
+            string risk,
+            string approvedBy = "user") =>
             new(
                 1,
                 "auth-dummy",
@@ -306,7 +310,7 @@ public class OrchestratorAndQueueTests
                 new List<string>(),
                 new List<string>(),
                 risk,
-                "user",
+                approvedBy,
                 DateTimeOffset.UtcNow.ToString("o"),
                 DateTimeOffset.UtcNow.AddMinutes(1).ToString("o"),
                 DateTimeOffset.UtcNow.AddMinutes(1).ToString("o"),

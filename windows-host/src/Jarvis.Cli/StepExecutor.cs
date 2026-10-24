@@ -36,7 +36,8 @@ public sealed class StepExecutor : IStepExecutor
         string stepId,
         string toolId,
         IReadOnlyDictionary<string, object?> args,
-        string risk)
+        string risk,
+        string approvedBy = "user")
     {
         IReadOnlyDictionary<string, object?>? expected = null;
         if (string.Equals(toolId, "app.launch", StringComparison.OrdinalIgnoreCase))
@@ -64,7 +65,7 @@ public sealed class StepExecutor : IStepExecutor
             rawArgs: args,
             expected: expected,
             risk: risk,
-            approvedBy: "user"
+            approvedBy: approvedBy
         );
     }
 

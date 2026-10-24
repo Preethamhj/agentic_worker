@@ -12,11 +12,11 @@ public class SafetyGateTests
 {
     private class FakeApprovalProvider : IApprovalHandler
     {
-        public bool NextApprovalResult { get; set; } = true;
+        public ApprovalDecision NextApprovalResult { get; set; } = new(true, "test-user");
         public int CallCount { get; private set; }
         public ApprovalRequest? LastRequest { get; private set; }
 
-        public Task<bool> RequestApprovalAsync(ApprovalRequest request, CancellationToken cancellationToken = default)
+        public Task<ApprovalDecision> RequestApprovalAsync(ApprovalRequest request, CancellationToken cancellationToken = default)
         {
             CallCount++;
             LastRequest = request;
@@ -93,20 +93,21 @@ public class SafetyGateTests
         result.Approved.Should().BeTrue();
         result.Record.Should().NotBeNull();
         result.Record!.Risk.Should().Be("low");
-        result.Record.ApprovedBy.Should().Be("auto");
+        result.Record.ApprovedBy.Should().Be("auto-low");
 
         _approvalProvider.CallCount.Should().Be(0);
 
-        var decisions = _auditStore.GetSafetyDecisions("task-100");
-        decisions.Should().HaveCount(1);
+        var decisions = _auditStore.GetApprovalDecisions("task-100");
+        decisions.Should().ContainSingle();
         decisions[0].Approved.Should().BeTrue();
-        decisions[0].ApprovedBy.Should().Be("auto");
+        decisions[0].Approver.Should().Be("auto-low");
+        _auditStore.GetPolicyValidations("task-100").Should().ContainSingle(record => record.IsValid);
     }
 
     [Fact]
     public async Task Medium_Risk_Tool_Approved_By_Provider_Returns_Authorized_Record()
     {
-        _approvalProvider.NextApprovalResult = true;
+        _approvalProvider.NextApprovalResult = new ApprovalDecision(true, "test-user");
 
         var args = new JsonObject
         {
@@ -123,21 +124,21 @@ public class SafetyGateTests
         result.Approved.Should().BeTrue();
         result.Record.Should().NotBeNull();
         result.Record!.Risk.Should().Be("medium");
-        result.Record.ApprovedBy.Should().Be("user");
+        result.Record.ApprovedBy.Should().Be("test-user");
 
         _approvalProvider.CallCount.Should().Be(1);
 
-        var decisions = _auditStore.GetSafetyDecisions("task-101");
-        decisions.Should().HaveCount(1);
+        var decisions = _auditStore.GetApprovalDecisions("task-101");
+        decisions.Should().ContainSingle();
         decisions[0].Approved.Should().BeTrue();
-        decisions[0].ApprovedBy.Should().Be("user");
-        decisions[0].FinalRisk.Should().Be("medium");
+        decisions[0].Approver.Should().Be("test-user");
+        _auditStore.GetPolicyValidations("task-101").Should().ContainSingle(record => record.IsValid);
     }
 
     [Fact]
     public async Task Medium_Risk_Tool_Denied_By_Provider_Rejects_Execution()
     {
-        _approvalProvider.NextApprovalResult = false;
+        _approvalProvider.NextApprovalResult = new ApprovalDecision(false, "test-user", "User denied execution.");
 
         var args = new JsonObject
         {
@@ -157,9 +158,10 @@ public class SafetyGateTests
 
         _approvalProvider.CallCount.Should().Be(1);
 
-        var decisions = _auditStore.GetSafetyDecisions("task-102");
-        decisions.Should().HaveCount(1);
+        var decisions = _auditStore.GetApprovalDecisions("task-102");
+        decisions.Should().ContainSingle();
         decisions[0].Approved.Should().BeFalse();
+        decisions[0].Approver.Should().Be("test-user");
     }
 
     [Fact]
@@ -177,8 +179,24 @@ public class SafetyGateTests
         result.Approved.Should().BeFalse();
         _approvalProvider.CallCount.Should().Be(0);
 
-        var decisions = _auditStore.GetSafetyDecisions("task-103");
-        decisions.Should().HaveCount(1);
-        decisions[0].Approved.Should().BeFalse();
+        _auditStore.GetPolicyValidations("task-103").Should().ContainSingle(record => !record.IsValid);
+        _auditStore.GetApprovalDecisions("task-103").Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Approval_Timeout_Is_Audited_As_Timeout()
+    {
+        _approvalProvider.NextApprovalResult = new ApprovalDecision(false, "timeout", "Approval timed out.");
+
+        var result = await _safetyGate.EvaluateAndAuthorizeAsync(
+            "task-timeout",
+            "step-timeout",
+            "fs.create_folder",
+            new JsonObject { ["path"] = @"C:\Users\test\Documents\Jarvis\newfolder" },
+            "medium");
+
+        result.Approved.Should().BeFalse();
+        _auditStore.GetApprovalDecisions("task-timeout").Should().ContainSingle()
+            .Which.Approver.Should().Be("timeout");
     }
 }

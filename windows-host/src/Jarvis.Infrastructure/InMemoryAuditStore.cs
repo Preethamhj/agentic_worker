@@ -7,6 +7,8 @@ public sealed class InMemoryAuditStore : IAuditStore
 {
     private readonly List<StateTransitionRecord> _stateTransitions = new();
     private readonly List<SafetyDecisionRecord> _safetyDecisions = new();
+    private readonly List<PolicyValidationRecord> _policyValidations = new();
+    private readonly List<ApprovalDecisionRecord> _approvalDecisions = new();
     private readonly List<AuthorizationLifecycleRecord> _authorizationLifecycles = new();
     private readonly object _lock = new();
 
@@ -32,6 +34,20 @@ public sealed class InMemoryAuditStore : IAuditStore
         {
             _safetyDecisions.Add(record);
         }
+        return Task.CompletedTask;
+    }
+
+    public Task RecordPolicyValidationAsync(PolicyValidationRecord record, CancellationToken cancellationToken = default)
+    {
+        lock (_lock)
+            _policyValidations.Add(record);
+        return Task.CompletedTask;
+    }
+
+    public Task RecordApprovalDecisionAsync(ApprovalDecisionRecord record, CancellationToken cancellationToken = default)
+    {
+        lock (_lock)
+            _approvalDecisions.Add(record);
         return Task.CompletedTask;
     }
 
@@ -116,6 +132,18 @@ public sealed class InMemoryAuditStore : IAuditStore
                 ? _safetyDecisions.ToList()
                 : _safetyDecisions.Where(r => r.TaskId == taskId).ToList();
         }
+    }
+
+    public IReadOnlyList<PolicyValidationRecord> GetPolicyValidations(string? taskId = null)
+    {
+        lock (_lock)
+            return taskId is null ? _policyValidations.ToList() : _policyValidations.Where(r => r.TaskId == taskId).ToList();
+    }
+
+    public IReadOnlyList<ApprovalDecisionRecord> GetApprovalDecisions(string? taskId = null)
+    {
+        lock (_lock)
+            return taskId is null ? _approvalDecisions.ToList() : _approvalDecisions.Where(r => r.TaskId == taskId).ToList();
     }
 
     public IReadOnlyList<AuthorizationLifecycleRecord> GetAuthorizationLifecycle(string? authId = null)

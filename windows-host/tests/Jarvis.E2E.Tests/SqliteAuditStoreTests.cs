@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Jarvis.Infrastructure;
+using Microsoft.Data.Sqlite;
 using Xunit;
 
 namespace Jarvis.E2E.Tests;
@@ -60,6 +61,61 @@ public class SqliteAuditStoreTests : IDisposable
         decisions[1].StepId.Should().Be("step-2");
         decisions[1].Approved.Should().BeFalse();
         decisions[1].Reason.Should().Be("Path blocked");
+    }
+
+    [Fact]
+    public async Task SqliteAuditStore_Persists_Policy_And_Approval_Events_Separately()
+    {
+        using var store = new SqliteAuditStore(_dbPath);
+        var timestamp = DateTimeOffset.UtcNow;
+        await store.RecordPolicyValidationAsync(new PolicyValidationRecord(
+            "task-audit", "step-audit", "fs.create_folder", "low", "medium", "medium", true, null, timestamp));
+        await store.RecordApprovalDecisionAsync(new ApprovalDecisionRecord(
+            "task-audit", "step-audit", true, "ASUS", null, timestamp.AddSeconds(1)));
+
+        store.GetPolicyValidations("task-audit").Should().ContainSingle()
+            .Which.IsValid.Should().BeTrue();
+        store.GetApprovalDecisions("task-audit").Should().ContainSingle()
+            .Which.Approver.Should().Be("ASUS");
+    }
+
+    [Fact]
+    public void SqliteAuditStore_Migrates_Old_Database_Without_Losing_Legacy_Rows()
+    {
+        using (var connection = new SqliteConnection($"Data Source={_dbPath}"))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = @"
+                CREATE TABLE safety_decisions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id TEXT NOT NULL,
+                    step_id TEXT NOT NULL,
+                    tool_id TEXT NOT NULL,
+                    advisory_risk TEXT NOT NULL,
+                    policy_risk TEXT NOT NULL,
+                    final_risk TEXT NOT NULL,
+                    approved_by TEXT NOT NULL,
+                    approved INTEGER NOT NULL,
+                    reason TEXT,
+                    timestamp TEXT NOT NULL
+                );
+                INSERT INTO safety_decisions (
+                    task_id, step_id, tool_id, advisory_risk, policy_risk, final_risk,
+                    approved_by, approved, reason, timestamp
+                ) VALUES (
+                    'legacy-task', 'legacy-step', 'fs.create_folder', 'low', 'medium', 'medium',
+                    'system', 1, NULL, '2026-01-01T00:00:00.0000000+00:00'
+                );";
+            command.ExecuteNonQuery();
+        }
+
+        using var store = new SqliteAuditStore(_dbPath);
+
+        store.GetSafetyDecisions("legacy-task").Should().ContainSingle()
+            .Which.ApprovedBy.Should().Be("system");
+        store.GetPolicyValidations("legacy-task").Should().BeEmpty();
+        store.GetApprovalDecisions("legacy-task").Should().BeEmpty();
     }
 
     [Fact]

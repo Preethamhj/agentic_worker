@@ -65,18 +65,21 @@ public sealed record ApprovalRequest(
     string? PolicyRisk = null
 );
 
+/// <summary>Outcome and identity for one approval decision.</summary>
+public sealed record ApprovalDecision(bool Approved, string Approver, string? Reason = null);
+
 /// <summary>
 /// Handles user authorization requests for high/medium risk steps.
 /// Displays canonical arguments to the user before prompt.
 /// </summary>
 public interface IApprovalHandler
 {
-    Task<bool> RequestApprovalAsync(ApprovalRequest request, CancellationToken cancellationToken = default);
+    Task<ApprovalDecision> RequestApprovalAsync(ApprovalRequest request, CancellationToken cancellationToken = default);
 }
 
 public static class ApprovalHandlerExtensions
 {
-    public static Task<bool> RequestApprovalAsync(
+    public static Task<ApprovalDecision> RequestApprovalAsync(
         this IApprovalHandler handler,
         string taskId,
         string stepId,
@@ -123,7 +126,8 @@ public interface IStepExecutor
         string stepId,
         string toolId,
         IReadOnlyDictionary<string, object?> args,
-        string risk);
+        string risk,
+        string approvedBy = "user");
 
     Task<ExecutionReceiptDto> ExecuteStepAsync(
         AuthorizationRecordDto authorization,
