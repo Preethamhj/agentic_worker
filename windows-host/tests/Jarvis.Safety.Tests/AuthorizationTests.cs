@@ -32,7 +32,8 @@ public class AuthorizationTests
         var service = new AuthorizationService(_keyStore, _clock, hostPathProvider: new FixedHostPathProvider(@"C:\Jarvis\Jarvis.Cli.exe"), reminderDataLocation: location);
         var record = service.IssueAuthorization("task", "step", "task.schedule_reminder", new Dictionary<string, object?>
         {
-            ["time_iso"] = "2026-10-09T10:05:00.0000000+00:00", ["message"] = "message"
+            ["time_iso"] = "2026-10-09T10:05:00.0000000+00:00",
+            ["message"] = "message"
         });
 
         record.Expected["reminder_data_path"].Should().Be(ReminderDataPaths.GetFilePath(record.Expected["task_id"]!.ToString()!, location.DirectoryPath));

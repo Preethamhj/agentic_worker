@@ -50,8 +50,42 @@ try {
     }
 
     $taskName = $newTasks[0].TaskName
+    if ($taskName -notmatch '^reminder-([0-9a-f]{32})$') {
+        throw "Registered task name '$taskName' is not reminder-<32-hex-task-id>."
+    }
+    $taskIdFromName = $Matches[1]
     $taskPath = "\Jarvis\$taskName"
     [xml]$registeredXml = Export-ScheduledTask -TaskName $taskName -TaskPath "\Jarvis\"
+    $taskEnabled = $registeredXml.SelectSingleNode("//*[local-name()='Settings']/*[local-name()='Enabled']")
+    $disallowBattery = $registeredXml.SelectSingleNode("//*[local-name()='DisallowStartIfOnBatteries']")
+    $stopBattery = $registeredXml.SelectSingleNode("//*[local-name()='StopIfGoingOnBatteries']")
+    $executionLimit = $registeredXml.SelectSingleNode("//*[local-name()='ExecutionTimeLimit']")
+    $startWhenAvailable = $registeredXml.SelectSingleNode("//*[local-name()='StartWhenAvailable']")
+    $multipleInstances = $registeredXml.SelectSingleNode("//*[local-name()='MultipleInstancesPolicy']")
+    $logonType = $registeredXml.SelectSingleNode("//*[local-name()='Principal']/*[local-name()='LogonType']")
+    $runLevel = $registeredXml.SelectSingleNode("//*[local-name()='Principal']/*[local-name()='RunLevel']")
+    $deleteExpired = $registeredXml.SelectSingleNode("//*[local-name()='DeleteExpiredTaskAfter']")
+    if ($taskEnabled.InnerText -ne "true"
+        -or $disallowBattery.InnerText -ne "false"
+        -or $stopBattery.InnerText -ne "false"
+        -or [System.Xml.XmlConvert]::ToTimeSpan($executionLimit.InnerText) -ne [TimeSpan]::FromMinutes(5)
+        -or $startWhenAvailable.InnerText -ne "true"
+        -or $multipleInstances.InnerText -ne "IgnoreNew"
+        -or $logonType.InnerText -ne "InteractiveToken"
+        -or $runLevel.InnerText -ne "LeastPrivilege"
+        -or [System.Xml.XmlConvert]::ToTimeSpan($deleteExpired.InnerText) -ne [TimeSpan]::FromHours(1)) {
+        throw "Registered task settings differ from the signed reminder scheduler policy."
+    }
+
+    $trigger = $registeredXml.SelectSingleNode("//*[local-name()='TimeTrigger']")
+    if ($null -eq $trigger -or $registeredXml.SelectNodes("//*[local-name()='TimeTrigger']").Count -ne 1) {
+        throw "Registered task XML must contain exactly one time trigger."
+    }
+    $endBoundary = $trigger.SelectSingleNode("./*[local-name()='EndBoundary']")
+    if ($null -eq $endBoundary) {
+        throw "Registered task XML did not contain an EndBoundary."
+    }
+
     $exec = $registeredXml.SelectSingleNode("//*[local-name()='Exec']")
     if ($null -eq $exec) {
         throw "Registered task XML did not contain an Exec element."
@@ -68,6 +102,9 @@ try {
     }
 
     $taskId = $Matches[1]
+    if ($taskId -cne $taskIdFromName) {
+        throw "Task name ID and signed action argument ID do not match."
+    }
     $dataPath = Join-Path $env:LOCALAPPDATA "Jarvis\reminders\$taskId.json"
     $dataExistsBefore = Test-Path -LiteralPath $dataPath -PathType Leaf
     Write-Host "Reminder data file exists before trigger: $dataExistsBefore"
@@ -83,6 +120,10 @@ try {
         $boundary.InnerText,
         [Globalization.CultureInfo]::InvariantCulture,
         [Globalization.DateTimeStyles]::AssumeLocal)
+    $expectedEndBoundary = $scheduledAt.AddMinutes(10).ToString("s", [Globalization.CultureInfo]::InvariantCulture)
+    if ($endBoundary.InnerText -ne $expectedEndBoundary) {
+        throw "EndBoundary '$($endBoundary.InnerText)' does not equal trigger start plus ten minutes ('$expectedEndBoundary')."
+    }
     $sleepSeconds = [Math]::Max(1, [Math]::Ceiling(($scheduledAt - (Get-Date)).TotalSeconds) + 20)
     Write-Host "Waiting once for the scheduled trigger ($sleepSeconds seconds); no polling."
     Start-Sleep -Seconds $sleepSeconds

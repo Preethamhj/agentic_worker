@@ -266,3 +266,40 @@ dotnet test .\windows-host\tests\Jarvis.Architecture.Tests\Jarvis.Architecture.T
 .\ai-server\.venv\Scripts\python.exe -m pip show ollama httpx
 .\ai-server\.venv\Scripts\python.exe .\scripts\eval_llm_json.py
 ```
+
+## Reminder hardening follow-up
+
+The current phase-3b reminder contract signs the task name `reminder-<task-id>`, a trigger end boundary ten minutes after the start, and one-hour expiry cleanup. The dispatcher validates the task ID, displays and consumes the payload, then best-effort unregisters its own task. Unregister failures are reported and do not make a successfully displayed reminder fail.
+
+The verifier compares each expected setting against the signed authorization record and the independently observed Task Scheduler XML. It does not derive expected values from executor receipts.
+
+### Scheduler fault table
+
+| Fault | Expected status | Test name |
+|---|---|---|
+| Task name differs from signed name | FAILED | `Changed_Signed_Scheduler_Setting_Is_Failed` (`task_name`) |
+| Trigger time differs from signed time | FAILED | `Changed_Signed_Scheduler_Setting_Is_Failed` (`start_boundary`) |
+| Action executable differs from signed path | FAILED | `Changed_Signed_Scheduler_Setting_Is_Failed` (`command`) |
+| Action arguments differ from signed arguments | FAILED | `Changed_Signed_Scheduler_Setting_Is_Failed` (`arguments`) |
+| Disallow-start-on-battery differs | FAILED | `Changed_Signed_Scheduler_Setting_Is_Failed` (`disallow_start_if_on_batteries`) |
+| Stop-on-battery differs | FAILED | `Changed_Signed_Scheduler_Setting_Is_Failed` (`stop_if_going_on_batteries`) |
+| Execution time limit differs | FAILED | `Changed_Signed_Scheduler_Setting_Is_Failed` (`execution_time_limit`) |
+| StartWhenAvailable differs | FAILED | `Changed_Signed_Scheduler_Setting_Is_Failed` (`start_when_available`) |
+| Multiple-instances policy differs from IgnoreNew | FAILED | `Changed_Signed_Scheduler_Setting_Is_Failed` (`multiple_instances`) |
+| Logon type differs from InteractiveToken | FAILED | `Changed_Signed_Scheduler_Setting_Is_Failed` (`logon_type`) |
+| Run level differs from LeastPrivilege | FAILED | `Changed_Signed_Scheduler_Setting_Is_Failed` (`run_level`) |
+| EndBoundary differs from signed start plus offset | FAILED | `Changed_Signed_Scheduler_Setting_Is_Failed` (`end_boundary`) |
+| DeleteExpiredTaskAfter differs from signed duration | FAILED | `Changed_Signed_Scheduler_Setting_Is_Failed` (`delete_expired_task_after`) |
+| Task has fired and was removed before verification | FAILED with explicit missing-task reason | `Already_Fired_And_Removed_Task_Is_Failed_With_Explicit_Reason` |
+| No scheduler setting fault | VERIFIED | `No_Scheduler_Setting_Fault_Aggregates_To_Verified` |
+
+The 13 setting-fault rows are cases in one theory. The aggregation check confirms that a definite `FAILED` finding takes precedence over an independent `ESCALATE` result.
+
+### Test categories and real-state boundary
+
+- `AppLaunchRepeat`: 50 Notepad launches, skipped on elevated runners, each test-launched PID is tracked and stopped by PID.
+- `ReminderRepeat`: 50 executor/dispatcher cycles against a fake scheduler and a temporary payload directory.
+- `RealScheduler`: gated by `JARVIS_REAL_SCHEDULER=1`; the real-scheduler fact verifies task XML and unregisters the exact task in `finally`. The regular test suite leaves this unset and does not access the real Task Scheduler.
+- The shared `ReminderDataPayload.valid1.json` contract fixture is schema-validated by the Python and C# contract suites.
+
+`scripts/smoke-reminder.ps1` checks the task name and ID relationship, action, one-time trigger, both trigger boundaries, battery behavior, execution limit, start behavior, instance policy, principal, and expiry cleanup. It is a manual real-state smoke test and is not run by automated validation.
