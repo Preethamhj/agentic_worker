@@ -41,7 +41,10 @@ public class AuthorizationTests
     [Fact]
     public void Default_Reminder_Data_Location_Uses_LocalAppData_Convention()
     {
-        new DefaultReminderDataLocation().DirectoryPath.Should().Be(ReminderDataPaths.DirectoryPath);
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var expected = Path.GetFullPath(Path.Combine(localAppData, "Jarvis", "reminders"));
+
+        new DefaultReminderDataLocation().DirectoryPath.Should().Be(expected);
     }
 
     private sealed class FixedReminderDataLocation(string directoryPath) : IReminderDataLocation

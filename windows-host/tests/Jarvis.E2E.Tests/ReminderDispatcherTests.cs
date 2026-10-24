@@ -1,5 +1,8 @@
 using FluentAssertions;
 using Jarvis.Cli;
+using Jarvis.Contracts;
+using Jarvis.Infrastructure;
+using Jarvis.Safety;
 using Jarvis.Tools;
 using Xunit;
 
@@ -7,6 +10,31 @@ namespace Jarvis.E2E.Tests;
 
 public sealed class ReminderDispatcherTests
 {
+    [Fact]
+    public void Dispatcher_And_Default_Authorization_Resolve_The_Same_Directory_Value()
+    {
+        var location = new DefaultReminderDataLocation();
+        var service = new AuthorizationService(
+            new InMemoryDpapiKeyStore(),
+            new FixedClock(),
+            hostPathProvider: new FixedHostPathProvider(@"C:\Jarvis\Jarvis.Cli.exe"),
+            reminderDataLocation: location);
+        var record = service.IssueAuthorization(
+            "task-default-location",
+            "step-default-location",
+            "task.schedule_reminder",
+            new Dictionary<string, object?>
+            {
+                ["task_name"] = "Reminder",
+                ["time_iso"] = "2026-10-09T10:05:00.0000000+00:00",
+                ["message"] = "Reminder message"
+            });
+        var dispatcher = new ReminderDispatcher(new ReminderDataFileStore(), new RecordingNotifier());
+
+        dispatcher.ReminderDataDirectory.Should().Be(location.DirectoryPath);
+        Path.GetDirectoryName(record.Expected["reminder_data_path"]!.ToString()).Should().Be(location.DirectoryPath);
+    }
+
     [Fact]
     public void Dispatch_Shows_Payload_For_Task_Id_And_Deletes_The_Data_File()
     {
@@ -97,5 +125,15 @@ public sealed class ReminderDispatcherTests
             Message = message;
             ShowCount++;
         }
+    }
+
+    private sealed class FixedClock : IClock
+    {
+        public DateTimeOffset UtcNow => new(2026, 10, 9, 10, 0, 0, TimeSpan.Zero);
+    }
+
+    private sealed class FixedHostPathProvider(string path) : IHostPathProvider
+    {
+        public string GetHostPath() => path;
     }
 }

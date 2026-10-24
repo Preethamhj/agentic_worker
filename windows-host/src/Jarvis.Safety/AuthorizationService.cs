@@ -36,6 +36,9 @@ public sealed class AuthorizationService : IAuthorizationVerifier
     private readonly HashSet<string> _consumedNonces = new();
     private readonly object _lock = new();
 
+    /// <summary>Gets the trusted reminder payload location used for issued reminder authorizations.</summary>
+    public IReminderDataLocation ReminderDataLocation => _reminderDataLocation;
+
     public AuthorizationService(
         IDpapiKeyStore keyStore,
         IClock? clock = null,

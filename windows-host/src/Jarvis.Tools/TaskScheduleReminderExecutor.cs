@@ -15,6 +15,9 @@ public sealed class TaskScheduleReminderExecutor : IToolExecutor
     private readonly IClock _clock;
     private readonly IHostPathProvider _hostPathProvider;
 
+    /// <summary>Gets the payload store used to create the signed reminder data file.</summary>
+    public ReminderDataFileStore ReminderDataFileStore => _dataFileStore;
+
     public TaskScheduleReminderExecutor(
         AuthorizationService authorizationService,
         IReminderTaskScheduler scheduler,

@@ -10,6 +10,9 @@ public sealed class ReminderDispatcher
     private readonly ReminderDataFileStore _dataFileStore;
     private readonly IReminderNotifier _notifier;
 
+    /// <summary>Gets the deterministic payload directory resolved by this dispatcher process.</summary>
+    public string ReminderDataDirectory => _dataFileStore.BaseDirectory;
+
     public ReminderDispatcher(ReminderDataFileStore dataFileStore, IReminderNotifier notifier)
     {
         _dataFileStore = dataFileStore ?? throw new ArgumentNullException(nameof(dataFileStore));

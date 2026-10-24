@@ -14,11 +14,15 @@ public sealed class ReminderDataFileStore
 
     private readonly string _baseDirectory;
     private readonly PathPolicy _pathPolicy;
+
+    /// <summary>Gets the trusted location instance from which this store derives its base directory.</summary>
+    public IReminderDataLocation Location { get; }
     public string BaseDirectory => _baseDirectory;
 
     public ReminderDataFileStore(IReminderDataLocation? location = null)
     {
-        _baseDirectory = Path.GetFullPath((location ?? new DefaultReminderDataLocation()).DirectoryPath);
+        Location = location ?? new DefaultReminderDataLocation();
+        _baseDirectory = Path.GetFullPath(Location.DirectoryPath);
         _pathPolicy = new PathPolicy([_baseDirectory]);
     }
 
