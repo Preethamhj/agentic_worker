@@ -471,10 +471,11 @@ public sealed class AuthorizationService : IAuthorizationVerifier
             case "task.schedule_reminder":
                 if (args.TryGetValue("time_iso", out var time)) expected["time_iso"] = time;
                 expected["scheduled"] = true;
-                expected["task_path"] = $@"\Jarvis\{authId}";
                 var reminderTaskId = authId["auth-".Length..];
                 if (!ToolPolicy.IsValidReminderTaskId(reminderTaskId))
                     throw new InvalidOperationException("Authorization generated an invalid reminder task ID.");
+                var schedulerTaskName = $"reminder-{reminderTaskId}";
+                expected["task_path"] = $@"\Jarvis\{schedulerTaskName}";
                 var hostPath = _hostPathProvider.GetHostPath();
                 if (string.Equals(Path.GetFileName(hostPath), "dotnet.exe", StringComparison.OrdinalIgnoreCase))
                 {
@@ -485,7 +486,7 @@ public sealed class AuthorizationService : IAuthorizationVerifier
                 expected["task_id"] = reminderTaskId;
                 expected["action_arguments"] = $"--jarvis-reminder {reminderTaskId}";
                 expected["reminder_data_path"] = ReminderDataPaths.GetFilePath(reminderTaskId, _reminderDataLocation.DirectoryPath);
-                expected["scheduler_task_name"] = authId;
+                expected["scheduler_task_name"] = schedulerTaskName;
                 expected["disallow_start_if_on_batteries"] = ReminderSchedulerPolicy.DisallowStartIfOnBatteries;
                 expected["stop_if_going_on_batteries"] = ReminderSchedulerPolicy.StopIfGoingOnBatteries;
                 expected["execution_time_limit_seconds"] = ReminderSchedulerPolicy.ExecutionTimeLimitSeconds;
@@ -493,6 +494,8 @@ public sealed class AuthorizationService : IAuthorizationVerifier
                 expected["multiple_instances_policy"] = ReminderSchedulerPolicy.MultipleInstances;
                 expected["logon_type"] = ReminderSchedulerPolicy.LogonType;
                 expected["run_level"] = ReminderSchedulerPolicy.RunLevel;
+                expected["end_boundary_offset_seconds"] = ReminderSchedulerPolicy.EndBoundaryOffsetSeconds;
+                expected["delete_expired_task_after_seconds"] = ReminderSchedulerPolicy.DeleteExpiredTaskAfterSeconds;
                 break;
             default:
                 expected["status"] = "success";

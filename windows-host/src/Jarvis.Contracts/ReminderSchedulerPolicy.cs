@@ -10,4 +10,6 @@ public static class ReminderSchedulerPolicy
     public const string MultipleInstances = "IgnoreNew";
     public const string LogonType = "InteractiveToken";
     public const string RunLevel = "LeastPrivilege";
+    public const int EndBoundaryOffsetSeconds = 600;
+    public const int DeleteExpiredTaskAfterSeconds = 3600;
 }

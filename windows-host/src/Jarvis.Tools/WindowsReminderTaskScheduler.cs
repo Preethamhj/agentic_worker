@@ -61,9 +61,11 @@ public sealed class WindowsReminderTaskScheduler : IReminderTaskScheduler
             definition.Settings.ExecutionTimeLimit = registration.ExecutionTimeLimit ?? ReminderTaskPolicy.ExecutionTimeLimit;
             definition.Settings.StartWhenAvailable = registration.StartWhenAvailable;
             definition.Settings.MultipleInstances = registration.MultipleInstancesPolicy;
+            definition.Settings.DeleteExpiredTaskAfter = registration.DeleteExpiredTaskAfter ?? TimeSpan.Zero;
             definition.Triggers.Add(new TimeTrigger(registration.ScheduledAtUtc.ToLocalTime().DateTime)
             {
-                Enabled = true
+                Enabled = true,
+                EndBoundary = registration.EndBoundaryUtc?.ToLocalTime().DateTime ?? DateTime.MaxValue
             });
             definition.Actions.Add(new ExecAction(
                 actionPath,

@@ -17,7 +17,9 @@ public sealed record ReminderTaskRegistration(
     bool StartWhenAvailable = ReminderTaskPolicy.StartWhenAvailable,
     Microsoft.Win32.TaskScheduler.TaskInstancesPolicy MultipleInstancesPolicy = ReminderTaskPolicy.MultipleInstancesPolicy,
     Microsoft.Win32.TaskScheduler.TaskLogonType LogonType = ReminderTaskPolicy.LogonType,
-    Microsoft.Win32.TaskScheduler.TaskRunLevel RunLevel = ReminderTaskPolicy.RunLevel);
+    Microsoft.Win32.TaskScheduler.TaskRunLevel RunLevel = ReminderTaskPolicy.RunLevel,
+    DateTimeOffset? EndBoundaryUtc = null,
+    TimeSpan? DeleteExpiredTaskAfter = null);
 
 /// <summary>
 /// Isolates Windows Task Scheduler operations from reminder argument validation.
