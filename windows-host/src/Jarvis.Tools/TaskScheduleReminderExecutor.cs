@@ -107,7 +107,7 @@ public sealed class TaskScheduleReminderExecutor : IToolExecutor
         if (separator <= 0 || separator == taskPath.Length - 1
             || !string.Equals(
                 taskPath,
-                $@"\Jarvis\{authorization.AuthId}",
+                $@"\Jarvis\reminder-{taskId}",
                 StringComparison.OrdinalIgnoreCase))
         {
             return Task.FromResult(Failure(authorization, startedAt, "Signed task path is outside the Jarvis Task Scheduler folder."));
@@ -130,7 +130,9 @@ public sealed class TaskScheduleReminderExecutor : IToolExecutor
                 schedulerPolicy.StartWhenAvailable,
                 schedulerPolicy.MultipleInstancesPolicy,
                 schedulerPolicy.LogonType,
-                schedulerPolicy.RunLevel));
+                schedulerPolicy.RunLevel,
+                scheduledAt.Add(schedulerPolicy.EndBoundaryOffset),
+                schedulerPolicy.DeleteExpiredTaskAfter));
         }
         catch
         {
@@ -167,13 +169,15 @@ public sealed class TaskScheduleReminderExecutor : IToolExecutor
             || !TryRead(expected, "multiple_instances_policy", out string? multiple)
             || !TryRead(expected, "logon_type", out string? logon)
             || !TryRead(expected, "run_level", out string? runLevel)
+            || !TryRead(expected, "end_boundary_offset_seconds", out int endBoundarySeconds)
+            || !TryRead(expected, "delete_expired_task_after_seconds", out int deleteExpiredSeconds)
             || !Enum.TryParse<Microsoft.Win32.TaskScheduler.TaskInstancesPolicy>(multiple, out var multiplePolicy)
             || !Enum.TryParse<Microsoft.Win32.TaskScheduler.TaskLogonType>(logon, out var logonType)
             || !string.Equals(runLevel, ReminderSchedulerPolicy.RunLevel, StringComparison.Ordinal)
             || string.IsNullOrWhiteSpace(taskName)
-            || limitSeconds <= 0)
+            || limitSeconds <= 0 || endBoundarySeconds <= 0 || deleteExpiredSeconds <= 0)
             return false;
-        policy = new SchedulerPolicy(taskName, disallowBattery, stopBattery, TimeSpan.FromSeconds(limitSeconds), startAvailable, multiplePolicy, logonType, Microsoft.Win32.TaskScheduler.TaskRunLevel.LUA);
+        policy = new SchedulerPolicy(taskName, disallowBattery, stopBattery, TimeSpan.FromSeconds(limitSeconds), startAvailable, multiplePolicy, logonType, Microsoft.Win32.TaskScheduler.TaskRunLevel.LUA, TimeSpan.FromSeconds(endBoundarySeconds), TimeSpan.FromSeconds(deleteExpiredSeconds));
         return true;
     }
 
@@ -186,7 +190,7 @@ public sealed class TaskScheduleReminderExecutor : IToolExecutor
         return true;
     }
 
-    private sealed record SchedulerPolicy(string TaskName, bool DisallowStartIfOnBatteries, bool StopIfGoingOnBatteries, TimeSpan ExecutionTimeLimit, bool StartWhenAvailable, Microsoft.Win32.TaskScheduler.TaskInstancesPolicy MultipleInstancesPolicy, Microsoft.Win32.TaskScheduler.TaskLogonType LogonType, Microsoft.Win32.TaskScheduler.TaskRunLevel RunLevel);
+    private sealed record SchedulerPolicy(string TaskName, bool DisallowStartIfOnBatteries, bool StopIfGoingOnBatteries, TimeSpan ExecutionTimeLimit, bool StartWhenAvailable, Microsoft.Win32.TaskScheduler.TaskInstancesPolicy MultipleInstancesPolicy, Microsoft.Win32.TaskScheduler.TaskLogonType LogonType, Microsoft.Win32.TaskScheduler.TaskRunLevel RunLevel, TimeSpan EndBoundaryOffset, TimeSpan DeleteExpiredTaskAfter);
 
     private ExecutionReceiptDto Failure(
         VerifiedAuthorization authorization,

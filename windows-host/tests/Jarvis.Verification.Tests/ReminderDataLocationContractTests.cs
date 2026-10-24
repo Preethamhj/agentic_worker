@@ -119,6 +119,10 @@ public sealed class ReminderDataLocationContractTests
             registration.Should().NotBeNull();
             var signedRegistration = registration!;
             signedRegistration.TaskName.Should().Be((string)record.Expected["scheduler_task_name"]!);
+            signedRegistration.TaskPath.Should().Be((string)record.Expected["task_path"]!);
+            signedRegistration.ActionPath.Should().Be((string)record.Expected["action_path"]!);
+            signedRegistration.ActionArguments.Should().Be((string)record.Expected["action_arguments"]!);
+            signedRegistration.ScheduledAtUtc.Should().Be(DateTimeOffset.Parse((string)record.Expected["time_iso"]!));
             signedRegistration.DisallowStartIfOnBatteries.Should().Be((bool)record.Expected["disallow_start_if_on_batteries"]!);
             signedRegistration.StopIfGoingOnBatteries.Should().Be((bool)record.Expected["stop_if_going_on_batteries"]!);
             signedRegistration.ExecutionTimeLimit.Should().Be(TimeSpan.FromSeconds((int)record.Expected["execution_time_limit_seconds"]!));
@@ -126,6 +130,10 @@ public sealed class ReminderDataLocationContractTests
             signedRegistration.MultipleInstancesPolicy.ToString().Should().Be((string)record.Expected["multiple_instances_policy"]!);
             signedRegistration.LogonType.ToString().Should().Be((string)record.Expected["logon_type"]!);
             signedRegistration.RunLevel.Should().Be(Microsoft.Win32.TaskScheduler.TaskRunLevel.LUA);
+            signedRegistration.EndBoundaryUtc.Should().Be(signedRegistration.ScheduledAtUtc.AddSeconds(
+                (int)record.Expected["end_boundary_offset_seconds"]!));
+            signedRegistration.DeleteExpiredTaskAfter.Should().Be(TimeSpan.FromSeconds(
+                (int)record.Expected["delete_expired_task_after_seconds"]!));
         }
         finally { Directory.Delete(directory, recursive: true); }
     }
@@ -160,6 +168,8 @@ public sealed class ReminderDataLocationContractTests
         yield return ["multiple_instances_policy", "Parallel"];
         yield return ["logon_type", "Password"];
         yield return ["run_level", "Highest"];
+        yield return ["end_boundary_offset_seconds", 601];
+        yield return ["delete_expired_task_after_seconds", 3601];
     }
 
     private static AuthorizationService CreateService(IReminderDataLocation location) =>
