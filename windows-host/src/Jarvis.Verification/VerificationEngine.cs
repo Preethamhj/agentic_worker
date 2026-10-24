@@ -27,7 +27,7 @@ public sealed class VerificationEngine : IVerifier
     private readonly FileEvidenceCollector _fileCollector;
     private readonly SearchEvidenceCollector _searchCollector;
     private readonly ProcessEvidenceCollector _processCollector;
-    private readonly ScheduledTaskEvidenceCollector _scheduledTaskCollector;
+    private readonly IScheduledTaskEvidenceCollector _scheduledTaskCollector;
     private readonly TimeSpan _evidenceWindow;
     private readonly object _nonceLock = new();
     private readonly HashSet<string> _verifiedNonces = new(StringComparer.Ordinal);
@@ -39,15 +39,34 @@ public sealed class VerificationEngine : IVerifier
         int maxSnapshotEntries = 10_000,
         TimeSpan? evidenceWindow = null,
         IEnumerable<string>? noiseExclusions = null)
+        : this(
+            authorizationVerifier,
+            auditStore,
+            clock,
+            maxSnapshotEntries,
+            evidenceWindow,
+            noiseExclusions,
+            new ScheduledTaskEvidenceCollector())
+    {
+    }
+
+    internal VerificationEngine(
+        IAuthorizationVerifier authorizationVerifier,
+        IAuditStore auditStore,
+        IClock? clock,
+        int maxSnapshotEntries,
+        TimeSpan? evidenceWindow,
+        IEnumerable<string>? noiseExclusions,
+        IScheduledTaskEvidenceCollector scheduledTaskCollector)
     {
         _authorizationVerifier = authorizationVerifier ?? throw new ArgumentNullException(nameof(authorizationVerifier));
         _auditStore = auditStore ?? throw new ArgumentNullException(nameof(auditStore));
+        _scheduledTaskCollector = scheduledTaskCollector ?? throw new ArgumentNullException(nameof(scheduledTaskCollector));
         _clock = clock ?? SystemClock.Instance;
         _snapshots = new SnapshotService(maxSnapshotEntries, noiseExclusions);
         _fileCollector = new FileEvidenceCollector();
         _searchCollector = new SearchEvidenceCollector(_fileCollector);
         _processCollector = new ProcessEvidenceCollector();
-        _scheduledTaskCollector = new ScheduledTaskEvidenceCollector();
         _evidenceWindow = evidenceWindow ?? TimeSpan.FromSeconds(30);
         if (_evidenceWindow <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(evidenceWindow));
@@ -348,12 +367,17 @@ public sealed class VerificationEngine : IVerifier
             || !DateTimeOffset.TryParse(time, out _)
             || !authorization.CanonicalArgs.TryGetValue("message", out var message)
             || message is not string
+            || !authorization.Expected.TryGetValue("task_id", out var taskId)
+            || taskId is not string taskIdValue
             || !authorization.Expected.TryGetValue("task_path", out var taskPath)
             || taskPath is not string taskPathValue
             || !string.Equals(
                 taskPathValue,
-                $@"\Jarvis\{authorization.AuthId}",
+                $@"\Jarvis\reminder-{taskIdValue}",
                 StringComparison.OrdinalIgnoreCase)
+            || !authorization.Expected.TryGetValue("scheduler_task_name", out var schedulerTaskName)
+            || schedulerTaskName is not string schedulerTaskNameValue
+            || !string.Equals(schedulerTaskNameValue, $"reminder-{taskIdValue}", StringComparison.Ordinal)
             || !authorization.Expected.TryGetValue("action_path", out var actionPath)
             || actionPath is not string actionPathValue
             || !Path.IsPathRooted(actionPathValue))
@@ -604,7 +628,7 @@ public sealed class VerificationEngine : IVerifier
                 : "PASSED";
     }
 
-    private static string Aggregate(IReadOnlyList<VerificationStageResultDto> stages)
+    internal static string Aggregate(IReadOnlyList<VerificationStageResultDto> stages)
     {
         var executed = stages.Where(stage => stage.Stage is >= 1 and <= 6).ToArray();
         if (executed.Any(stage => stage.Outcome == Failed))
