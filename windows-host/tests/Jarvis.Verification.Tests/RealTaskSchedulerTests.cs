@@ -102,17 +102,6 @@ public sealed class RealTaskSchedulerTests
     private static XElement Element(XDocument xml, XNamespace ns, string name) =>
         xml.Descendants(ns + name).Single();
 
-    private sealed class RealSchedulerFactAttribute : FactAttribute
-    {
-        public RealSchedulerFactAttribute()
-        {
-            if (!OperatingSystem.IsWindows())
-                Skip = "Real Task Scheduler tests require Windows.";
-            else if (!string.Equals(Environment.GetEnvironmentVariable("JARVIS_REAL_SCHEDULER"), "1", StringComparison.Ordinal))
-                Skip = "Set JARVIS_REAL_SCHEDULER=1 to opt in to real Task Scheduler access.";
-        }
-    }
-
     private sealed class FixedReminderDataLocation(string directoryPath) : IReminderDataLocation
     {
         public string DirectoryPath => directoryPath;
@@ -126,5 +115,33 @@ public sealed class RealTaskSchedulerTests
     private sealed class FixedHostPathProvider(string path) : IHostPathProvider
     {
         public string GetHostPath() => path;
+    }
+}
+
+public sealed class RealSchedulerFactAttribute : FactAttribute
+{
+    public RealSchedulerFactAttribute()
+    {
+        Skip = RealSchedulerFactAttributeHelper.GetSkipReason();
+    }
+}
+
+public sealed class RealSchedulerTheoryAttribute : TheoryAttribute
+{
+    public RealSchedulerTheoryAttribute()
+    {
+        Skip = RealSchedulerFactAttributeHelper.GetSkipReason();
+    }
+}
+
+internal static class RealSchedulerFactAttributeHelper
+{
+    public static string? GetSkipReason()
+    {
+        if (!OperatingSystem.IsWindows())
+            return "Real Task Scheduler tests require Windows.";
+        if (!string.Equals(Environment.GetEnvironmentVariable("JARVIS_REAL_SCHEDULER"), "1", StringComparison.Ordinal))
+            return "Set JARVIS_REAL_SCHEDULER=1 to opt in to real Task Scheduler access.";
+        return null;
     }
 }

@@ -11,6 +11,7 @@ public sealed class ReminderDispatcher
     private readonly ReminderDataFileStore _dataFileStore;
     private readonly IReminderNotifier _notifier;
     private readonly IReminderTaskScheduler _scheduler;
+    public string? FailureReason { get; private set; }
 
     /// <summary>Gets the deterministic payload directory resolved by this dispatcher process.</summary>
     public string ReminderDataDirectory => _dataFileStore.BaseDirectory;
@@ -28,10 +29,12 @@ public sealed class ReminderDispatcher
     /// <summary>Dispatches exactly one valid task ID and removes its payload after display.</summary>
     public int Dispatch(string[] args)
     {
+        FailureReason = null;
         if (args.Length != 2
             || !string.Equals(args[0], "--jarvis-reminder", StringComparison.Ordinal)
             || !ToolPolicy.IsValidReminderTaskId(args[1]))
         {
+            FailureReason = "Reminder task ID must be exactly 32 hexadecimal characters.";
             return 2;
         }
 
@@ -42,6 +45,7 @@ public sealed class ReminderDispatcher
         }
         catch (FileNotFoundException)
         {
+            FailureReason = "Reminder data file was not found.";
             return 2;
         }
 

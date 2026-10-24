@@ -325,10 +325,24 @@ public sealed class Phase3bVerificationTests : IDisposable
     }
 
     [NonElevatedFact]
+    [Trait("Category", "AppLaunchRepeat")]
     public async AsyncTask AppLaunch_Exact_Clean_Processes_Verify_In_50_Consecutive_Runs()
     {
-        var imagePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "ping.exe");
-        File.Exists(imagePath).Should().BeTrue();
+        var notepadLauncher = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "notepad.exe");
+        File.Exists(notepadLauncher).Should().BeTrue();
+        var probeDocument = Path.Combine(_root, "notepad-probe.txt");
+        await File.WriteAllTextAsync(probeDocument, "Resolve the real Notepad image.");
+        using var probe = StartNotepadChild(notepadLauncher, probeDocument);
+        string imagePath;
+        try
+        {
+            imagePath = probe.MainModule?.FileName
+                ?? throw new InvalidOperationException("Could not resolve the launched Notepad image path.");
+        }
+        finally
+        {
+            StopChild(probe);
+        }
 
         for (var run = 0; run < 50; run++)
         {
@@ -338,7 +352,9 @@ public sealed class Phase3bVerificationTests : IDisposable
             var authorization = IssueAppAuthorization($"clean-run-{run}", imagePath);
             var token = await _engine.BeginStepAsync(authorization);
             _authorizationService.Consume(authorization, authorization.StepId);
-            using var child = StartPingChild(imagePath);
+            var filePath = Path.Combine(runRoot, "reminder-repeat.txt");
+            await File.WriteAllTextAsync(filePath, $"App launch evidence run {run}.");
+            using var child = StartNotepadChild(imagePath, filePath);
             var observation = new ExecutionObservation(_clock.UtcNow, _clock.UtcNow);
 
             try
@@ -348,7 +364,9 @@ public sealed class Phase3bVerificationTests : IDisposable
                     observation,
                     token);
 
-                result.Status.Should().Be("VERIFIED", $"clean app.launch run {run + 1} should not fail");
+                result.Status.Should().Be(
+                    "VERIFIED",
+                    $"clean app.launch run {run + 1} should not fail; reasons: {string.Join(" | ", result.Reasons)}; evidence: {JsonSerializer.Serialize(result.Evidence.Select(item => item.Observed))}");
                 result.Evidence.Should().ContainSingle(item => item.Match);
             }
             finally
@@ -519,7 +537,8 @@ public sealed class Phase3bVerificationTests : IDisposable
         scheduler.WasRegistered.Should().BeFalse();
     }
 
-    [Fact]
+    [RealSchedulerFact]
+    [Trait("Category", "RealScheduler")]
     public async AsyncTask ScheduleReminder_With_Wrong_Time_Is_Failed()
     {
         var authorization = IssueReminderAuthorization("wrong-time");
@@ -550,7 +569,8 @@ public sealed class Phase3bVerificationTests : IDisposable
         }
     }
 
-    [Fact]
+    [RealSchedulerFact]
+    [Trait("Category", "RealScheduler")]
     public async AsyncTask ScheduleReminder_With_Wrong_Action_Is_Failed()
     {
         var authorization = IssueReminderAuthorization("wrong-action");
@@ -581,7 +601,8 @@ public sealed class Phase3bVerificationTests : IDisposable
         }
     }
 
-    [Fact]
+    [RealSchedulerFact]
+    [Trait("Category", "RealScheduler")]
     public async AsyncTask ScheduleReminder_Disabled_Task_Is_Failed()
     {
         var authorization = IssueReminderAuthorization("disabled");
@@ -610,7 +631,8 @@ public sealed class Phase3bVerificationTests : IDisposable
         }
     }
 
-    [Fact]
+    [RealSchedulerFact]
+    [Trait("Category", "RealScheduler")]
     public async AsyncTask ScheduleReminder_Extra_Unauthorized_Task_Is_Failed()
     {
         var authorization = IssueReminderAuthorization("extra-task");
@@ -665,7 +687,8 @@ public sealed class Phase3bVerificationTests : IDisposable
         yield return ["kannada", "ಕನ್ನಡ", "ನಮಸ್ಕಾರ, ಜಾರ್ವಿಸ್"];
     }
 
-    [Fact]
+    [RealSchedulerFact]
+    [Trait("Category", "RealScheduler")]
     public async AsyncTask ScheduleReminder_Exact_Clean_Tasks_Verify_In_50_Consecutive_Runs()
     {
         var scheduler = new WindowsReminderTaskScheduler();
@@ -735,8 +758,9 @@ public sealed class Phase3bVerificationTests : IDisposable
         authorization.CanonicalArgs.Should().NotContainKey("action_arguments");
     }
 
-    [Theory]
+    [RealSchedulerTheory]
     [MemberData(nameof(ReminderMessageCases))]
+    [Trait("Category", "RealScheduler")]
     public async AsyncTask ScheduleReminder_Executor_And_Independent_Verifier_Accept_Safe_Messages(
         string suffix,
         string taskName,
@@ -804,7 +828,8 @@ public sealed class Phase3bVerificationTests : IDisposable
         }
     }
 
-    [Fact]
+    [RealSchedulerFact]
+    [Trait("Category", "RealScheduler")]
     public async AsyncTask ScheduleReminder_Verifier_Fails_When_Reminder_Data_Is_Missing()
     {
         var authorization = IssueReminderAuthorization("missing-data");
@@ -836,7 +861,8 @@ public sealed class Phase3bVerificationTests : IDisposable
         }
     }
 
-    [Fact]
+    [RealSchedulerFact]
+    [Trait("Category", "RealScheduler")]
     public async AsyncTask ScheduleReminder_Verifier_Fails_When_Reminder_Data_Differs_From_Authorization()
     {
         var authorization = IssueReminderAuthorization("altered-data");
@@ -967,6 +993,54 @@ public sealed class Phase3bVerificationTests : IDisposable
         return child;
     }
 
+    private static Process StartNotepadChild(string imagePath, string documentPath)
+    {
+        var priorProcessIds = Process.GetProcessesByName("Notepad")
+            .Select(process =>
+            {
+                var id = process.Id;
+                process.Dispose();
+                return id;
+            })
+            .ToHashSet();
+        using var launcher = new Process
+        {
+            StartInfo = new ProcessStartInfo(imagePath)
+            {
+                UseShellExecute = false,
+                CreateNoWindow = false
+            }
+        };
+        launcher.StartInfo.ArgumentList.Add(documentPath);
+        if (!launcher.Start())
+        {
+            throw new InvalidOperationException("Could not start the notepad child process.");
+        }
+        try
+        {
+            Process? launchedProcess = null;
+            foreach (var process in Process.GetProcessesByName("Notepad"))
+            {
+                if (!priorProcessIds.Contains(process.Id) && launchedProcess is null)
+                    launchedProcess = process;
+                else
+                    process.Dispose();
+            }
+
+            return launchedProcess
+                ?? throw new InvalidOperationException("Notepad did not create a new process for the test launch.");
+        }
+        catch
+        {
+            if (!launcher.HasExited)
+            {
+                launcher.Kill();
+                launcher.WaitForExit();
+            }
+            throw;
+        }
+    }
+
     private void CleanupReminder(
         IReminderTaskScheduler scheduler,
         string taskPath,
@@ -987,7 +1061,7 @@ public sealed class Phase3bVerificationTests : IDisposable
     private static void StopChild(Process child)
     {
         if (!child.HasExited)
-            child.Kill(entireProcessTree: true);
+            child.Kill();
         child.WaitForExit();
     }
 

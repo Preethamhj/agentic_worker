@@ -4,6 +4,7 @@ using Jarvis.Contracts;
 using Jarvis.Infrastructure;
 using Jarvis.Safety;
 using Jarvis.Tools;
+using System.Globalization;
 using Xunit;
 
 namespace Jarvis.E2E.Tests;
@@ -116,6 +117,94 @@ public sealed class ReminderDispatcherTests
     }
 
     [Fact]
+    public void Cli_Reminder_Dispatch_Reports_Missing_Data_File_Reason()
+    {
+        using var temporaryStore = new TemporaryReminderDataStore();
+        var previousError = Console.Error;
+        using var capturedError = new StringWriter();
+        Console.SetError(capturedError);
+        try
+        {
+            var exitCode = Program.DispatchReminder(
+                ["--jarvis-reminder", Guid.NewGuid().ToString("N")],
+                temporaryStore.Store,
+                new RecordingNotifier(),
+                new RecordingScheduler());
+
+            exitCode.Should().Be(2);
+            capturedError.ToString().Should().Contain("Reminder data file was not found.");
+        }
+        finally
+        {
+            Console.SetError(previousError);
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "ReminderRepeat")]
+    public async Task Reminder_Executor_And_Dispatcher_Complete_50_Fake_Scheduler_Runs()
+    {
+        using var temporaryStore = new TemporaryReminderDataStore();
+        var store = temporaryStore.Store;
+        var scheduler = new RecordingScheduler();
+        var notifier = new RecordingNotifier();
+        var clock = new FixedClock();
+        var location = new FixedReminderDataLocation(store.BaseDirectory);
+        var service = new AuthorizationService(
+            new InMemoryDpapiKeyStore(),
+            clock,
+            hostPathProvider: new FixedHostPathProvider(@"C:\Jarvis\Jarvis.Cli.exe"),
+            reminderDataLocation: location);
+        var executor = new TaskScheduleReminderExecutor(
+            service,
+            scheduler,
+            clock,
+            store,
+            new FixedHostPathProvider(@"C:\Jarvis\Jarvis.Cli.exe"));
+
+        for (var run = 0; run < 50; run++)
+        {
+            var taskName = $"Repeat reminder {run}";
+            var message = $"Repeat reminder message {run}";
+            var scheduledFuture = clock.UtcNow.AddMinutes(run + 1);
+            var scheduledAt = new DateTimeOffset(
+                scheduledFuture.Year,
+                scheduledFuture.Month,
+                scheduledFuture.Day,
+                scheduledFuture.Hour,
+                scheduledFuture.Minute,
+                scheduledFuture.Second,
+                scheduledFuture.Offset);
+            var record = service.IssueAuthorization(
+                $"task-reminder-repeat-{run}",
+                $"step-reminder-repeat-{run}",
+                "task.schedule_reminder",
+                new Dictionary<string, object?>
+                {
+                    ["task_name"] = taskName,
+                    ["time_iso"] = scheduledAt.ToString("O", CultureInfo.InvariantCulture),
+                    ["message"] = message
+                });
+            var taskId = (string)record.Expected["task_id"]!;
+            var receipt = await executor.ExecuteAsync(service.Consume(record, record.StepId));
+            receipt.ReportedSuccess.Should().BeTrue($"fake reminder run {run + 1}");
+            scheduler.Registration.Should().NotBeNull();
+            scheduler.Registration!.TaskName.Should().Be((string)record.Expected["scheduler_task_name"]!);
+
+            var dispatched = new ReminderDispatcher(store, notifier, scheduler)
+                .Dispatch(["--jarvis-reminder", taskId]);
+
+            dispatched.Should().Be(0);
+            notifier.Title.Should().Be(taskName);
+            notifier.Message.Should().Be(message);
+            File.Exists(store.GetFilePath(taskId)).Should().BeFalse();
+            scheduler.DeletedTaskPath.Should().Be((string)record.Expected["task_path"]!);
+        }
+
+        notifier.ShowCount.Should().Be(50);
+    }
+
+    [Fact]
     public void Data_File_Store_Uses_Exclusive_Create_Without_Replacing_An_Existing_Reminder()
     {
         using var temporaryStore = new TemporaryReminderDataStore();
@@ -152,9 +241,10 @@ public sealed class ReminderDispatcherTests
     private sealed class RecordingScheduler : IReminderTaskScheduler
     {
         public string? DeletedTaskPath { get; private set; }
+        public ReminderTaskRegistration? Registration { get; private set; }
         public bool ThrowOnDelete { get; init; }
 
-        public void Register(ReminderTaskRegistration registration) => throw new NotSupportedException();
+        public void Register(ReminderTaskRegistration registration) => Registration = registration;
 
         public void Delete(string taskPath)
         {
@@ -186,7 +276,7 @@ public sealed class ReminderDispatcherTests
 
     private sealed class FixedClock : IClock
     {
-        public DateTimeOffset UtcNow => new(2026, 10, 9, 10, 0, 0, TimeSpan.Zero);
+        public DateTimeOffset UtcNow { get; } = DateTimeOffset.UtcNow;
     }
 
     private sealed class FixedHostPathProvider(string path) : IHostPathProvider

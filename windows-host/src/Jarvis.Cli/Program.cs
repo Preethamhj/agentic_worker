@@ -21,11 +21,7 @@ public static class Program
         {
             try
             {
-                var reminderLocation = new DefaultReminderDataLocation();
-                return new ReminderDispatcher(
-                    new ReminderDataFileStore(reminderLocation),
-                    new WindowsReminderNotifier(),
-                    new WindowsReminderTaskScheduler()).Dispatch(args);
+                return DispatchReminder(args);
             }
             catch (Exception exception) when (
                 exception is IOException
@@ -61,6 +57,23 @@ public static class Program
             Console.ResetColor();
             return 1;
         }
+    }
+
+    public static int DispatchReminder(
+        string[] args,
+        ReminderDataFileStore? dataFileStore = null,
+        IReminderNotifier? notifier = null,
+        IReminderTaskScheduler? scheduler = null)
+    {
+        var reminderLocation = new DefaultReminderDataLocation();
+        var dispatcher = new ReminderDispatcher(
+            dataFileStore ?? new ReminderDataFileStore(reminderLocation),
+            notifier ?? new WindowsReminderNotifier(),
+            scheduler ?? new WindowsReminderTaskScheduler());
+        var exitCode = dispatcher.Dispatch(args);
+        if (dispatcher.FailureReason is not null)
+            Console.Error.WriteLine(dispatcher.FailureReason);
+        return exitCode;
     }
 
     private static void PrintUsage()
