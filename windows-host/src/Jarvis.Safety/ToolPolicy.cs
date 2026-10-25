@@ -41,6 +41,9 @@ public sealed class ToolPolicy
     public const int MaxReminderMessageLength = 200;
     public const int MaxReminderTaskNameLength = 63;
     private static readonly Regex ReminderTaskIdPattern = new(@"\A[0-9a-fA-F]{32}\z", RegexOptions.CultureInvariant);
+    private static readonly Regex PackagedNotepadDirectoryPattern = new(
+        @"\AMicrosoft\.WindowsNotepad_(?<version>\d+\.\d+\.\d+\.\d+)_(?<architecture>x86|x64|arm|arm64)__8wekyb3d8bbwe\z",
+        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
     private readonly Dictionary<string, ToolDefinition> _tools = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, AllowedAppDefinition> _allowedApps = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _allowedAppIds = new(StringComparer.OrdinalIgnoreCase);
@@ -148,7 +151,6 @@ public sealed class ToolPolicy
         var processArchitecture = RuntimeInformation.ProcessArchitecture.ToString();
         var candidates = new List<(string Path, Version Version, string Architecture)>();
         IEnumerable<string> packageDirectories;
-        var checkFileExists = true;
         try
         {
             packageDirectories = Directory.Exists(_windowsAppsRoot)
@@ -158,20 +160,15 @@ public sealed class ToolPolicy
         catch (UnauthorizedAccessException) when (!_windowsAppsRootWasInjected)
         {
             packageDirectories = ReadRegisteredNotepadPackageDirectories();
-            checkFileExists = false;
         }
 
         foreach (var packageDirectory in packageDirectories)
         {
             var packageName = Path.GetFileName(packageDirectory);
-            var match = Regex.Match(
-                packageName,
-                @"\AMicrosoft\.WindowsNotepad_(?<version>\d+\.\d+\.\d+\.\d+)_(?<architecture>x86|x64|arm|arm64)__(?<publisher>[^_]+)\z",
-                RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+            var match = PackagedNotepadDirectoryPattern.Match(packageName);
             var path = Path.Combine(packageDirectory, "Notepad", "Notepad.exe");
             if (match.Success
-                && packageDirectory.StartsWith(_windowsAppsRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
-                && (!checkFileExists || File.Exists(path))
+                && IsSafePackagedNotepadCandidate(_windowsAppsRoot, packageName, path)
                 && Version.TryParse(match.Groups["version"].Value, out var version))
             {
                 candidates.Add((path, version, match.Groups["architecture"].Value));
@@ -193,6 +190,86 @@ public sealed class ToolPolicy
         return true;
     }
 
+    internal static bool IsRegisteredNotepadPackageRootAllowed(
+        string windowsAppsRoot,
+        string packageName,
+        string packageRoot)
+    {
+        if (!PackagedNotepadDirectoryPattern.IsMatch(packageName)
+            || ContainsParentTraversal(packageName)
+            || ContainsParentTraversal(packageRoot))
+        {
+            return false;
+        }
+
+        try
+        {
+            var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(windowsAppsRoot));
+            var expectedRoot = Path.GetFullPath(Path.Combine(root, packageName));
+            var packagePrefix = Path.Combine(root, "Microsoft.WindowsNotepad_");
+            return expectedRoot.StartsWith(packagePrefix, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(
+                    Path.GetFullPath(packageRoot),
+                    expectedRoot,
+                    StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException
+            or IOException
+            or NotSupportedException)
+        {
+            return false;
+        }
+    }
+
+    private static bool IsSafePackagedNotepadCandidate(
+        string windowsAppsRoot,
+        string packageName,
+        string candidatePath)
+    {
+        if (ContainsParentTraversal(candidatePath))
+            return false;
+
+        var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(windowsAppsRoot));
+        var packagePath = Path.GetFullPath(Path.Combine(root, packageName));
+        var expectedPath = Path.Combine(packagePath, "Notepad", "Notepad.exe");
+        var fullCandidatePath = Path.GetFullPath(candidatePath);
+        var packagePrefix = Path.Combine(root, "Microsoft.WindowsNotepad_");
+        if (!PackagedNotepadDirectoryPattern.IsMatch(packageName)
+            || !fullCandidatePath.StartsWith(packagePrefix, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(fullCandidatePath, expectedPath, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        try
+        {
+            var currentPath = fullCandidatePath;
+            while (!string.Equals(currentPath, root, StringComparison.OrdinalIgnoreCase))
+            {
+                if ((File.GetAttributes(currentPath) & FileAttributes.ReparsePoint) != 0)
+                    return false;
+
+                currentPath = Directory.GetParent(currentPath)?.FullName
+                    ?? throw new IOException("Packaged Notepad candidate is not below WindowsApps.");
+            }
+
+            return true;
+        }
+        catch (Exception exception) when (
+            exception is IOException
+            or UnauthorizedAccessException
+            or ArgumentException
+            or NotSupportedException)
+        {
+            return false;
+        }
+    }
+
+    private static bool ContainsParentTraversal(string path) =>
+        path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            .Any(segment => segment == "..");
+
     private IEnumerable<string> ReadRegisteredNotepadPackageDirectories()
     {
         if (!OperatingSystem.IsWindows())
@@ -209,15 +286,12 @@ public sealed class ToolPolicy
             using var package = packages.OpenSubKey(packageName);
             var packageRoot = package?.GetValue("PackageRootFolder") as string;
             if (string.IsNullOrWhiteSpace(packageRoot)
-                || !string.Equals(
-                    Path.GetFullPath(packageRoot),
-                    Path.GetFullPath(Path.Combine(_windowsAppsRoot, packageName)),
-                    StringComparison.OrdinalIgnoreCase))
+                || !IsRegisteredNotepadPackageRootAllowed(_windowsAppsRoot, packageName, packageRoot))
             {
                 continue;
             }
 
-            directories.Add(packageRoot);
+            directories.Add(Path.Combine(_windowsAppsRoot, packageName));
         }
         return directories;
     }

@@ -183,6 +183,59 @@ public class ToolPolicyTests
     }
 
     [Fact]
+    public void Registered_Notepad_Package_Root_Outside_WindowsApps_Is_Rejected()
+    {
+        using var fixture = new PackagedNotepadFixture();
+        var packageName = "Microsoft.WindowsNotepad_11.0.0.0_x64__8wekyb3d8bbwe";
+        var outsideRoot = Path.Combine(Path.GetTempPath(), $"jarvis-notepad-outside-{Guid.NewGuid():N}");
+        try
+        {
+            ToolPolicy.IsRegisteredNotepadPackageRootAllowed(fixture.Root, packageName, outsideRoot)
+                .Should().BeFalse();
+        }
+        finally
+        {
+            if (Directory.Exists(outsideRoot))
+                Directory.Delete(outsideRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Packaged_Notepad_Resolution_Rejects_A_Forged_Publisher_Id()
+    {
+        using var fixture = new PackagedNotepadFixture();
+        fixture.AddPackage("11.0.0.0", "x64", "Microsoft.WindowsNotepad_11.0.0.0_x64__untrusted");
+        var policy = fixture.CreatePolicy("notepad", "notepad.exe");
+
+        policy.TryResolveAllowedExecutablePath("notepad", out var path).Should().BeTrue();
+        path.Should().Be(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "notepad.exe"));
+    }
+
+    [Fact]
+    public void Packaged_Notepad_Resolution_Rejects_A_Package_Reparse_Point()
+    {
+        using var fixture = new PackagedNotepadFixture();
+        var packageName = "Microsoft.WindowsNotepad_11.0.0.0_x64__8wekyb3d8bbwe";
+        var outsidePackage = Path.Combine(Path.GetTempPath(), $"jarvis-notepad-package-{Guid.NewGuid():N}");
+        try
+        {
+            fixture.AddFile(Path.Combine(outsidePackage, "Notepad", "Notepad.exe"));
+            Directory.CreateSymbolicLink(Path.Combine(fixture.Root, packageName), outsidePackage);
+            var policy = fixture.CreatePolicy("notepad", "notepad.exe");
+
+            policy.TryResolveAllowedExecutablePath("notepad", out var path).Should().BeTrue();
+            path.Should().Be(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "notepad.exe"));
+        }
+        finally
+        {
+            if (Directory.Exists(Path.Combine(fixture.Root, packageName)))
+                Directory.Delete(Path.Combine(fixture.Root, packageName));
+            if (Directory.Exists(outsidePackage))
+                Directory.Delete(outsidePackage, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Packaged_Notepad_Resolution_Does_Not_Apply_To_Other_App_Id()
     {
         using var fixture = new PackagedNotepadFixture();
