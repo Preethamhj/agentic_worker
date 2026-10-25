@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
+using System.Xml.Linq;
 using Jarvis.Cli;
 using Jarvis.Contracts;
 using Jarvis.Core;
@@ -101,13 +102,16 @@ public sealed class Phase3cRealEngineEndToEndTests
         var reminderLocation = new TemporaryReminderDataLocation(reminderDirectory);
         var reminderDataStore = new ReminderDataFileStore(reminderLocation);
         var fakeScheduler = new FakeReminderTaskScheduler();
+        var fakeXmlCollector = new FakeXmlScheduledTaskEvidenceCollector();
         IReminderTaskScheduler scheduler = useRealScheduler
             ? new WindowsReminderTaskScheduler()
             : fakeScheduler;
         var recordingScheduler = new RecordingReminderTaskScheduler(scheduler);
         var clock = SystemClock.Instance;
         var auditStore = new InMemoryAuditStore();
-        var hostPath = new FixedHostPathProvider(@"C:\Jarvis\Jarvis.Cli.exe");
+        var hostPath = new FixedHostPathProvider(useRealScheduler
+            ? Environment.ProcessPath ?? throw new InvalidOperationException("The test host executable path is unavailable.")
+            : @"C:\Jarvis\Jarvis.Cli.exe");
         var authorizationService = new AuthorizationService(
             new InMemoryDpapiKeyStore(),
             clock,
@@ -161,8 +165,13 @@ public sealed class Phase3cRealEngineEndToEndTests
             if (toolId == "task.schedule_reminder")
             {
                 reminderTaskId = (string)authorization.Record.Expected["task_id"]!;
-                if (injectFault && !useRealScheduler)
-                    recordingScheduler.CorruptFakeRegistration(registration => registration with { TaskName = registration.TaskName + "-fault" });
+                if (!useRealScheduler)
+                {
+                    var xml = ScheduledTaskEvidenceCollectorTests.CreateRealTaskSchedulerXml(authorization.Record);
+                    if (injectFault)
+                        xml = xml.Replace("<StartWhenAvailable>true</StartWhenAvailable>", "<StartWhenAvailable>false</StartWhenAvailable>", StringComparison.Ordinal);
+                    fakeXmlCollector.SetXml(xml);
+                }
             }
 
             if (injectFault && toolId == "fs.create_file")
@@ -183,7 +192,7 @@ public sealed class Phase3cRealEngineEndToEndTests
         var stepExecutor = new StepExecutor(authorizationService, executors, toolPolicy);
         IScheduledTaskEvidenceCollector schedulerCollector = useRealScheduler
             ? new ScheduledTaskEvidenceCollector()
-            : new FakeReminderEvidenceCollector(fakeScheduler, reminderDataStore);
+            : fakeXmlCollector;
         var verifier = new VerificationEngine(
             authorizationService,
             auditStore,
@@ -336,19 +345,12 @@ public sealed class Phase3cRealEngineEndToEndTests
 
         public void Register(ReminderTaskRegistration registration)
         {
-            LastRegistration = registration;
             inner.Register(registration);
+            LastRegistration = registration;
         }
 
         public void Delete(string taskPath) => inner.Delete(taskPath);
 
-        public void CorruptFakeRegistration(Func<ReminderTaskRegistration, ReminderTaskRegistration> corruption)
-        {
-            if (inner is not FakeReminderTaskScheduler fake)
-                throw new InvalidOperationException("Only fake scheduler registrations can be fault-injected.");
-            fake.Corrupt(corruption);
-            LastRegistration = fake.Registration;
-        }
     }
 
     private sealed class FakeReminderTaskScheduler : IReminderTaskScheduler
@@ -363,22 +365,18 @@ public sealed class Phase3cRealEngineEndToEndTests
                 Registration = null;
         }
 
-        public void Corrupt(Func<ReminderTaskRegistration, ReminderTaskRegistration> corruption)
-        {
-            if (Registration is null)
-                throw new InvalidOperationException("No fake task is available for fault injection.");
-            Registration = corruption(Registration);
-        }
     }
 
-    private sealed class FakeReminderEvidenceCollector(
-        FakeReminderTaskScheduler scheduler,
-        ReminderDataFileStore dataStore) : IScheduledTaskEvidenceCollector
+    private sealed class FakeXmlScheduledTaskEvidenceCollector : IScheduledTaskEvidenceCollector
     {
+        private string? _taskXml;
+
+        public void SetXml(string taskXml) => _taskXml = taskXml;
+
         public IReadOnlyList<string> CaptureTaskPaths(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return scheduler.Registration is { } registration ? [registration.TaskPath] : [];
+            return [];
         }
 
         public IndependentEvidenceObservation Collect(
@@ -387,73 +385,23 @@ public sealed class Phase3cRealEngineEndToEndTests
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var expected = authorization.Expected;
-            var registration = scheduler.Registration;
-            if (registration is null)
-                return Mismatch("Fake scheduler did not retain a registered task.");
-
-            var scheduledAt = DateTimeOffset.Parse(
-                (string)expected["time_iso"]!,
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.RoundtripKind);
-            var endBoundary = scheduledAt.AddSeconds(Convert.ToDouble(expected["end_boundary_offset_seconds"], CultureInfo.InvariantCulture));
-            var taskId = (string)expected["task_id"]!;
-            var payload = dataStore.Read(taskId);
-            var settingsMatch = new Dictionary<string, bool>
-            {
-                ["task_name"] = string.Equals(registration.TaskName, (string)expected["scheduler_task_name"]!, StringComparison.Ordinal),
-                ["task_path"] = string.Equals(registration.TaskPath, (string)expected["task_path"]!, StringComparison.OrdinalIgnoreCase),
-                ["action_path"] = string.Equals(registration.ActionPath, (string)expected["action_path"]!, StringComparison.OrdinalIgnoreCase),
-                ["action_arguments"] = string.Equals(registration.ActionArguments, (string)expected["action_arguments"]!, StringComparison.Ordinal),
-                ["trigger_time"] = registration.ScheduledAtUtc.ToUniversalTime() == scheduledAt.ToUniversalTime(),
-                ["disallow_start_if_on_batteries"] = registration.DisallowStartIfOnBatteries.Equals(expected["disallow_start_if_on_batteries"]),
-                ["stop_if_going_on_batteries"] = registration.StopIfGoingOnBatteries.Equals(expected["stop_if_going_on_batteries"]),
-                ["execution_time_limit"] = registration.ExecutionTimeLimit == TimeSpan.FromSeconds(Convert.ToDouble(expected["execution_time_limit_seconds"], CultureInfo.InvariantCulture)),
-                ["start_when_available"] = registration.StartWhenAvailable.Equals(expected["start_when_available"]),
-                ["multiple_instances_policy"] = EnumValueMatches(registration.MultipleInstancesPolicy, expected["multiple_instances_policy"]),
-                ["logon_type"] = EnumValueMatches(registration.LogonType, expected["logon_type"]),
-                ["run_level"] = registration.RunLevel == Microsoft.Win32.TaskScheduler.TaskRunLevel.LUA
-                    && string.Equals(
-                        Convert.ToString(expected["run_level"], CultureInfo.InvariantCulture),
-                        ReminderSchedulerPolicy.RunLevel,
-                        StringComparison.Ordinal),
-                ["end_boundary"] = registration.EndBoundaryUtc?.ToUniversalTime() == endBoundary.ToUniversalTime(),
-                ["delete_expired_task_after"] = registration.DeleteExpiredTaskAfter == TimeSpan.FromSeconds(Convert.ToDouble(expected["delete_expired_task_after_seconds"], CultureInfo.InvariantCulture)),
-                ["reminder_title"] = string.Equals(payload.TaskName, (string)authorization.CanonicalArgs["task_name"]!, StringComparison.Ordinal),
-                ["reminder_message"] = string.Equals(payload.Message, (string)authorization.CanonicalArgs["message"]!, StringComparison.Ordinal),
-                ["reminder_data_exists"] = File.Exists((string)expected["reminder_data_path"]!),
-                ["task_path_is_nonempty"] = !string.IsNullOrEmpty(registration.TaskPath),
-                ["no_unexpected_tasks"] = !beforeTaskPaths.Contains(registration.TaskPath, StringComparer.OrdinalIgnoreCase)
-            };
-            var matches = settingsMatch.Values.All(match => match);
-            var detail = matches
-                ? "Fake scheduler registration and reminder payload matched signed authorization."
-                : $"Fake scheduler registration or reminder payload mismatches: {string.Join(", ", settingsMatch.Where(item => !item.Value).Select(item => item.Key))}.";
-            return new IndependentEvidenceObservation(
-                "task_exists",
-                nameof(FakeReminderEvidenceCollector),
-                new Dictionary<string, object?>
-                {
-                    ["task_name"] = registration.TaskName,
-                    ["task_path"] = registration.TaskPath,
-                    ["action_path"] = registration.ActionPath,
-                    ["action_arguments"] = registration.ActionArguments,
-                    ["scheduled_at_utc"] = registration.ScheduledAtUtc,
-                    ["end_boundary_utc"] = registration.EndBoundaryUtc,
-                    ["delete_expired_task_after"] = registration.DeleteExpiredTaskAfter?.ToString(),
-                    ["setting_matches"] = settingsMatch,
-                    ["reminder_data_exists"] = File.Exists((string)expected["reminder_data_path"]!)
-                },
-                matches,
-                detail,
-                matches ? "PASSED" : "FAILED");
+            var xml = _taskXml ?? throw new InvalidOperationException("Fake scheduler did not provide task XML.");
+            XNamespace ns = "http://schemas.microsoft.com/windows/2004/02/mit/task";
+            var root = XDocument.Parse(xml).Root
+                ?? throw new InvalidOperationException("Fake scheduler task XML has no root.");
+            var taskPath = root.Element(ns + "RegistrationInfo")?.Element(ns + "URI")?.Value
+                ?? throw new InvalidOperationException("Fake scheduler task XML has no registration URI.");
+            var taskName = taskPath[(taskPath.LastIndexOf('\\') + 1)..];
+            var afterTaskPaths = beforeTaskPaths.Append(taskPath).ToArray();
+            return new ScheduledTaskEvidenceCollector().ReadTaskXml(
+                authorization,
+                taskPath,
+                taskName,
+                xml,
+                taskEnabled: true,
+                beforeTaskPaths,
+                afterTaskPaths);
         }
-
-        private static IndependentEvidenceObservation Mismatch(string detail) =>
-            new("task_exists", nameof(FakeReminderEvidenceCollector), new Dictionary<string, object?>(), false, detail, "FAILED");
-
-        private static bool EnumValueMatches<T>(T actual, object? expected) where T : struct, Enum =>
-            string.Equals(actual.ToString(), Convert.ToString(expected, CultureInfo.InvariantCulture), StringComparison.Ordinal);
     }
 
     private sealed class TemporaryReminderDataLocation(string directoryPath) : IReminderDataLocation

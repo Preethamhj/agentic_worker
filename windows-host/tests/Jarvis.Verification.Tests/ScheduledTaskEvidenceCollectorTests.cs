@@ -13,7 +13,7 @@ namespace Jarvis.Verification.Tests;
 public sealed class ScheduledTaskEvidenceCollectorTests
 {
     private static readonly DateTimeOffset Now = new(2026, 10, 24, 12, 0, 0, TimeSpan.Zero);
-    private const string RealTaskSchedulerXmlFixture = """
+    internal const string RealTaskSchedulerXmlFixture = """
         <?xml version="1.0" encoding="UTF-16"?>
         <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
           <RegistrationInfo>
@@ -122,13 +122,7 @@ public sealed class ScheduledTaskEvidenceCollectorTests
         var authorization = fixture.IssueAuthorization("real-xml-default-run-level");
         var expected = authorization.Expected;
         var taskPath = (string)expected["task_path"]!;
-        var start = DateTimeOffset.Parse((string)expected["time_iso"]!, CultureInfo.InvariantCulture);
-        var end = start.AddSeconds((int)expected["end_boundary_offset_seconds"]!);
-        var xml = RealTaskSchedulerXmlFixture
-            .Replace("{{TASK_PATH}}", taskPath, StringComparison.Ordinal)
-            .Replace("{{START_BOUNDARY}}", start.ToLocalTime().ToString("s", CultureInfo.InvariantCulture), StringComparison.Ordinal)
-            .Replace("{{END_BOUNDARY}}", end.ToLocalTime().ToString("s", CultureInfo.InvariantCulture), StringComparison.Ordinal)
-            .Replace("{{ACTION_ARGUMENTS}}", (string)expected["action_arguments"]!, StringComparison.Ordinal);
+        var xml = CreateRealTaskSchedulerXml(authorization);
 
         var evidence = fixture.Collector.ReadTaskXml(
             authorization,
@@ -210,6 +204,18 @@ public sealed class ScheduledTaskEvidenceCollectorTests
         yield return ["run_level", "HighestAvailable", false];
         yield return ["end_boundary", "2026-10-24T13:11:00", false];
         yield return ["delete_expired_task_after", "PT2H", false];
+    }
+
+    internal static string CreateRealTaskSchedulerXml(AuthorizationRecordDto authorization)
+    {
+        var expected = authorization.Expected;
+        var start = DateTimeOffset.Parse((string)expected["time_iso"]!, CultureInfo.InvariantCulture);
+        var end = start.AddSeconds((int)expected["end_boundary_offset_seconds"]!);
+        return RealTaskSchedulerXmlFixture
+            .Replace("{{TASK_PATH}}", (string)expected["task_path"]!, StringComparison.Ordinal)
+            .Replace("{{START_BOUNDARY}}", start.ToLocalTime().ToString("s", CultureInfo.InvariantCulture), StringComparison.Ordinal)
+            .Replace("{{END_BOUNDARY}}", end.ToLocalTime().ToString("s", CultureInfo.InvariantCulture), StringComparison.Ordinal)
+            .Replace("{{ACTION_ARGUMENTS}}", (string)expected["action_arguments"]!, StringComparison.Ordinal);
     }
 
     private static XDocument CreateTaskXml(AuthorizationRecordDto authorization)
