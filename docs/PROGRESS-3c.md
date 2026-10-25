@@ -29,4 +29,4 @@ Part F5 existing-test audit:
 - `Real_Task_Scheduler_Xml_Defaults_Omitted_RunLevel_To_LeastPrivilege`: fixture construction uses a shared helper; matching, default run-level, and VERIFIED assertions remain unchanged.
 - `Cli_Runs_FsCreateFile_EndToEnd_WithStubVerifier_Escalates_AndFails`: renamed to reflect that StubVerifier is test-only and added an explicit no-VERIFIED result check; file, receipt-success, ESCALATE, final FAILED, and not-verified checks remain.
 - No other pre-existing test assertion was removed or weakened in the reviewed 878635d..HEAD test diff.
-Part F5 | pending | `Cli_Runs_FsCreateFile_EndToEnd_WithStubVerifier_Escalates_AndFails` (1 passed) | Review/build/test result pending.
+Part F5 | `e53fba8` | `Cli_Runs_FsCreateFile_EndToEnd_WithStubVerifier_Escalates_AndFails` (1 passed) | Existing-test diff audit complete; the renamed invariant test passed (1/1) and Debug solution build passed (0 warnings/errors). Added no weakened assertions; details above.
