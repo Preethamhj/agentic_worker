@@ -23,8 +23,22 @@ try {
     dotnet build Jarvis.sln --configuration Release --no-incremental
     if ($LASTEXITCODE -ne 0) { throw "dotnet build failed" }
 
-    dotnet test Jarvis.sln --configuration Release --no-build
-    if ($LASTEXITCODE -ne 0) { throw "dotnet test failed" }
+    $originalRealSchedulerSetting = $env:JARVIS_REAL_SCHEDULER
+    try {
+        Remove-Item Env:\JARVIS_REAL_SCHEDULER -ErrorAction SilentlyContinue
+        dotnet test Jarvis.sln --configuration Release --no-build --filter "Category!=RealScheduler"
+        if ($LASTEXITCODE -ne 0) { throw "dotnet test failed for non-real-scheduler tests" }
+
+        $env:JARVIS_REAL_SCHEDULER = "1"
+        dotnet test Jarvis.sln --configuration Release --no-build --filter "Category=RealScheduler"
+        if ($LASTEXITCODE -ne 0) { throw "dotnet test failed for real-scheduler tests" }
+    } finally {
+        if ($null -eq $originalRealSchedulerSetting) {
+            Remove-Item Env:\JARVIS_REAL_SCHEDULER -ErrorAction SilentlyContinue
+        } else {
+            $env:JARVIS_REAL_SCHEDULER = $originalRealSchedulerSetting
+        }
+    }
 } finally {
     Pop-Location
 }
