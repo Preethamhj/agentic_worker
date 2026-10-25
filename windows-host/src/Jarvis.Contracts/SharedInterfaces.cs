@@ -68,6 +68,28 @@ public sealed record ApprovalRequest(
 /// <summary>Outcome and identity for one approval decision.</summary>
 public sealed record ApprovalDecision(bool Approved, string Approver, string? Reason = null);
 
+/// <summary>Action chosen after independent verification returns ESCALATE.</summary>
+public enum EscalationAction
+{
+    RetryVerification,
+    Abort,
+    TimedOut
+}
+
+/// <summary>Decision to retry verification, abort, or report a timeout.</summary>
+public sealed record EscalationDecision(EscalationAction Action, string? Reason = null);
+
+/// <summary>
+/// Requests a user decision when independent evidence is inconclusive.
+/// Retrying permits verification to run again; it does not alter its result.
+/// </summary>
+public interface IEscalationHandler
+{
+    Task<EscalationDecision> RequestDecisionAsync(
+        VerificationResultDto verification,
+        CancellationToken cancellationToken = default);
+}
+
 /// <summary>
 /// Handles user authorization requests for high/medium risk steps.
 /// Displays canonical arguments to the user before prompt.

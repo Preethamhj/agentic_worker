@@ -118,6 +118,66 @@ public class OrchestratorAndQueueTests
     }
 
     [Fact]
+    public async Task TaskOrchestrator_Retry_Escalation_Reverifies_Without_Reexecution()
+    {
+        var verifier = new SequenceVerifier("ESCALATE", "VERIFIED");
+        var escalation = new FakeEscalationHandler(
+            new EscalationDecision(EscalationAction.RetryVerification));
+        var executor = new FakeStepExecutor();
+        var orchestrator = CreateTestOrchestrator(verifier, stepExecutor: executor, escalationHandler: escalation);
+
+        var result = await orchestrator.RunTaskAsync("create a test file");
+
+        result.FinalState.Should().Be(TaskState.Completed);
+        verifier.VerifyCallCount.Should().Be(2);
+        executor.ExecuteCallCount.Should().Be(1);
+        result.VerificationResults.Select(item => item.Status).Should().ContainInOrder("ESCALATE", "VERIFIED");
+    }
+
+    [Fact]
+    public async Task TaskOrchestrator_Aborting_Escalation_Fails()
+    {
+        var verifier = new SequenceVerifier("ESCALATE");
+        var escalation = new FakeEscalationHandler(new EscalationDecision(EscalationAction.Abort, "User aborted."));
+        var orchestrator = CreateTestOrchestrator(verifier, escalationHandler: escalation);
+
+        var result = await orchestrator.RunTaskAsync("create a test file");
+
+        result.FinalState.Should().Be(TaskState.Failed);
+        result.FinalState.Should().NotBe(TaskState.Completed);
+        result.StatusMessage.Should().Contain("User aborted.");
+    }
+
+    [Fact]
+    public async Task TaskOrchestrator_Escalation_Timeout_Fails()
+    {
+        var verifier = new SequenceVerifier("ESCALATE");
+        var escalation = new FakeEscalationHandler(new EscalationDecision(EscalationAction.TimedOut, "Escalation timed out."));
+        var orchestrator = CreateTestOrchestrator(verifier, escalationHandler: escalation);
+
+        var result = await orchestrator.RunTaskAsync("create a test file");
+
+        result.FinalState.Should().Be(TaskState.Failed);
+        result.StatusMessage.Should().Contain("Escalation timed out.");
+    }
+
+    [Fact]
+    public async Task TaskOrchestrator_Retrying_Escalation_Never_Converts_Escalate_To_Completed()
+    {
+        var verifier = new SequenceVerifier("ESCALATE", "ESCALATE");
+        var escalation = new FakeEscalationHandler(
+            new EscalationDecision(EscalationAction.RetryVerification),
+            new EscalationDecision(EscalationAction.Abort, "Verification remains uncertain."));
+        var orchestrator = CreateTestOrchestrator(verifier, escalationHandler: escalation);
+
+        var result = await orchestrator.RunTaskAsync("create a test file");
+
+        result.FinalState.Should().Be(TaskState.Failed);
+        result.FinalState.Should().NotBe(TaskState.Completed);
+        verifier.VerifyCallCount.Should().Be(2);
+    }
+
+    [Fact]
     public async Task TaskOrchestrator_Uses_Host_Observation_And_Does_Not_Trust_Receipt_Success_Claims()
     {
         var startedAt = new DateTimeOffset(2026, 10, 15, 0, 0, 0, TimeSpan.Zero);
@@ -194,7 +254,8 @@ public class OrchestratorAndQueueTests
         ISafetyGate? safetyGate = null,
         IApprovalHandler? approvalHandler = null,
         IStepExecutor? stepExecutor = null,
-        IClock? clock = null)
+        IClock? clock = null,
+        IEscalationHandler? escalationHandler = null)
     {
         var queue = new ExecutionQueue();
         var planner = new FakePlanner();
@@ -202,7 +263,15 @@ public class OrchestratorAndQueueTests
         var approval = approvalHandler ?? new FakeApprovalHandler(userApproved: true);
         var executor = stepExecutor ?? new FakeStepExecutor();
 
-        return new TaskOrchestrator(planner, safety, approval, queue, executor, verifier, clock: clock);
+        return new TaskOrchestrator(
+            planner,
+            safety,
+            approval,
+            queue,
+            executor,
+            verifier,
+            clock: clock,
+            escalationHandler: escalationHandler);
     }
 
     private class FakePlanner : IPlanner
@@ -284,6 +353,7 @@ public class OrchestratorAndQueueTests
         private readonly bool _shouldTimeout;
         private readonly ManualClock? _clock;
         private readonly bool _receiptReportsSuccess;
+        public int ExecuteCallCount { get; private set; }
 
         public FakeStepExecutor(bool shouldTimeout = false, ManualClock? clock = null, bool receiptReportsSuccess = true)
         {
@@ -322,6 +392,7 @@ public class OrchestratorAndQueueTests
             AuthorizationRecordDto authorization,
             CancellationToken cancellationToken = default)
         {
+            ExecuteCallCount++;
             if (_shouldTimeout)
             {
                 throw new TimeoutException("Step timed out after 50ms");
@@ -338,6 +409,45 @@ public class OrchestratorAndQueueTests
                 ReportedSuccess = _receiptReportsSuccess
             };
         }
+    }
+
+    private sealed class SequenceVerifier(params string[] statuses) : IVerifier
+    {
+        private readonly Queue<string> _statuses = new(statuses);
+
+        public int VerifyCallCount { get; private set; }
+
+        public Task<StepToken> BeginStepAsync(AuthorizationRecordDto authorization, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new StepToken(authorization, authorization.Nonce, Array.Empty<SnapshotEntryDto>()));
+
+        public Task<VerificationResultDto> VerifyAsync(
+            ExecutionReceiptDto receipt,
+            ExecutionObservation observation,
+            StepToken token,
+            CancellationToken cancellationToken = default)
+        {
+            VerifyCallCount++;
+            var status = _statuses.Dequeue();
+            return Task.FromResult(new VerificationResultDto(
+                1,
+                receipt.StepId,
+                status,
+                new List<VerificationStageResultDto>(),
+                new List<EvidenceDto>(),
+                new List<string>(),
+                new List<string> { status == "ESCALATE" ? "Evidence is inconclusive." : "Evidence verified." },
+                0));
+        }
+    }
+
+    private sealed class FakeEscalationHandler(params EscalationDecision[] decisions) : IEscalationHandler
+    {
+        private readonly Queue<EscalationDecision> _decisions = new(decisions);
+
+        public Task<EscalationDecision> RequestDecisionAsync(
+            VerificationResultDto verification,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(_decisions.Dequeue());
     }
 
     private sealed class ManualClock(DateTimeOffset utcNow) : IClock
