@@ -9,6 +9,7 @@ using Jarvis.Infrastructure;
 using Jarvis.Safety;
 using Jarvis.Tools;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Jarvis.Verification.Tests;
 
@@ -18,6 +19,10 @@ public sealed class Phase3cOsResourceCollection { }
 [Collection("Phase3c OS resources")]
 public sealed class Phase3cRealEngineEndToEndTests
 {
+    private readonly ITestOutputHelper _output;
+
+    public Phase3cRealEngineEndToEndTests(ITestOutputHelper output) => _output = output;
+
     [Fact]
     public async Task SearchFiles_Real_Executor_Verifies_And_Faulted_Search_Output_Fails()
     {
@@ -55,15 +60,17 @@ public sealed class Phase3cRealEngineEndToEndTests
     }
 
     [NonElevatedFact]
-    public async Task AppLaunch_Notepad_Real_Executor_Verifies_And_Stopped_Process_Fails()
+    public async Task AppLaunch_Notepad_Nonmatching_Process_Fails_Within_Timeout()
     {
         var control = await RunScenarioAsync("app.launch", injectFault: false);
+        var timer = Stopwatch.StartNew();
         var faulted = await RunScenarioAsync("app.launch", injectFault: true);
 
         Assert.True(control.FinalState == TaskState.Completed, Describe(control));
         Assert.Equal("VERIFIED", Assert.Single(control.VerificationResults).Status);
         Assert.Equal(TaskState.Failed, faulted.FinalState);
         Assert.Equal("FAILED", Assert.Single(faulted.VerificationResults).Status);
+        Assert.True(timer.Elapsed < TimeSpan.FromSeconds(30), $"Non-matching process verification exceeded 30 seconds ({timer.Elapsed}).");
     }
 
     [Fact]
@@ -91,7 +98,7 @@ public sealed class Phase3cRealEngineEndToEndTests
         Assert.Equal("VERIFIED", Assert.Single(result.VerificationResults).Status);
     }
 
-    private static async Task<TaskOrchestratorResult> RunScenarioAsync(
+    private async Task<TaskOrchestratorResult> RunScenarioAsync(
         string toolId,
         bool injectFault,
         bool useRealScheduler = false)
@@ -214,12 +221,19 @@ public sealed class Phase3cRealEngineEndToEndTests
                 verifier,
                 auditStore,
                 clock);
-            return await orchestrator.RunTaskAsync($"phase 3c {toolId} test");
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            return await orchestrator.RunTaskAsync(
+                    $"phase 3c {toolId} test",
+                    cancellationToken: timeout.Token)
+                .WaitAsync(TimeSpan.FromSeconds(30));
         }
         finally
         {
             foreach (var processId in processIds)
+            {
                 StopNotepadProcess(processId);
+                _output.WriteLine($"Stopped test-launched Notepad PID {processId}.");
+            }
 
             if (recordingScheduler.LastRegistration is { } registration)
                 recordingScheduler.Delete(registration.TaskPath);
@@ -270,7 +284,8 @@ public sealed class Phase3cRealEngineEndToEndTests
             if (!string.Equals(process.ProcessName, "notepad", StringComparison.OrdinalIgnoreCase))
                 return;
             process.Kill();
-            process.WaitForExit(5_000);
+            if (!process.WaitForExit(5_000))
+                throw new TimeoutException($"Test-launched Notepad PID {processId} did not exit within five seconds.");
         }
         catch (ArgumentException)
         {
