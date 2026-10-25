@@ -87,6 +87,7 @@ class ReportStepSummaryModel(BaseModel):
     status: str
     verification_status: str
     summary: str
+    reason: str = Field(min_length=1, max_length=240)
 
 
 class ReportRequestModel(BaseModel):

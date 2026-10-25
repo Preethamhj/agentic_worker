@@ -150,7 +150,8 @@ public static class Program
         // 5. Setup ApiClient and Planner
         using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(95) };
         var apiClient = new ApiClient(httpClient, serverProcess.BaseUrl, serverProcess.Token);
-        var planner = new ApiClientPlanner(apiClient);
+        var sessionId = $"session-{Guid.NewGuid():N}"[..12];
+        var planner = new ApiClientPlanner(apiClient, sessionId);
 
         // 6. Setup ExecutionQueue and TaskOrchestrator
         await using var queue = new ExecutionQueue();
@@ -166,6 +167,7 @@ public static class Program
 
         // 7. Run Orchestrator
         var result = await orchestrator.RunTaskAsync(text);
+        await apiClient.SendReportAsync(CreateReport(sessionId, result)).ConfigureAwait(false);
 
         Console.WriteLine();
         Console.WriteLine("============================================================");
@@ -205,6 +207,36 @@ public static class Program
     /// <summary>Creates the host's independent verifier from its authorization and audit services.</summary>
     public static IVerifier CreateVerifier(IAuthorizationVerifier authorizationVerifier, IAuditStore auditStore) =>
         new VerificationEngine(authorizationVerifier, auditStore);
+
+    /// <summary>Builds the server report from the orchestrator's independent verification results.</summary>
+    public static ReportRequestDto CreateReport(string sessionId, TaskOrchestratorResult result)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+        ArgumentNullException.ThrowIfNull(result);
+
+        var steps = result.VerificationResults
+            .GroupBy(verification => verification.StepId, StringComparer.Ordinal)
+            .Select(group =>
+            {
+                var verification = group.Last();
+                var verified = string.Equals(verification.Status, "VERIFIED", StringComparison.OrdinalIgnoreCase);
+                var reason = string.Join(" ", verification.Reasons).Trim();
+                if (string.IsNullOrWhiteSpace(reason))
+                    reason = $"Independent verification returned {verification.Status}.";
+                if (reason.Length > 240)
+                    reason = reason[..240];
+
+                return new ReportStepSummaryDto(
+                    verification.StepId,
+                    verified ? "completed" : "failed",
+                    verification.Status,
+                    verified ? "Step independently verified." : "Step did not pass independent verification.",
+                    reason);
+            })
+            .ToList();
+
+        return new ReportRequestDto(1, sessionId, result.TaskId, steps);
+    }
 
     public static Task<int> HistoryCommandAsync()
     {

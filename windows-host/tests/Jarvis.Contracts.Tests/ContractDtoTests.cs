@@ -157,6 +157,7 @@ public class ContractDtoTests
         dto.Should().NotBeNull();
         dto!.SchemaVersion.Should().Be(1);
         dto.TaskId.Should().Be("task-001");
+        dto.Steps.Single().Reason.Should().Be("Directory evidence matched the signed authorization.");
     }
 
     [Fact]

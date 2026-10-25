@@ -173,7 +173,8 @@ public record ReportStepSummaryDto(
     [property: JsonPropertyName("step_id")] string StepId,
     [property: JsonPropertyName("status")] string Status,
     [property: JsonPropertyName("verification_status")] string VerificationStatus,
-    [property: JsonPropertyName("summary")] string Summary
+    [property: JsonPropertyName("summary")] string Summary,
+    [property: JsonPropertyName("reason")] string Reason
 );
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]

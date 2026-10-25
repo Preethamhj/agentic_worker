@@ -41,6 +41,7 @@ def _report_payload(task_id: str = _TASK_ID, session_id: str = _SESSION_ID) -> d
                 "status": "completed",
                 "verification_status": "VERIFIED",
                 "summary": "created file notes.txt",
+                "reason": "File evidence matched the signed authorization.",
             }
         ],
     }
@@ -59,6 +60,24 @@ def test_report_endpoint_basic() -> None:
     assert data["schema_version"] == 1
     assert "message" in data
     assert data["memory_updated"] is True
+
+
+def test_report_endpoint_includes_failed_verification_reason() -> None:
+    payload = _report_payload("task-failed-reason", "session-failed-reason")
+    payload["steps"][0].update(
+        status="failed",
+        verification_status="FAILED",
+        reason="File evidence was missing.",
+    )
+
+    response = client.post(
+        "/v1/report",
+        headers={"X-Jarvis-Token": _REPORT_TOKEN},
+        json=payload,
+    )
+
+    assert response.status_code == 200
+    assert "File evidence was missing." in response.json()["message"]
 
 
 # ── Idempotency-Key deduplication ─────────────────────────────────────────────
