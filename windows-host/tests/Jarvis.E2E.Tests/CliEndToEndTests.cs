@@ -63,7 +63,7 @@ public class CliEndToEndTests : IDisposable
     [Fact]
     public void StepExecutor_Signs_Resolved_Allowlisted_Image_Path_For_AppLaunch()
     {
-        var executable = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "notepad.exe");
+        _toolPolicy.TryResolveAllowedExecutablePath("notepad", out var executable).Should().BeTrue();
 
         var authorization = _stepExecutor.PrepareAuthorization(
             "task-app-path",
@@ -72,7 +72,7 @@ public class CliEndToEndTests : IDisposable
             new Dictionary<string, object?> { ["app_id"] = "notepad" },
             "medium");
 
-        authorization.Expected["image_path"].Should().Be(Path.GetFullPath(executable));
+        authorization.Expected["image_path"].Should().Be(Path.GetFullPath(executable!));
     }
 
     [Fact]

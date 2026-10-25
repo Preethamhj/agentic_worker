@@ -980,7 +980,7 @@ public sealed class Phase3bVerificationTests : IDisposable
             allowedEffects: ["launch:ping-fixture"],
             risk: "medium");
 
-    private static Process StartPingChild(string imagePath)
+    private Process StartPingChild(string imagePath)
     {
         var child = new Process
         {
@@ -1000,10 +1000,11 @@ public sealed class Phase3bVerificationTests : IDisposable
             child.Dispose();
             throw new InvalidOperationException("Could not start the ping child process.");
         }
+        _output.WriteLine($"Started test-owned ping PID {child.Id}.");
         return child;
     }
 
-    private static Process StartNotepadChild(string imagePath, string documentPath)
+    private Process StartNotepadChild(string imagePath, string documentPath)
     {
         var priorProcessIds = Process.GetProcessesByName("Notepad")
             .Select(process =>
@@ -1026,6 +1027,7 @@ public sealed class Phase3bVerificationTests : IDisposable
         {
             throw new InvalidOperationException("Could not start the notepad child process.");
         }
+        _output.WriteLine($"Started test-owned Notepad launcher PID {launcher.Id}.");
         try
         {
             Process? launchedProcess = null;
@@ -1037,15 +1039,19 @@ public sealed class Phase3bVerificationTests : IDisposable
                     process.Dispose();
             }
 
-            return launchedProcess
-                ?? throw new InvalidOperationException("Notepad did not create a new process for the test launch.");
+            if (launchedProcess is null)
+                throw new InvalidOperationException("Notepad did not create a new process for the test launch.");
+            _output.WriteLine($"Tracked test-launched Notepad PID {launchedProcess.Id}.");
+            return launchedProcess;
         }
         catch
         {
             if (!launcher.HasExited)
             {
                 launcher.Kill();
-                launcher.WaitForExit();
+                if (!launcher.WaitForExit(5_000))
+                    throw new TimeoutException($"Test-owned Notepad launcher PID {launcher.Id} did not exit.");
+                _output.WriteLine($"Stopped test-owned Notepad launcher PID {launcher.Id}.");
             }
             throw;
         }
@@ -1068,11 +1074,14 @@ public sealed class Phase3bVerificationTests : IDisposable
         }
     }
 
-    private static void StopChild(Process child)
+    private void StopChild(Process child)
     {
+        var processId = child.Id;
         if (!child.HasExited)
             child.Kill();
-        child.WaitForExit();
+        if (!child.WaitForExit(5_000))
+            throw new TimeoutException($"Test-owned process PID {processId} did not exit within five seconds.");
+        _output.WriteLine($"Stopped test-owned process PID {processId}.");
     }
 
     private AuthorizationRecordDto IssueReminderAuthorization(

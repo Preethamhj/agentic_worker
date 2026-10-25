@@ -13,10 +13,7 @@ using Xunit.Abstractions;
 
 namespace Jarvis.Verification.Tests;
 
-[CollectionDefinition("Phase3c OS resources", DisableParallelization = true)]
-public sealed class Phase3cOsResourceCollection { }
-
-[Collection("Phase3c OS resources")]
+[Collection("Windows OS resources")]
 public sealed class Phase3cRealEngineEndToEndTests
 {
     private readonly ITestOutputHelper _output;
