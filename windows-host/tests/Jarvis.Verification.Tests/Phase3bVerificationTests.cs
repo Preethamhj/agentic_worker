@@ -15,6 +15,7 @@ using Xunit.Abstractions;
 namespace Jarvis.Verification.Tests;
 
 [SupportedOSPlatform("windows")]
+[Collection("Windows OS resources")]
 public sealed class Phase3bVerificationTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), $"jarvis-3b-{Guid.NewGuid():N}");

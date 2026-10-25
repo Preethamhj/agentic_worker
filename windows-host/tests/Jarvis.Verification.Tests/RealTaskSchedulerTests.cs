@@ -12,6 +12,12 @@ using Xunit.Abstractions;
 
 namespace Jarvis.Verification.Tests;
 
+[CollectionDefinition("Windows OS resources", DisableParallelization = true)]
+public sealed class WindowsOsResourceCollection
+{
+}
+
+[Collection("Windows OS resources")]
 [Trait("Category", "RealScheduler")]
 public sealed class RealTaskSchedulerTests
 {
