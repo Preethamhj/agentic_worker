@@ -537,7 +537,7 @@ public sealed class Phase3bVerificationTests : IDisposable
         scheduler.WasRegistered.Should().BeFalse();
     }
 
-    [RealSchedulerFact]
+    [Fact]
     [Trait("Category", "RealScheduler")]
     public async AsyncTask ScheduleReminder_With_Wrong_Time_Is_Failed()
     {
@@ -569,7 +569,7 @@ public sealed class Phase3bVerificationTests : IDisposable
         }
     }
 
-    [RealSchedulerFact]
+    [Fact]
     [Trait("Category", "RealScheduler")]
     public async AsyncTask ScheduleReminder_With_Wrong_Action_Is_Failed()
     {
@@ -601,7 +601,7 @@ public sealed class Phase3bVerificationTests : IDisposable
         }
     }
 
-    [RealSchedulerFact]
+    [Fact]
     [Trait("Category", "RealScheduler")]
     public async AsyncTask ScheduleReminder_Disabled_Task_Is_Failed()
     {
@@ -631,7 +631,7 @@ public sealed class Phase3bVerificationTests : IDisposable
         }
     }
 
-    [RealSchedulerFact]
+    [Fact]
     [Trait("Category", "RealScheduler")]
     public async AsyncTask ScheduleReminder_Extra_Unauthorized_Task_Is_Failed()
     {
@@ -687,7 +687,7 @@ public sealed class Phase3bVerificationTests : IDisposable
         yield return ["kannada", "ಕನ್ನಡ", "ನಮಸ್ಕಾರ, ಜಾರ್ವಿಸ್"];
     }
 
-    [RealSchedulerFact]
+    [Fact]
     [Trait("Category", "RealScheduler")]
     public async AsyncTask ScheduleReminder_Exact_Clean_Tasks_Verify_In_50_Consecutive_Runs()
     {
@@ -758,7 +758,7 @@ public sealed class Phase3bVerificationTests : IDisposable
         authorization.CanonicalArgs.Should().NotContainKey("action_arguments");
     }
 
-    [RealSchedulerTheory]
+    [Theory]
     [MemberData(nameof(ReminderMessageCases))]
     [Trait("Category", "RealScheduler")]
     public async AsyncTask ScheduleReminder_Executor_And_Independent_Verifier_Accept_Safe_Messages(
@@ -828,7 +828,7 @@ public sealed class Phase3bVerificationTests : IDisposable
         }
     }
 
-    [RealSchedulerFact]
+    [Fact]
     [Trait("Category", "RealScheduler")]
     public async AsyncTask ScheduleReminder_Verifier_Fails_When_Reminder_Data_Is_Missing()
     {
@@ -861,7 +861,7 @@ public sealed class Phase3bVerificationTests : IDisposable
         }
     }
 
-    [RealSchedulerFact]
+    [Fact]
     [Trait("Category", "RealScheduler")]
     public async AsyncTask ScheduleReminder_Verifier_Fails_When_Reminder_Data_Differs_From_Authorization()
     {
