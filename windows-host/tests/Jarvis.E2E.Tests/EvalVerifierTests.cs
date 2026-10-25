@@ -2,8 +2,11 @@ using System.Security.Cryptography;
 using System.Text;
 using FluentAssertions;
 using Jarvis.Contracts;
+using Jarvis.Cli;
 using Jarvis.Eval;
 using Jarvis.Infrastructure;
+using Jarvis.Safety;
+using Jarvis.Tools;
 using Jarvis.Verification;
 using Xunit;
 
@@ -116,6 +119,32 @@ public sealed class EvalVerifierTests
         }
     }
 
+    [Theory]
+    [InlineData("signature")]
+    [InlineData("expected")]
+    public async Task Engine_Verifier_Rejects_Tampered_Signed_Authorization(string tamper)
+    {
+        using var scenario = await CreateEngineScenarioAsync("expected", deleteAfterCreate: false);
+        var original = scenario.Execution.Authorization;
+        var tampered = tamper == "signature"
+            ? original with { Hmac = "tampered-signature" }
+            : original with { Expected = new Dictionary<string, object?>(original.Expected) { ["size"] = 999 } };
+        var token = await scenario.Engine.BeginStepAsync(tampered);
+        var execution = scenario.Execution with
+        {
+            Authorization = tampered,
+            VerificationToken = token
+        };
+
+        var result = await new VerificationEngineEvalVerifier(scenario.Engine)
+            .VerifyAsync(CreateCase("F0"), execution);
+
+        result.Status.Should().NotBe(EvalStatus.Verified);
+        result.Reasons.Should().Contain(reason =>
+            reason.Contains("HMAC", StringComparison.OrdinalIgnoreCase)
+            || reason.Contains("signature", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static EvalCase CreateCase(string faultId) =>
         new(
             $"case-{faultId}",
@@ -146,24 +175,45 @@ public sealed class EvalVerifierTests
         Directory.CreateDirectory(root);
         var path = Path.Combine(root, "target.txt");
         const string expectedContent = "expected";
-        var authorization = CreateAuthorization(root, path, expectedContent);
         var auditPath = Path.Combine(Path.GetTempPath(), $"jarvis-eval-audit-{Guid.NewGuid():N}.db");
         var auditStore = new SqliteAuditStore(auditPath);
-        var engine = new VerificationEngine(new AcceptAuthorizationVerifier(), auditStore);
+        var keyStore = new InMemoryDpapiKeyStore();
+        var hostPath = new EvalHostPathProvider(Path.Combine(root, "Jarvis.Cli.exe"));
+        var authService = new AuthorizationService(keyStore, SystemClock.Instance, auditStore, hostPath);
+        var toolPolicy = LoadToolPolicy();
+        var pathPolicy = new PathPolicy([root]);
+        var createFileExecutor = new CreateFileExecutor(pathPolicy, authService);
+        IToolExecutor executor = content is null
+            ? new NoOpSuccessExecutor(createFileExecutor)
+            : createFileExecutor;
+        var stepExecutor = new StepExecutor(
+            authService,
+            [executor],
+            toolPolicy);
+        var arguments = new Dictionary<string, object?>
+        {
+            ["path"] = path,
+            ["content"] = expectedContent
+        };
+        var authorization = stepExecutor.PrepareAuthorization(
+            "task-1", "step-1", "fs.create_file", arguments, "low");
+        var engine = new VerificationEngine(authService, auditStore);
         var token = await engine.BeginStepAsync(authorization);
         var startedAt = DateTimeOffset.UtcNow;
-        if (content is not null)
-            File.WriteAllText(path, content);
+        var receipt = await stepExecutor.ExecuteStepAsync(authorization);
+        if (content is not null && !string.Equals(content, expectedContent, StringComparison.Ordinal))
+            await File.WriteAllTextAsync(path, content);
         if (deleteAfterCreate)
             File.Delete(path);
         var completedAt = DateTimeOffset.UtcNow;
         var execution = new EvalExecutionContext(
             authorization,
-            CreateReceipt(authorization, startedAt, completedAt),
+            receipt,
             new ExecutionObservation(startedAt, completedAt),
             token,
             root,
-            _ => ValueTask.FromResult(true),
+            _ => ValueTask.FromResult(File.Exists(path)
+                && string.Equals(File.ReadAllText(path), expectedContent, StringComparison.Ordinal)),
             []);
 
         var expectedReasons = content switch
@@ -224,13 +274,6 @@ public sealed class EvalVerifierTests
             "");
     }
 
-    private sealed class AcceptAuthorizationVerifier : IAuthorizationVerifier
-    {
-        public Task VerifyAndMarkVerifiedAsync(
-            AuthorizationRecordDto authorization,
-            CancellationToken cancellationToken = default) => Task.CompletedTask;
-    }
-
     private sealed class EngineScenario(
         string root,
         string auditPath,
@@ -261,6 +304,47 @@ public sealed class EvalVerifierTests
         {
             if (Directory.Exists(root))
                 Directory.Delete(root, recursive: true);
+        }
+    }
+
+    private static ToolPolicy LoadToolPolicy()
+    {
+        var repositoryRoot = new DirectoryInfo(AppContext.BaseDirectory);
+        while (repositoryRoot is not null && !File.Exists(Path.Combine(repositoryRoot.FullName, "config", "tools.registry.json")))
+            repositoryRoot = repositoryRoot.Parent;
+        if (repositoryRoot is null)
+            throw new DirectoryNotFoundException("Cannot locate the repository tool registry.");
+
+        return ToolPolicy.FromFile(
+            Path.Combine(repositoryRoot.FullName, "config", "tools.registry.json"),
+            Path.Combine(repositoryRoot.FullName, "config", "apps.allowlist.json"));
+    }
+
+    private sealed class EvalHostPathProvider(string path) : IHostPathProvider
+    {
+        public string GetHostPath() => path;
+    }
+
+    private sealed class NoOpSuccessExecutor(IToolExecutor inner) : IToolExecutor
+    {
+        public string ToolId => inner.ToolId;
+
+        public Task<ExecutionReceiptDto> ExecuteAsync(
+            VerifiedAuthorization authorization,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var now = DateTimeOffset.UtcNow.ToString("o");
+            return Task.FromResult(new ExecutionReceiptDto(
+                1,
+                authorization.StepId,
+                authorization.AuthId,
+                now,
+                now,
+                0,
+                true,
+                string.Empty,
+                string.Empty));
         }
     }
 }
