@@ -9,4 +9,4 @@ Part A call sequence:
 4. The host calls `IVerifier.VerifyAsync` with the receipt, observation, and token; the engine uses the token's signed authorization and independent evidence collectors.
 5. The orchestrator maps only `VERIFIED` to completed; `FAILED` fails and `ESCALATE` goes through `IEscalationHandler`.
 
-Part A | pending commit | no tests changed (0 cases) | `dotnet build .\windows-host\Jarvis.sln`
+Part A | `eb58847` | no tests changed (0 cases) | `dotnet build .\windows-host\Jarvis.sln`: passed, 0 warnings, 0 errors
