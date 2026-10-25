@@ -13,6 +13,6 @@ Branch: `phase-5`, based on `5b68602` (`phase-3c-done`).
 
 ## Scope still outstanding
 
-- Part C is partial: the real `VerificationEngine` is exercised for file control/no-op/wrong-content/removed-target cases. Predicate-only checks cover files, search results, and process image presence; reminder predicates require a scheduler reader that is not yet wired.
+- Part C is partial: the real `VerificationEngine` is exercised for file control/no-op/wrong-content/removed-target cases, but that isolated fixture uses a permissive `IAuthorizationVerifier` and a placeholder signature rather than the host's signed authorization lifecycle. Predicate-only checks cover files, search results, and process image presence; reminder predicates require a scheduler reader that is not yet wired.
 - Part D is partial: fault injection currently produces and tests deterministic modeled post-execution states in `EvalFaultState`; it is not yet connected to real executor decorators or OS-state mutation. The host assembly reference guard is implemented and passed.
 - Parts F, G, and H are not implemented. Part F must connect the real tool executors and actual fault injection to a bounded, resumable sandbox runner before any evaluation results are interpreted.
