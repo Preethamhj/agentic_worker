@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Runtime.InteropServices;
 using FluentAssertions;
 using Jarvis.Safety;
 using Xunit;
@@ -154,6 +155,54 @@ public class ToolPolicyTests
         result.ErrorMessage.Should().Contain("allowlist");
     }
 
+    [Fact]
+    public void Packaged_Notepad_Resolution_Prefers_Process_Architecture_Then_Highest_Version()
+    {
+        using var fixture = new PackagedNotepadFixture();
+        var architecture = ArchitectureName(RuntimeInformation.ProcessArchitecture);
+        var otherArchitecture = architecture == "x64" ? "arm64" : "x64";
+        fixture.AddPackage("11.1.0.0", architecture);
+        fixture.AddPackage("12.0.0.0", architecture);
+        fixture.AddPackage("99.0.0.0", otherArchitecture);
+        var policy = fixture.CreatePolicy("notepad", "notepad.exe");
+
+        policy.TryResolveAllowedExecutablePath("notepad", out var path).Should().BeTrue();
+        path.Should().Be(fixture.ExecutablePath("12.0.0.0", architecture));
+    }
+
+    [Fact]
+    public void Packaged_Notepad_Resolution_Ignores_Other_Packages_And_Lookalike_Files()
+    {
+        using var fixture = new PackagedNotepadFixture();
+        fixture.AddPackage("99.0.0.0", "x64", "Microsoft.WindowsNotepad.Evil_99.0.0.0_x64__publisher");
+        fixture.AddFile(Path.Combine(fixture.Root, "Other", "Notepad.exe"));
+        var policy = fixture.CreatePolicy("notepad", "notepad.exe");
+
+        policy.TryResolveAllowedExecutablePath("notepad", out var path).Should().BeTrue();
+        path.Should().Be(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "notepad.exe"));
+    }
+
+    [Fact]
+    public void Packaged_Notepad_Resolution_Does_Not_Apply_To_Other_App_Id()
+    {
+        using var fixture = new PackagedNotepadFixture();
+        fixture.AddPackage("11.0.0.0", ArchitectureName(RuntimeInformation.ProcessArchitecture));
+        var policy = fixture.CreatePolicy("other", "notepad.exe");
+
+        policy.TryResolveAllowedExecutablePath("other", out var path).Should().BeTrue();
+        Path.GetFullPath(path!).StartsWith(fixture.Root, StringComparison.OrdinalIgnoreCase).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Packaged_Notepad_Resolution_Falls_Back_To_System32_When_Package_Is_Absent()
+    {
+        using var fixture = new PackagedNotepadFixture();
+        var policy = fixture.CreatePolicy("notepad", "notepad.exe");
+
+        policy.TryResolveAllowedExecutablePath("notepad", out var path).Should().BeTrue();
+        path.Should().Be(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "notepad.exe"));
+    }
+
     [Theory]
     [InlineData("line one\nline two")]
     [InlineData("line one\rline two")]
@@ -221,4 +270,46 @@ public class ToolPolicyTests
             ["time_iso"] = "2026-10-16T09:00:00Z",
             ["message"] = message
         };
+
+    private static string ArchitectureName(Architecture architecture) => architecture switch
+    {
+        Architecture.X64 => "x64",
+        Architecture.X86 => "x86",
+        Architecture.Arm64 => "arm64",
+        Architecture.Arm => "arm",
+        _ => architecture.ToString().ToLowerInvariant()
+    };
+
+    private sealed class PackagedNotepadFixture : IDisposable
+    {
+        public string Root { get; } = Path.Combine(Path.GetTempPath(), $"jarvis-notepad-{Guid.NewGuid():N}");
+
+        public PackagedNotepadFixture() => Directory.CreateDirectory(Root);
+
+        public void AddPackage(
+            string version,
+            string architecture,
+            string packageName = null!)
+        {
+            packageName ??= $"Microsoft.WindowsNotepad_{version}_{architecture}__8wekyb3d8bbwe";
+            AddFile(Path.Combine(Root, packageName, "Notepad", "Notepad.exe"));
+        }
+
+        public string ExecutablePath(string version, string architecture) =>
+            Path.Combine(Root, $"Microsoft.WindowsNotepad_{version}_{architecture}__8wekyb3d8bbwe", "Notepad", "Notepad.exe");
+
+        public void AddFile(string path)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, "test executable placeholder");
+        }
+
+        public ToolPolicy CreatePolicy(string appId, string executable) =>
+            new(
+                [],
+                [new AllowedAppDefinition { AppId = appId, Executable = executable, DisplayName = appId }],
+                Root);
+
+        public void Dispose() => Directory.Delete(Root, recursive: true);
+    }
 }
