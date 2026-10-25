@@ -715,6 +715,11 @@ public sealed class Phase3bVerificationTests : IDisposable
                     HostObservation(),
                     token);
 
+                if (!string.Equals(result.Status, "VERIFIED", StringComparison.Ordinal))
+                {
+                    _output.WriteLine(
+                        $"clean reminder run {run + 1}: {result.Status}; reasons={string.Join(" | ", result.Reasons)}; evidence={JsonSerializer.Serialize(result.Evidence.Select(item => item.Observed))}");
+                }
                 result.Status.Should().Be("VERIFIED", $"clean reminder run {run + 1} should not fail");
                 result.Evidence.Should().ContainSingle(item => item.Match);
                 result.Evidence.Single().Observed.Should().ContainKey("scheduler_method");
@@ -803,6 +808,11 @@ public sealed class Phase3bVerificationTests : IDisposable
 
             receipt.ReportedSuccess.Should().BeTrue();
             var result = await _engine.VerifyAsync(receipt, observation, token);
+            if (!string.Equals(result.Status, "VERIFIED", StringComparison.Ordinal))
+            {
+                _output.WriteLine(
+                    $"safe reminder '{suffix}': {result.Status}; reasons={string.Join(" | ", result.Reasons)}; evidence={JsonSerializer.Serialize(result.Evidence.Select(item => item.Observed))}");
+            }
 
             result.Status.Should().Be("VERIFIED");
             result.Evidence.Should().ContainSingle(item => item.Match);

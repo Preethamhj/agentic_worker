@@ -13,6 +13,44 @@ namespace Jarvis.Verification.Tests;
 public sealed class ScheduledTaskEvidenceCollectorTests
 {
     private static readonly DateTimeOffset Now = new(2026, 10, 24, 12, 0, 0, TimeSpan.Zero);
+    private const string RealTaskSchedulerXmlFixture = """
+        <?xml version="1.0" encoding="UTF-16"?>
+        <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+          <RegistrationInfo>
+            <Date>2026-10-24T12:00:00.000+00:00</Date>
+            <Author>Jarvis</Author>
+            <Description>Jarvis reminder</Description>
+            <URI>{{TASK_PATH}}</URI>
+          </RegistrationInfo>
+          <Principals>
+            <Principal id="Author">
+              <UserId>REDACTED_TEST_SID</UserId>
+              <LogonType>InteractiveToken</LogonType>
+            </Principal>
+          </Principals>
+          <Settings>
+            <DeleteExpiredTaskAfter>PT1H</DeleteExpiredTaskAfter>
+            <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+            <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+            <ExecutionTimeLimit>PT5M</ExecutionTimeLimit>
+            <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+            <StartWhenAvailable>true</StartWhenAvailable>
+          </Settings>
+          <Triggers>
+            <TimeTrigger>
+              <StartBoundary>{{START_BOUNDARY}}</StartBoundary>
+              <EndBoundary>{{END_BOUNDARY}}</EndBoundary>
+            </TimeTrigger>
+          </Triggers>
+          <Actions Context="Author">
+            <Exec>
+              <Command>C:\Jarvis\Jarvis.Cli.exe</Command>
+              <Arguments>{{ACTION_ARGUMENTS}}</Arguments>
+              <WorkingDirectory>C:\Jarvis</WorkingDirectory>
+            </Exec>
+          </Actions>
+        </Task>
+        """;
 
     [Theory]
     [MemberData(nameof(SchedulerSettingFaults))]
@@ -75,6 +113,37 @@ public sealed class ScheduledTaskEvidenceCollectorTests
                 .Select(stage => new VerificationStageResultDto(stage, $"stage-{stage}", true, "passed", "PASSED"))
                 .ToArray())
             .Should().Be("VERIFIED");
+    }
+
+    [Fact]
+    public async Task Real_Task_Scheduler_Xml_Defaults_Omitted_RunLevel_To_LeastPrivilege()
+    {
+        using var fixture = new ReminderFixture();
+        var authorization = fixture.IssueAuthorization("real-xml-default-run-level");
+        var expected = authorization.Expected;
+        var taskPath = (string)expected["task_path"]!;
+        var start = DateTimeOffset.Parse((string)expected["time_iso"]!, CultureInfo.InvariantCulture);
+        var end = start.AddSeconds((int)expected["end_boundary_offset_seconds"]!);
+        var xml = RealTaskSchedulerXmlFixture
+            .Replace("{{TASK_PATH}}", taskPath, StringComparison.Ordinal)
+            .Replace("{{START_BOUNDARY}}", start.ToLocalTime().ToString("s", CultureInfo.InvariantCulture), StringComparison.Ordinal)
+            .Replace("{{END_BOUNDARY}}", end.ToLocalTime().ToString("s", CultureInfo.InvariantCulture), StringComparison.Ordinal)
+            .Replace("{{ACTION_ARGUMENTS}}", (string)expected["action_arguments"]!, StringComparison.Ordinal);
+
+        var evidence = fixture.Collector.ReadTaskXml(
+            authorization,
+            taskPath,
+            (string)expected["scheduler_task_name"]!,
+            xml,
+            taskEnabled: true,
+            beforeTaskPaths: [],
+            afterTaskPaths: [taskPath]);
+
+        evidence.Match.Should().BeTrue(evidence.Detail);
+        evidence.Observed["run_level"].Should().Be("LeastPrivilege");
+        evidence.Observed["run_level_xml"].Should().BeNull();
+        var result = await fixture.VerifyAsync(authorization, evidence);
+        result.Status.Should().Be("VERIFIED", string.Join("; ", result.Reasons));
     }
 
     [Fact]

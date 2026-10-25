@@ -215,7 +215,9 @@ internal sealed class ScheduledTaskEvidenceCollector : IScheduledTaskEvidenceCol
         var startAvailableMatches = MatchesBoolean(settings?.Element(TaskNamespace + "StartWhenAvailable")?.Value, expected, "start_when_available");
         var multipleInstancesMatches = MatchesString(settings?.Element(TaskNamespace + "MultipleInstancesPolicy")?.Value, expected, "multiple_instances_policy");
         var logonTypeMatches = principals.Length == 1 && MatchesString(principal?.Element(TaskNamespace + "LogonType")?.Value, expected, "logon_type");
-        var runLevelMatches = principals.Length == 1 && MatchesString(principal?.Element(TaskNamespace + "RunLevel")?.Value, expected, "run_level");
+        var runLevelXml = principal?.Element(TaskNamespace + "RunLevel")?.Value;
+        var runLevel = runLevelXml ?? "LeastPrivilege";
+        var runLevelMatches = principals.Length == 1 && MatchesString(runLevel, expected, "run_level");
         var endBoundaryMatches = MatchesEndBoundary(timeTrigger?.Element(TaskNamespace + "EndBoundary")?.Value, expectedTime, expected);
         var deleteExpiredMatches = MatchesDuration(settings?.Element(TaskNamespace + "DeleteExpiredTaskAfter")?.Value, expected, "delete_expired_task_after_seconds");
         var dataFilePath = ReadExpected(authorization, "reminder_data_path");
@@ -278,7 +280,8 @@ internal sealed class ScheduledTaskEvidenceCollector : IScheduledTaskEvidenceCol
             ["start_when_available"] = settings?.Element(TaskNamespace + "StartWhenAvailable")?.Value,
             ["multiple_instances_policy"] = settings?.Element(TaskNamespace + "MultipleInstancesPolicy")?.Value,
             ["logon_type"] = principal?.Element(TaskNamespace + "LogonType")?.Value,
-            ["run_level"] = principal?.Element(TaskNamespace + "RunLevel")?.Value,
+            ["run_level"] = runLevel,
+            ["run_level_xml"] = runLevelXml,
             ["end_boundary"] = timeTrigger?.Element(TaskNamespace + "EndBoundary")?.Value,
             ["delete_expired_task_after"] = settings?.Element(TaskNamespace + "DeleteExpiredTaskAfter")?.Value,
             ["setting_matches"] = settingMatches,
