@@ -201,7 +201,10 @@ public class SqliteAuditStoreTests : IDisposable
             executions.Should().ContainSingle(e => e.StepId == "step-501-1" && e.ReportedSuccess == true && e.AuthId == "auth-1");
 
             var verifications = store2.GetVerifications("step-501-1");
-            verifications.Should().ContainSingle(v => v.StepId == "step-501-1" && v.OverallStatus == "VERIFIED");
+            verifications.Should().ContainSingle(v =>
+                v.StepId == "step-501-1"
+                && v.OverallStatus == "VERIFIED"
+                && v.TaskId == "task-501");
 
             var evidence = store2.GetEvidence("step-501-1");
             evidence.Should().ContainSingle(ev => ev.EvidenceId == "ev-1" && ev.CheckType == "dir_exists" && ev.Match == true);

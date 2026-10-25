@@ -76,7 +76,7 @@ public class CliEndToEndTests : IDisposable
     }
 
     [Fact]
-    public async Task Cli_Runs_FsCreateFile_EndToEnd_UpTo_StubVerifier()
+    public async Task Cli_Runs_FsCreateFile_EndToEnd_WithStubVerifier_Escalates_AndFails()
     {
         var targetFile = Path.Combine(_tempRoot, "notes.txt");
         var planner = new StaticPlanner(new PlanStepDto(
@@ -109,6 +109,7 @@ public class CliEndToEndTests : IDisposable
         result.VerificationResults[0].Status.Should().Be("ESCALATE");
 
         // 4. Invariant: Task must NEVER be Completed without VERIFIED
+        result.VerificationResults.Should().OnlyContain(verification => verification.Status != "VERIFIED");
         result.FinalState.Should().NotBe(TaskState.Completed);
         result.FinalState.Should().Be(TaskState.Failed);
         result.StatusMessage.Should().Contain("not verified");

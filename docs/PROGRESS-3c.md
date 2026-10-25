@@ -18,3 +18,15 @@ Part F | `fc6cf37` | `SearchFiles_Real_Executor_Verifies_And_Faulted_Search_Outp
 Part F2 | `025de40` | `Packaged_Notepad_Resolution_Prefers_Process_Architecture_Then_Highest_Version`, `Packaged_Notepad_Resolution_Ignores_Other_Packages_And_Lookalike_Files`, `Packaged_Notepad_Resolution_Does_Not_Apply_To_Other_App_Id`, `Packaged_Notepad_Resolution_Falls_Back_To_System32_When_Package_Is_Absent` (4 passed) | Debug solution build passed (0 warnings/errors); focused Safety tests passed (4/4). ADR added at `docs/architecture/adr/ADR-0005-packaged-notepad.md`.
 Part F3 | `8e3e8d4` | `ScheduleReminder_Fake_Scheduler_Real_Engine_Verifies_And_Tampered_Task_Fails` (control + tampered StartWhenAvailable XML, 1 passed); `ScheduleReminder_Real_Scheduler_Real_Engine_Verifies_And_Cleans_Up` (Category=RealScheduler, 1 passed) | Debug solution build passed (0 warnings/errors); focused fake XML E2E passed (1/1); real-scheduler opt-in passed (1/1), no `\Jarvis\reminder-*` leftovers. Fake scheduler now supplies Task Scheduler XML and production `ScheduledTaskEvidenceCollector` parses it.
 Part F4 | `9c20618` | `AppLaunch_Notepad_Nonmatching_Process_Fails_Within_Timeout` (1 passed) | Each orchestration is bounded by 30 seconds, and owned Notepad cleanup waits at most five seconds; targeted Debug test passed in 2.40s and logged stopped PIDs 75600, 75640. No Notepad process remained in the post-test query; Debug solution build passed (0 warnings/errors).
+
+Part F5 existing-test audit:
+- `test_report_endpoint_basic`: the valid report helper now supplies the required reason field; existing successful response assertions remain, and failed-reason behavior has its own test.
+- `ReportRequestDto_Deserializes_ValidFixture`: added an exact reason-field assertion; schema, task-id, and deserialization checks remain.
+- `OrchestratorAndQueueTests`: added escalation/failure cases and an optional escalation-handler test seam; existing assertions were not removed or weakened.
+- `ApiClient_SendReport_Includes_IdempotencyKey_Header`: the report fixture now exercises FAILED status/reason and asserts both serialized values; the task-id idempotency assertion remains.
+- `SqliteAuditStore_Persists_And_Retrieves_Section10_Remaining_Tables`: now asserts persisted TaskId as well as step/status; the migration test separately asserts legacy rows stay readable with null TaskId.
+- `ToolPolicyTests`: added four packaged-Notepad resolver tests; existing policy validation assertions were not changed.
+- `Real_Task_Scheduler_Xml_Defaults_Omitted_RunLevel_To_LeastPrivilege`: fixture construction uses a shared helper; matching, default run-level, and VERIFIED assertions remain unchanged.
+- `Cli_Runs_FsCreateFile_EndToEnd_WithStubVerifier_Escalates_AndFails`: renamed to reflect that StubVerifier is test-only and added an explicit no-VERIFIED result check; file, receipt-success, ESCALATE, final FAILED, and not-verified checks remain.
+- No other pre-existing test assertion was removed or weakened in the reviewed 878635d..HEAD test diff.
+Part F5 | pending | `Cli_Runs_FsCreateFile_EndToEnd_WithStubVerifier_Escalates_AndFails` (1 passed) | Review/build/test result pending.
