@@ -137,4 +137,30 @@ public class DependencyRulesTests
         constructors.Should().NotBeEmpty("VerifiedAuthorization must have at least one constructor");
         constructors.Should().OnlyContain(c => c.IsAssembly, "VerifiedAuthorization constructors must be strictly internal (assembly-scoped) to prevent instantiation outside Jarvis.Safety");
     }
+
+    [Fact]
+    public void Host_Projects_Must_Not_Reference_Evaluation_Harness()
+    {
+        var hostAssemblies = new[]
+        {
+            typeof(Jarvis.Cli.ConsoleApprovalHandler).Assembly,
+            typeof(Jarvis.Core.StateMachine).Assembly,
+            typeof(Jarvis.Safety.PathPolicy).Assembly,
+            typeof(Jarvis.Tools.IToolExecutor).Assembly,
+            typeof(Jarvis.Verification.VerificationPlaceholder).Assembly,
+            typeof(Jarvis.Infrastructure.SqliteAuditStore).Assembly,
+            typeof(Jarvis.Contracts.PlanRequestDto).Assembly
+        };
+
+        foreach (var assembly in hostAssemblies)
+        {
+            assembly.GetReferencedAssemblies()
+                .Should()
+                .NotContain(reference => string.Equals(
+                    reference.Name,
+                    "Jarvis.Eval",
+                    StringComparison.OrdinalIgnoreCase),
+                    $"{assembly.GetName().Name} must not reference Jarvis.Eval");
+        }
+    }
 }
