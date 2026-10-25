@@ -89,15 +89,15 @@ public sealed class EvalVerifierTests
     [Theory]
     [InlineData("F0", "expected", false, "VERIFIED")]
     [InlineData("F1", null, false, "FAILED")]
-    [InlineData("F2", "different", false, "FAILED")]
-    [InlineData("F6", "expected", true, "FAILED")]
+    [InlineData("F2", "expected", false, "FAILED")]
+    [InlineData("F6", "expected", false, "FAILED")]
     public async Task Engine_Verifier_Uses_Real_VerificationEngine_For_Control_And_File_Faults(
         string faultId,
         string? content,
         bool deleteAfterCreate,
         string expectedStatus)
     {
-        using var scenario = await CreateEngineScenarioAsync(content, deleteAfterCreate);
+        using var scenario = await CreateEngineScenarioAsync(content, deleteAfterCreate, faultId);
         var verifier = new VerificationEngineEvalVerifier(scenario.Engine);
 
         var result = await verifier.VerifyAsync(CreateCase(faultId), scenario.Execution);
@@ -145,6 +145,38 @@ public sealed class EvalVerifierTests
             || reason.Contains("signature", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Theory]
+    [InlineData("F3")]
+    [InlineData("F4")]
+    [InlineData("F5")]
+    public async Task Real_File_Fault_Injector_Changes_The_Observed_Filesystem(string faultId)
+    {
+        using var scenario = await CreateEngineScenarioAsync("expected", false, faultId);
+        var path = (string)scenario.Execution.Authorization.CanonicalArgs["path"]!;
+        var sibling = Path.Combine(Path.GetDirectoryName(path)!, $"wrong-location-{Path.GetFileName(path)}");
+        var extra = Path.Combine(Path.GetDirectoryName(path)!, "unauthorized-extra.txt");
+
+        scenario.FaultGroundTruth.Should().Be(EvalGroundTruth.Bad);
+        switch (faultId)
+        {
+            case "F3":
+                File.ReadAllBytes(path).Length.Should().Be(Encoding.UTF8.GetByteCount("expected") / 2);
+                break;
+            case "F4":
+                File.Exists(path).Should().BeFalse();
+                File.Exists(sibling).Should().BeTrue();
+                break;
+            case "F5":
+                File.Exists(path).Should().BeTrue();
+                File.Exists(extra).Should().BeTrue();
+                break;
+        }
+
+        var result = await new VerificationEngineEvalVerifier(scenario.Engine)
+            .VerifyAsync(CreateCase(faultId), scenario.Execution);
+        result.Status.Should().Be(EvalStatus.Failed);
+    }
+
     private static EvalCase CreateCase(string faultId) =>
         new(
             $"case-{faultId}",
@@ -169,7 +201,10 @@ public sealed class EvalVerifierTests
         return new EvalExecutionFixture(root, execution);
     }
 
-    private static async Task<EngineScenario> CreateEngineScenarioAsync(string? content, bool deleteAfterCreate)
+    private static async Task<EngineScenario> CreateEngineScenarioAsync(
+        string? content,
+        bool deleteAfterCreate,
+        string faultId = "F0")
     {
         var root = Path.Combine(Path.GetTempPath(), $"jarvis-eval-engine-{Guid.NewGuid():N}");
         Directory.CreateDirectory(root);
@@ -183,9 +218,12 @@ public sealed class EvalVerifierTests
         var toolPolicy = LoadToolPolicy();
         var pathPolicy = new PathPolicy([root]);
         var createFileExecutor = new CreateFileExecutor(pathPolicy, authService);
-        IToolExecutor executor = content is null
-            ? new NoOpSuccessExecutor(createFileExecutor)
-            : createFileExecutor;
+        IToolExecutor executor = faultId == "F0"
+            ? createFileExecutor
+            : new EvalFaultInjectingExecutor(
+                createFileExecutor,
+                faultId,
+                Path.Combine(root, "unauthorized-extra.txt"));
         var stepExecutor = new StepExecutor(
             authService,
             [executor],
@@ -201,8 +239,6 @@ public sealed class EvalVerifierTests
         var token = await engine.BeginStepAsync(authorization);
         var startedAt = DateTimeOffset.UtcNow;
         var receipt = await stepExecutor.ExecuteStepAsync(authorization);
-        if (content is not null && !string.Equals(content, expectedContent, StringComparison.Ordinal))
-            await File.WriteAllTextAsync(path, content);
         if (deleteAfterCreate)
             File.Delete(path);
         var completedAt = DateTimeOffset.UtcNow;
@@ -216,14 +252,22 @@ public sealed class EvalVerifierTests
                 && string.Equals(File.ReadAllText(path), expectedContent, StringComparison.Ordinal)),
             []);
 
-        var expectedReasons = content switch
+        var expectedReasons = faultId switch
         {
-            null => new[] { "target is absent" },
-            "different" => new[] { "size 9 differs from expected 8", "SHA-256 differs from authorization.expected.sha256" },
-            _ when deleteAfterCreate => new[] { "target is absent" },
+            "F1" or "F4" or "F6" => new[] { "target is absent" },
+            "F2" => new[] { "SHA-256 differs from authorization.expected.sha256" },
+            "F3" => new[] { "size" },
+            "F5" => new[] { "Unauthorized side effect detected" },
             _ => Array.Empty<string>()
         };
-        return new EngineScenario(root, auditPath, auditStore, engine, execution, expectedReasons);
+        return new EngineScenario(
+            root,
+            auditPath,
+            auditStore,
+            engine,
+            execution,
+            expectedReasons,
+            executor is EvalFaultInjectingExecutor faultInjector ? faultInjector.GroundTruth : EvalGroundTruth.Good);
     }
 
     private static AuthorizationRecordDto CreateAuthorization(string root, string path, string content)
@@ -280,11 +324,13 @@ public sealed class EvalVerifierTests
         SqliteAuditStore auditStore,
         VerificationEngine engine,
         EvalExecutionContext execution,
-        IReadOnlyList<string> expectedReasons) : IDisposable
+        IReadOnlyList<string> expectedReasons,
+        EvalGroundTruth faultGroundTruth) : IDisposable
     {
         public VerificationEngine Engine { get; } = engine;
         public EvalExecutionContext Execution { get; } = execution;
         public IReadOnlyList<string> ExpectedReasons { get; } = expectedReasons;
+        public EvalGroundTruth FaultGroundTruth { get; } = faultGroundTruth;
 
         public void Dispose()
         {
@@ -325,26 +371,4 @@ public sealed class EvalVerifierTests
         public string GetHostPath() => path;
     }
 
-    private sealed class NoOpSuccessExecutor(IToolExecutor inner) : IToolExecutor
-    {
-        public string ToolId => inner.ToolId;
-
-        public Task<ExecutionReceiptDto> ExecuteAsync(
-            VerifiedAuthorization authorization,
-            CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var now = DateTimeOffset.UtcNow.ToString("o");
-            return Task.FromResult(new ExecutionReceiptDto(
-                1,
-                authorization.StepId,
-                authorization.AuthId,
-                now,
-                now,
-                0,
-                true,
-                string.Empty,
-                string.Empty));
-        }
-    }
 }
