@@ -59,6 +59,37 @@ public sealed class Phase3cRealEngineEndToEndTests
         Assert.Equal("FAILED", Assert.Single(faulted.VerificationResults).Status);
     }
 
+#if DEBUG
+    [Fact]
+    public async Task Debug_Executor_Lie_Reports_Success_But_Real_Verifier_Fails()
+    {
+        var result = await RunScenarioAsync("fs.create_file", injectFault: false, debugExecutorLie: true);
+
+        Assert.Equal(TaskState.Failed, result.FinalState);
+        Assert.Equal("FAILED", Assert.Single(result.VerificationResults).Status);
+        Assert.True(Assert.Single(result.Receipts).ReportedSuccess);
+        Assert.Contains(
+            result.VerificationResults.SelectMany(verification => verification.Reasons),
+            reason => reason.Contains("target is absent", StringComparison.Ordinal));
+    }
+#endif
+
+#if !DEBUG
+    [Fact]
+    public void Release_Executor_Assembly_Does_Not_Contain_Debug_Lie_Switch()
+    {
+        const string switchName = "DebugReportSuccessWithoutCreatingFile";
+        var members = typeof(CreateFileExecutor).GetMembers(
+            System.Reflection.BindingFlags.Instance
+                | System.Reflection.BindingFlags.Static
+                | System.Reflection.BindingFlags.Public
+                | System.Reflection.BindingFlags.NonPublic
+                | System.Reflection.BindingFlags.DeclaredOnly);
+
+        Assert.DoesNotContain(members, member => string.Equals(member.Name, switchName, StringComparison.Ordinal));
+    }
+#endif
+
     [NonElevatedFact]
     public async Task AppLaunch_Notepad_Nonmatching_Process_Fails_Within_Timeout()
     {
@@ -101,7 +132,8 @@ public sealed class Phase3cRealEngineEndToEndTests
     private async Task<TaskOrchestratorResult> RunScenarioAsync(
         string toolId,
         bool injectFault,
-        bool useRealScheduler = false)
+        bool useRealScheduler = false,
+        bool debugExecutorLie = false)
     {
         var root = Path.Combine(Path.GetTempPath(), $"jarvis-3c-e2e-{Guid.NewGuid():N}");
         Directory.CreateDirectory(root);
@@ -132,9 +164,13 @@ public sealed class Phase3cRealEngineEndToEndTests
             Path.Combine(repositoryRoot, "config", "apps.allowlist.json"));
         var processIds = new List<int>();
         var reminderTaskId = (string?)null;
+        var createFileExecutor = new CreateFileExecutor(pathPolicy, authorizationService);
+#if DEBUG
+        createFileExecutor.DebugReportSuccessWithoutCreatingFile = debugExecutorLie;
+#endif
         var executors = new List<IToolExecutor>
         {
-            new CreateFileExecutor(pathPolicy, authorizationService),
+            createFileExecutor,
             new CreateFolderExecutor(pathPolicy, authorizationService),
             new SearchFilesExecutor(pathPolicy, authorizationService),
             new AppLaunchExecutor(toolPolicy, authorizationService, new WindowsElevationChecker()),

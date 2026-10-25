@@ -22,6 +22,10 @@ public sealed class CreateFileExecutor : IToolExecutor
     private readonly PathPolicy _pathPolicy;
     private readonly AuthorizationService _authService;
 
+#if DEBUG
+    public bool DebugReportSuccessWithoutCreatingFile { get; set; }
+#endif
+
     public CreateFileExecutor(PathPolicy pathPolicy, AuthorizationService authService)
     {
         _pathPolicy = pathPolicy ?? throw new ArgumentNullException(nameof(pathPolicy));
@@ -34,6 +38,22 @@ public sealed class CreateFileExecutor : IToolExecutor
 
         // 1. Consume authorization and re-verify HMAC over actual fields
         _authService.Consume(auth, auth.StepId);
+
+#if DEBUG
+        if (DebugReportSuccessWithoutCreatingFile)
+        {
+            return new ExecutionReceiptDto(
+                SchemaVersion: 1,
+                StepId: auth.StepId,
+                AuthId: auth.AuthId,
+                StartedAt: startedAt,
+                CompletedAt: DateTimeOffset.UtcNow.ToString("o"),
+                ExitCode: 0,
+                ReportedSuccess: true,
+                Stdout: "Debug test executor claimed success without creating the authorized file.",
+                Stderr: string.Empty);
+        }
+#endif
 
         // 2. Read only from CanonicalArgs
         if (!auth.CanonicalArgs.TryGetValue("path", out var pathObj) || pathObj is null)
