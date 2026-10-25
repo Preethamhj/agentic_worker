@@ -32,7 +32,8 @@ public sealed record EvalExecutionContext(
     StepToken VerificationToken,
     object State,
     Func<CancellationToken, ValueTask<bool>> ExecutorPostcondition,
-    IReadOnlyList<string> ReportedPaths);
+    IReadOnlyList<string> ReportedPaths,
+    IEvalReminderPredicateReader? ReminderPredicateReader = null);
 
 public sealed record EvalVerdict(
     string VerifierId,
