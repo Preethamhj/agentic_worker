@@ -294,7 +294,8 @@ public sealed class VerificationEngine : IVerifier
                 authorization.StepId,
                 status,
                 JsonSerializer.Serialize(new { result.Stages, result.Reasons, result.SideEffects }),
-                _clock.UtcNow),
+                _clock.UtcNow,
+                authorization.TaskId),
             cancellationToken).ConfigureAwait(false);
 
         return result;

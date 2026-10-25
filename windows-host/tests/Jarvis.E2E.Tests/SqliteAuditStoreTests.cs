@@ -119,6 +119,34 @@ public class SqliteAuditStoreTests : IDisposable
     }
 
     [Fact]
+    public void SqliteAuditStore_Adds_TaskId_To_Legacy_Verifications_And_Keeps_Rows_Readable()
+    {
+        using (var connection = new SqliteConnection($"Data Source={_dbPath}"))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = @"
+                CREATE TABLE verifications (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    step_id TEXT NOT NULL,
+                    overall_status TEXT NOT NULL,
+                    summary TEXT,
+                    verified_at TEXT NOT NULL
+                );
+                INSERT INTO verifications (step_id, overall_status, summary, verified_at)
+                VALUES ('legacy-step', 'FAILED', 'legacy reason', '2026-01-01T00:00:00.0000000+00:00');";
+            command.ExecuteNonQuery();
+        }
+
+        using var store = new SqliteAuditStore(_dbPath);
+
+        var verification = store.GetVerifications().Should().ContainSingle().Which;
+        verification.StepId.Should().Be("legacy-step");
+        verification.OverallStatus.Should().Be("FAILED");
+        verification.TaskId.Should().BeNull();
+    }
+
+    [Fact]
     public async Task SqliteAuditStore_Persists_And_Retrieves_AuthorizationLifecycles()
     {
         using var store = new SqliteAuditStore(_dbPath);
@@ -151,7 +179,7 @@ public class SqliteAuditStoreTests : IDisposable
             await store.RecordExecutionAsync(new ExecutionAuditRecord("step-501-1", "auth-1", 0, true, "out", "", now, now.AddSeconds(1)));
 
             // 4. verifications: StepId, OverallStatus, Summary, VerifiedAt
-            await store.RecordVerificationAsync(new VerificationAuditRecord("step-501-1", "VERIFIED", "All checks matched", now));
+            await store.RecordVerificationAsync(new VerificationAuditRecord("step-501-1", "VERIFIED", "All checks matched", now, "task-501"));
 
             // 5. evidence: EvidenceId, StepId, Collector, CheckType, Match, CollectedAt, Nonce, RecordSha256
             await store.RecordEvidenceAsync(new EvidenceAuditRecord("ev-1", "step-501-1", "file_collector", "dir_exists", true, now, "nonce-ev", "sha256-hex"));

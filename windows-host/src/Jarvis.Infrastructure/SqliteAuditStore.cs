@@ -129,6 +129,7 @@ public sealed class SqliteAuditStore : IAuditStore, IDisposable
 
                 CREATE TABLE IF NOT EXISTS verifications (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id TEXT,
                     step_id TEXT NOT NULL,
                     overall_status TEXT NOT NULL,
                     summary TEXT,
@@ -177,6 +178,38 @@ public sealed class SqliteAuditStore : IAuditStore, IDisposable
                     VALUES (2, @appliedAt);";
                 migration.Parameters.AddWithValue("@appliedAt", DateTimeOffset.UtcNow.ToString("o"));
                 migration.ExecuteNonQuery();
+            }
+
+            using (var migration = connection.CreateCommand())
+            {
+                migration.CommandText = @"
+                    INSERT OR IGNORE INTO audit_migrations (version, applied_at)
+                    VALUES (3, @appliedAt);";
+                migration.Parameters.AddWithValue("@appliedAt", DateTimeOffset.UtcNow.ToString("o"));
+                migration.ExecuteNonQuery();
+            }
+
+            using var verificationColumns = connection.CreateCommand();
+            verificationColumns.CommandText = "PRAGMA table_info(verifications);";
+            using var verificationReader = verificationColumns.ExecuteReader();
+            var hasTaskId = false;
+            while (verificationReader.Read())
+            {
+                if (string.Equals(verificationReader.GetString(1), "task_id", StringComparison.OrdinalIgnoreCase))
+                    hasTaskId = true;
+            }
+            verificationReader.Close();
+            if (!hasTaskId)
+            {
+                using var migration = connection.CreateCommand();
+                migration.CommandText = "ALTER TABLE verifications ADD COLUMN task_id TEXT;";
+                migration.ExecuteNonQuery();
+            }
+
+            using (var verificationIndex = connection.CreateCommand())
+            {
+                verificationIndex.CommandText = "CREATE INDEX IF NOT EXISTS idx_verifications_task_id ON verifications(task_id);";
+                verificationIndex.ExecuteNonQuery();
             }
 
             using var evidenceColumns = connection.CreateCommand();
@@ -373,9 +406,10 @@ public sealed class SqliteAuditStore : IAuditStore, IDisposable
 
         using var cmd = connection.CreateCommand();
         cmd.CommandText = @"
-            INSERT INTO verifications (step_id, overall_status, summary, verified_at)
-            VALUES (@stepId, @overallStatus, @summary, @verifiedAt);
+            INSERT INTO verifications (task_id, step_id, overall_status, summary, verified_at)
+            VALUES (@taskId, @stepId, @overallStatus, @summary, @verifiedAt);
         ";
+        cmd.Parameters.AddWithValue("@taskId", (object?)record.TaskId ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@stepId", record.StepId);
         cmd.Parameters.AddWithValue("@overallStatus", record.OverallStatus);
         cmd.Parameters.AddWithValue("@summary", (object?)record.Summary ?? DBNull.Value);
@@ -658,8 +692,8 @@ public sealed class SqliteAuditStore : IAuditStore, IDisposable
 
         using var cmd = connection.CreateCommand();
         cmd.CommandText = stepId != null
-            ? "SELECT step_id, overall_status, summary, verified_at FROM verifications WHERE step_id = @stepId ORDER BY id ASC"
-            : "SELECT step_id, overall_status, summary, verified_at FROM verifications ORDER BY id ASC";
+            ? "SELECT step_id, overall_status, summary, verified_at, task_id FROM verifications WHERE step_id = @stepId ORDER BY id ASC"
+            : "SELECT step_id, overall_status, summary, verified_at, task_id FROM verifications ORDER BY id ASC";
 
         if (stepId != null) cmd.Parameters.AddWithValue("@stepId", stepId);
 
@@ -670,7 +704,8 @@ public sealed class SqliteAuditStore : IAuditStore, IDisposable
                 reader.GetString(0),
                 reader.GetString(1),
                 reader.IsDBNull(2) ? null : reader.GetString(2),
-                DateTimeOffset.Parse(reader.GetString(3))
+                DateTimeOffset.Parse(reader.GetString(3)),
+                reader.IsDBNull(4) ? null : reader.GetString(4)
             ));
         }
 

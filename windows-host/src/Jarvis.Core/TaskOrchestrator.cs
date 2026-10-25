@@ -193,7 +193,7 @@ public sealed class TaskOrchestrator
                             stateMachine.CurrentState,
                             receipts,
                             verifications,
-                            $"Verification returned ESCALATE: {reason}");
+                            $"Verification returned ESCALATE: {reason} (not verified).");
                     }
 
                     verification = await _verifier
@@ -210,8 +210,8 @@ public sealed class TaskOrchestrator
                 {
                     var reason = string.Join(" ", verification.Reasons);
                     var detail = string.IsNullOrWhiteSpace(reason) ? "not verified." : reason;
-                    stateMachine.Transition(TaskState.Failed, $"Verification status '{verification.Status}': {detail}");
-                    return new TaskOrchestratorResult(taskId, stateMachine.CurrentState, receipts, verifications, $"Verification returned {verification.Status}: {detail}");
+                    stateMachine.Transition(TaskState.Failed, $"Verification status '{verification.Status}': {detail} (not verified).");
+                    return new TaskOrchestratorResult(taskId, stateMachine.CurrentState, receipts, verifications, $"Verification returned {verification.Status}: {detail} (not verified).");
                 }
             }
 

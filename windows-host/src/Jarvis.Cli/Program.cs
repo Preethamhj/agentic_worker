@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using System.Security.Principal;
+using System.Text;
 using System.Text.Json;
 using Jarvis.Contracts;
 using Jarvis.Core;
@@ -169,39 +170,47 @@ public static class Program
         var result = await orchestrator.RunTaskAsync(text);
         await apiClient.SendReportAsync(CreateReport(sessionId, result)).ConfigureAwait(false);
 
-        Console.WriteLine();
-        Console.WriteLine("============================================================");
-        Console.WriteLine("                     TASK SUMMARY");
-        Console.WriteLine("============================================================");
-        Console.WriteLine($"Task ID:     {result.TaskId}");
-        Console.WriteLine($"Final State: {result.FinalState} (Terminal)");
-        Console.WriteLine($"Status:      {result.StatusMessage}");
+        Console.Write(RenderTaskSummary(result));
+
+        if (result.FinalState != TaskState.Completed)
+        {
+            return 1;
+        }
+
+        return 0;
+    }
+
+    /// <summary>Formats the final task state and independent evidence reasons for CLI output.</summary>
+    public static string RenderTaskSummary(TaskOrchestratorResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        var output = new StringBuilder();
+        output.AppendLine();
+        output.AppendLine("============================================================");
+        output.AppendLine("                     TASK SUMMARY");
+        output.AppendLine("============================================================");
+        output.AppendLine($"Task ID:     {result.TaskId}");
+        output.AppendLine($"Final State: {result.FinalState} (Terminal)");
+        output.AppendLine($"[STATUS] {result.FinalState.ToString().ToUpperInvariant()} - {result.StatusMessage}");
 
         foreach (var receipt in result.Receipts)
         {
-            Console.WriteLine($"[Receipt] Step: {receipt.StepId}, ExitCode: {receipt.ExitCode}, Success: {receipt.ReportedSuccess}");
-            if (!string.IsNullOrEmpty(receipt.Stdout)) Console.WriteLine($"  Stdout: {receipt.Stdout}");
-            if (!string.IsNullOrEmpty(receipt.Stderr)) Console.WriteLine($"  Stderr: {receipt.Stderr}");
+            output.AppendLine($"[Receipt] Step: {receipt.StepId}, ExitCode: {receipt.ExitCode}, Success: {receipt.ReportedSuccess}");
+            if (!string.IsNullOrEmpty(receipt.Stdout)) output.AppendLine($"  Stdout: {receipt.Stdout}");
+            if (!string.IsNullOrEmpty(receipt.Stderr)) output.AppendLine($"  Stderr: {receipt.Stderr}");
         }
 
         foreach (var verification in result.VerificationResults)
         {
-            Console.WriteLine($"[Verification] Step: {verification.StepId}, Status: {verification.Status}");
+            output.AppendLine($"[Verification] Step: {verification.StepId}, Status: {verification.Status}");
+            foreach (var stage in verification.Stages)
+                output.AppendLine($"[Check] {stage.Name}: {stage.Outcome} - {stage.Detail}");
+            foreach (var reason in verification.Reasons)
+                output.AppendLine($"[Reason] {reason}");
         }
 
-        Console.WriteLine("============================================================");
-
-        if (result.FinalState != TaskState.Completed)
-        {
-            Console.ForegroundColor = ConsoleColor.Yellow;
-            Console.WriteLine($"[STATUS] Result: not completed ({result.FinalState}); independent verification did not return VERIFIED.");
-            Console.ResetColor();
-            return 1;
-        }
-
-        Console.WriteLine("[STATUS] Result: completed after independent verification.");
-
-        return 0;
+        output.AppendLine("============================================================");
+        return output.ToString();
     }
 
     /// <summary>Creates the host's independent verifier from its authorization and audit services.</summary>
@@ -254,6 +263,7 @@ public static class Program
         var policyValidations = auditStore.GetPolicyValidations();
         var approvalDecisions = auditStore.GetApprovalDecisions();
         var legacySafetyDecisions = auditStore.GetSafetyDecisions();
+        var verifications = auditStore.GetVerifications();
 
         Console.WriteLine("============================================================");
         Console.WriteLine("                   TASK AUDIT HISTORY");
@@ -261,6 +271,7 @@ public static class Program
         Console.WriteLine($"Total State Transitions Recorded: {transitions.Count}");
         Console.WriteLine($"Total Policy Validations Recorded: {policyValidations.Count}");
         Console.WriteLine($"Total Approval Decisions Recorded: {approvalDecisions.Count}");
+        Console.WriteLine($"Total Verification Events Recorded: {verifications.Count}");
         Console.WriteLine($"Legacy Combined Safety Decisions:   {legacySafetyDecisions.Count}");
         Console.WriteLine();
 
@@ -284,6 +295,8 @@ public static class Program
             Console.WriteLine($"  [{approval.Timestamp:yyyy-MM-dd HH:mm:ss}] {approval.TaskId,-14} Step: {approval.StepId} Approved: {approval.Approved} Approver: {approval.Approver} ({approval.Reason ?? "none"})");
         }
 
+        Console.Write(RenderVerificationHistory(verifications, approvalDecisions));
+
         if (legacySafetyDecisions.Count > 0)
         {
             Console.WriteLine();
@@ -294,6 +307,29 @@ public static class Program
         Console.WriteLine("============================================================");
 
         return Task.FromResult(0);
+    }
+
+    /// <summary>Formats verification events with their matching Phase 3b approval identity.</summary>
+    public static string RenderVerificationHistory(
+        IReadOnlyList<VerificationAuditRecord> verifications,
+        IReadOnlyList<ApprovalDecisionRecord> approvals)
+    {
+        ArgumentNullException.ThrowIfNull(verifications);
+        ArgumentNullException.ThrowIfNull(approvals);
+        var output = new StringBuilder();
+        output.AppendLine();
+        output.AppendLine("Recent Verification Events:");
+        foreach (var verification in verifications.TakeLast(10))
+        {
+            var approval = verification.TaskId is null
+                ? null
+                : approvals.LastOrDefault(candidate =>
+                    string.Equals(candidate.TaskId, verification.TaskId, StringComparison.Ordinal)
+                    && string.Equals(candidate.StepId, verification.StepId, StringComparison.Ordinal));
+            output.AppendLine(
+                $"  [{verification.VerifiedAt:yyyy-MM-dd HH:mm:ss}] {verification.TaskId ?? "legacy"} Step: {verification.StepId} Verification {verification.OverallStatus} Approver: {approval?.Approver ?? "unknown"} ({verification.Summary ?? "none"})");
+        }
+        return output.ToString();
     }
 
     public static async Task<int> DoctorCommandAsync()

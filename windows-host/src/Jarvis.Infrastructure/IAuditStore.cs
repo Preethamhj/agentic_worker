@@ -108,7 +108,8 @@ public sealed record VerificationAuditRecord(
     string StepId,
     string OverallStatus,
     string? Summary,
-    DateTimeOffset VerifiedAt
+    DateTimeOffset VerifiedAt,
+    string? TaskId = null
 );
 
 /// <summary>
