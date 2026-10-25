@@ -16,5 +16,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Jarvis.Cli\Jarvis.Cli.csproj" />
+    <ProjectReference Include="..\..\src\Jarvis.Eval\Jarvis.Eval.csproj" />
   </ItemGroup>
 </Project>
