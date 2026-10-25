@@ -8,6 +8,7 @@ using Jarvis.Core;
 using Jarvis.Infrastructure;
 using Jarvis.Safety;
 using Jarvis.Tools;
+using Jarvis.Verification;
 using System.Windows.Forms;
 
 namespace Jarvis.Cli;
@@ -143,7 +144,8 @@ public static class Program
 
         var stepExecutor = new StepExecutor(authService, executors, toolPolicy);
         var approvalHandler = new ConsoleApprovalHandler();
-        var stubVerifier = new StubVerifier();
+        var verifier = CreateVerifier(authService, auditStore);
+        var escalationHandler = new ConsoleEscalationHandler();
 
         // 5. Setup ApiClient and Planner
         using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(95) };
@@ -158,8 +160,9 @@ public static class Program
             approvalHandler,
             queue,
             stepExecutor,
-            stubVerifier,
-            auditStore);
+            verifier,
+            auditStore,
+            escalationHandler: escalationHandler);
 
         // 7. Run Orchestrator
         var result = await orchestrator.RunTaskAsync(text);
@@ -186,21 +189,22 @@ public static class Program
 
         Console.WriteLine("============================================================");
 
-        // Invariant: StubVerifier always returns ESCALATE, so print "not verified" and never "completed"
-        if (result.FinalState == TaskState.Completed)
+        if (result.FinalState != TaskState.Completed)
         {
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine("[INVARIANT VIOLATION] Task completed without independent verification!");
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine($"[STATUS] Result: not completed ({result.FinalState}); independent verification did not return VERIFIED.");
             Console.ResetColor();
             return 1;
         }
 
-        Console.ForegroundColor = ConsoleColor.Yellow;
-        Console.WriteLine("[STATUS] Result: not verified (Phase 2b StubVerifier requires escalation)");
-        Console.ResetColor();
+        Console.WriteLine("[STATUS] Result: completed after independent verification.");
 
         return 0;
     }
+
+    /// <summary>Creates the host's independent verifier from its authorization and audit services.</summary>
+    public static IVerifier CreateVerifier(IAuthorizationVerifier authorizationVerifier, IAuditStore auditStore) =>
+        new VerificationEngine(authorizationVerifier, auditStore);
 
     public static Task<int> HistoryCommandAsync()
     {

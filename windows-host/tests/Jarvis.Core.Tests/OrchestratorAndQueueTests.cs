@@ -195,6 +195,19 @@ public class OrchestratorAndQueueTests
     }
 
     [Fact]
+    public async Task TaskOrchestrator_Fails_When_Verifier_Returns_Failed()
+    {
+        var verifier = new SequenceVerifier("FAILED");
+        var orchestrator = CreateTestOrchestrator(verifier);
+
+        var result = await orchestrator.RunTaskAsync("create a test file");
+
+        result.FinalState.Should().Be(TaskState.Failed);
+        result.FinalState.Should().NotBe(TaskState.Completed);
+        result.StatusMessage.Should().Contain("Required evidence check failed.");
+    }
+
+    [Fact]
     public async Task TaskOrchestrator_Reaches_Terminal_Failed_When_Safety_Rejects()
     {
         var stubVerifier = new StubVerifier();
@@ -435,7 +448,15 @@ public class OrchestratorAndQueueTests
                 new List<VerificationStageResultDto>(),
                 new List<EvidenceDto>(),
                 new List<string>(),
-                new List<string> { status == "ESCALATE" ? "Evidence is inconclusive." : "Evidence verified." },
+                new List<string>
+                {
+                    status switch
+                    {
+                        "ESCALATE" => "Evidence is inconclusive.",
+                        "FAILED" => "Required evidence check failed.",
+                        _ => "Evidence verified."
+                    }
+                },
                 0));
         }
     }
