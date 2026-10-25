@@ -8,12 +8,20 @@ using Jarvis.Safety;
 using Jarvis.Tools;
 using Microsoft.Win32.TaskScheduler;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Jarvis.Verification.Tests;
 
 [Trait("Category", "RealScheduler")]
 public sealed class RealTaskSchedulerTests
 {
+    private readonly ITestOutputHelper _output;
+
+    public RealTaskSchedulerTests(ITestOutputHelper output)
+    {
+        _output = output;
+    }
+
     [RealSchedulerFact]
     public void Registered_Task_Xml_Matches_Every_Signed_Scheduler_Setting()
     {
@@ -21,6 +29,15 @@ public sealed class RealTaskSchedulerTests
         Directory.CreateDirectory(dataDirectory);
         var dataLocation = new FixedReminderDataLocation(dataDirectory);
         var clock = new FixedClock();
+        var scheduledTime = clock.UtcNow.AddMinutes(30);
+        var scheduledAt = new DateTimeOffset(
+            scheduledTime.Year,
+            scheduledTime.Month,
+            scheduledTime.Day,
+            scheduledTime.Hour,
+            scheduledTime.Minute,
+            scheduledTime.Second,
+            scheduledTime.Offset);
         var hostPath = Path.GetFullPath(Environment.ProcessPath
             ?? throw new InvalidOperationException("The test host process path is unavailable."));
         var service = new AuthorizationService(
@@ -37,7 +54,7 @@ public sealed class RealTaskSchedulerTests
             new Dictionary<string, object?>
             {
                 ["task_name"] = "Real scheduler contract test",
-                ["time_iso"] = clock.UtcNow.AddMinutes(30).ToString("O", CultureInfo.InvariantCulture),
+                ["time_iso"] = scheduledAt.ToString("O", CultureInfo.InvariantCulture),
                 ["message"] = "This task must not fire during the test."
             });
         var taskPath = (string)record.Expected["task_path"]!;
@@ -59,7 +76,10 @@ public sealed class RealTaskSchedulerTests
             using var taskService = new TaskService();
             using var task = taskService.GetTask(taskPath);
             task.Should().NotBeNull();
-            var xml = XDocument.Parse(task!.Xml);
+            var taskXml = task!.Xml;
+            _output.WriteLine("Registered Task Scheduler XML:");
+            _output.WriteLine(taskXml);
+            var xml = XDocument.Parse(taskXml);
             XNamespace ns = "http://schemas.microsoft.com/windows/2004/02/mit/task";
             var expected = record.Expected;
             var taskName = (string)expected["scheduler_task_name"]!;
@@ -86,7 +106,8 @@ public sealed class RealTaskSchedulerTests
                 ((bool)expected["start_when_available"]!).ToString().ToLowerInvariant());
             Element(xml, ns, "MultipleInstancesPolicy").Value.Should().Be((string)expected["multiple_instances_policy"]!);
             Element(xml, ns, "LogonType").Value.Should().Be((string)expected["logon_type"]!);
-            Element(xml, ns, "RunLevel").Value.Should().Be((string)expected["run_level"]!);
+            var runLevel = xml.Descendants(ns + "RunLevel").SingleOrDefault()?.Value ?? "LeastPrivilege";
+            runLevel.Should().Be((string)expected["run_level"]!);
             Element(xml, ns, "DeleteExpiredTaskAfter").Value.Should().Be(
                 XmlConvert.ToString(TimeSpan.FromSeconds((int)expected["delete_expired_task_after_seconds"]!)));
         }

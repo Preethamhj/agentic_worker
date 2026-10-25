@@ -647,7 +647,7 @@ public sealed class Phase3bVerificationTests : IDisposable
         try
         {
             scheduler.Register(new ReminderTaskRegistration(
-                authorization.AuthId,
+                (string)authorization.Expected["scheduler_task_name"]!,
                 authorizedTaskPath,
                 (string)authorization.Expected["action_path"]!,
                 ExpectedReminderArguments(authorization),
@@ -655,14 +655,13 @@ public sealed class Phase3bVerificationTests : IDisposable
                 scheduledTime,
                 "authorized reminder"));
             authorizedRegistered = true;
-            scheduler.Register(new ReminderTaskRegistration(
-                extraTaskPath[(extraTaskPath.LastIndexOf('\\') + 1)..],
-                extraTaskPath,
+            RegisterRawTask(
+                authorization,
+                scheduledTime,
                 (string)authorization.Expected["action_path"]!,
                 $"--jarvis-reminder {Guid.NewGuid():N}",
-                AppContext.BaseDirectory,
-                scheduledTime,
-                "unauthorized reminder"));
+                enabled: true,
+                taskPathOverride: extraTaskPath);
             extraRegistered = true;
 
             var result = await VerifyReminder(authorization, token);
@@ -1105,11 +1104,12 @@ public sealed class Phase3bVerificationTests : IDisposable
         DateTimeOffset scheduledAt,
         string actionPath,
         string arguments,
-        bool enabled)
+        bool enabled,
+        string? taskPathOverride = null)
     {
         var userSid = WindowsIdentity.GetCurrent().User?.Value
             ?? throw new InvalidOperationException("Current user SID is unavailable.");
-        var taskPath = (string)authorization.Expected["task_path"]!;
+        var taskPath = taskPathOverride ?? (string)authorization.Expected["task_path"]!;
         var taskName = taskPath[(taskPath.LastIndexOf('\\') + 1)..];
         using var service = new TaskService();
         TaskFolder folder;
