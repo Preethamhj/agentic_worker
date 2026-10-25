@@ -98,6 +98,13 @@ public sealed class EvalVerifierTests
         string expectedStatus)
     {
         using var scenario = await CreateEngineScenarioAsync(content, deleteAfterCreate, faultId);
+        if (faultId != "F0")
+            scenario.FaultGroundTruth.Should().Be(EvalGroundTruth.Bad);
+        var targetPath = (string)scenario.Execution.Authorization.CanonicalArgs["path"]!;
+        if (faultId is "F1" or "F6")
+            File.Exists(targetPath).Should().BeFalse();
+        if (faultId == "F2")
+            File.ReadAllBytes(targetPath).Should().NotEqual(Encoding.UTF8.GetBytes("expected"));
         var verifier = new VerificationEngineEvalVerifier(scenario.Engine);
 
         var result = await verifier.VerifyAsync(CreateCase(faultId), scenario.Execution);
@@ -174,6 +181,31 @@ public sealed class EvalVerifierTests
 
         var result = await new VerificationEngineEvalVerifier(scenario.Engine)
             .VerifyAsync(CreateCase(faultId), scenario.Execution);
+        result.Status.Should().Be(EvalStatus.Failed);
+    }
+
+    [Theory]
+    [InlineData("F7")]
+    [InlineData("F8")]
+    public async Task Real_Search_Fault_Injector_Changes_The_Executor_Reported_Paths(string faultId)
+    {
+        using var scenario = await CreateSearchScenarioAsync(faultId);
+        var reported = System.Text.Json.JsonSerializer.Deserialize<string[]>(scenario.Execution.Receipt.Stdout)!;
+
+        scenario.FaultGroundTruth.Should().Be(EvalGroundTruth.Bad);
+        if (faultId == "F7")
+        {
+            reported.Should().BeEmpty();
+            File.Exists(Path.Combine((string)scenario.Execution.Authorization.CanonicalArgs["root_path"]!, "match.txt"))
+                .Should().BeTrue();
+        }
+        else
+        {
+            reported.Should().Contain(path => !File.Exists(path));
+        }
+
+        var result = await new VerificationEngineEvalVerifier(scenario.Engine)
+            .VerifyAsync(CreateCase(faultId) with { ToolId = "fs.search_files" }, scenario.Execution);
         result.Status.Should().Be(EvalStatus.Failed);
     }
 
@@ -268,6 +300,57 @@ public sealed class EvalVerifierTests
             execution,
             expectedReasons,
             executor is EvalFaultInjectingExecutor faultInjector ? faultInjector.GroundTruth : EvalGroundTruth.Good);
+    }
+
+    private static async Task<EngineScenario> CreateSearchScenarioAsync(string faultId)
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"jarvis-eval-search-{Guid.NewGuid():N}");
+        var searchRoot = Path.Combine(root, "search");
+        Directory.CreateDirectory(searchRoot);
+        await File.WriteAllTextAsync(Path.Combine(searchRoot, "match.txt"), "search fixture");
+        var auditPath = Path.Combine(Path.GetTempPath(), $"jarvis-eval-audit-{Guid.NewGuid():N}.db");
+        var auditStore = new SqliteAuditStore(auditPath);
+        var authService = new AuthorizationService(
+            new InMemoryDpapiKeyStore(),
+            SystemClock.Instance,
+            auditStore,
+            new EvalHostPathProvider(Path.Combine(root, "Jarvis.Cli.exe")));
+        var policy = LoadToolPolicy();
+        var executor = new SearchFilesExecutor(new PathPolicy([root]), authService);
+        var stepExecutor = new StepExecutor(
+            authService,
+            [new EvalFaultInjectingExecutor(executor, faultId, Path.Combine(root, "extra.txt"))],
+            policy);
+        var arguments = new Dictionary<string, object?>
+        {
+            ["root_path"] = searchRoot,
+            ["pattern"] = "*.txt",
+            ["max_depth"] = 5,
+            ["max_results"] = 100
+        };
+        var authorization = stepExecutor.PrepareAuthorization(
+            "task-1", "step-1", "fs.search_files", arguments, "low");
+        var engine = new VerificationEngine(authService, auditStore);
+        var token = await engine.BeginStepAsync(authorization);
+        var startedAt = DateTimeOffset.UtcNow;
+        var receipt = await stepExecutor.ExecuteStepAsync(authorization);
+        var completedAt = DateTimeOffset.UtcNow;
+        var executionContext = new EvalExecutionContext(
+            authorization,
+            receipt,
+            new ExecutionObservation(startedAt, completedAt),
+            token,
+            root,
+            _ => ValueTask.FromResult(true),
+            System.Text.Json.JsonSerializer.Deserialize<string[]>(receipt.Stdout) ?? []);
+        return new EngineScenario(
+            root,
+            auditPath,
+            auditStore,
+            engine,
+            executionContext,
+            ["Search"],
+            EvalGroundTruth.Bad);
     }
 
     private static AuthorizationRecordDto CreateAuthorization(string root, string path, string content)
