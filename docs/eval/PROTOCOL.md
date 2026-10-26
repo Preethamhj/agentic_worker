@@ -102,3 +102,7 @@ The following expectations are derived from the verifier definitions above, befo
 | F18 (D-only diagnostic) | V | V | V | F |
 
 For B, the expectation follows the executor postcondition's own state check: faults that invalidate that postcondition are expected to fail, while unauthorized side effects and changes outside that check remain VERIFIED. For C, the outside-scope faults are expected to remain VERIFIED by definition. Any later deviation from this table is reported as a finding, not silently normalized.
+
+## AMENDMENT 2 (2026-10-26, pre-results clarification)
+
+The threat statement in Amendment 1 is clarified to include F18: C structurally cannot observe F5, F11, F15, F17, or F18. F17 denotes both F17a and F17b. This clarification records the requested scope split without changing the protocol definitions or expected verdicts.

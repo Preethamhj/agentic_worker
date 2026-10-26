@@ -16,6 +16,7 @@ Branch: `phase-5`, based on `5b68602` (`phase-3c-done`).
 - V1: no production change; existing real-lifecycle tests cover tampered signature, post-signing Expected mutation, and F0 control; focused Release test invocation failed in MSBuild with 0 warnings/errors and no diagnostic error output.
 - V2: not implemented; current CLI remains catalogue-only and no end-to-end sandbox/raw-row runner was added.
 - V3: uncommitted; added `eval/analyze.py` and synthetic tests; Python environment configuration hung before pytest/ruff/mypy could run.
+- W0: `Engine_Verifier_Rejects_Tampered_Signed_Authorization`, `Engine_Verifier_Uses_Real_VerificationEngine_For_Control_And_File_Faults`, and `Control_Gives_Verified_For_All_Four_Verifiers` passed (7 total, 0 failed, 0 skipped); eval pytest 3 passed, ruff clean, mypy clean; added Amendment 2 clarifying F18 scope and ignored generated egg-info.
 
 ## Scope still outstanding
 
