@@ -22,6 +22,7 @@ Branch: `phase-5`, based on `5b68602` (`phase-3c-done`).
 - W3: folder smoke produced 49 rows and search smoke 41 rows; real folder F4/F5/F6 and search F7/F8 runner paths built successfully; focused eval tests passed 36/36.
 - X1: diagnosed the prior F0 D escalation three times; all returned VERIFIED with stages 1–6, 9, and 10 passing; classified as harness construction difference and fixed only Jarvis.Eval by using InMemoryAuditStore.
 - X2: file/folder/search smoke completed with 64/48/40 verdict rows; all D F0 controls were VERIFIED; recorded and fixed an eval-only C search-control context defect.
+- X2 dev-run-2: completed with 769 rows and 384 distinct collapsed rows; summary starts with control verdicts per verifier, all 12 controls VERIFIED for A/B/C/D; README marks it development-only and preserves dev-run-1.
 
 ## Scope still outstanding
 
