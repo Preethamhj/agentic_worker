@@ -33,7 +33,7 @@ Branch: `phase-5`, based on `5b68602` (`phase-3c-done`).
 - Y2: analysis now parses the frozen pre-registration table, puts control verdicts first, reports false-success/false-failure rates, deviations, D-not-better cases, and instability; eval tests 8 passed, ruff and strict mypy passed.
 - Y3: app injector now uses tracked Process objects, StartTime comparisons, and harmless `ping.exe` mutations for F9/F11; Release Eval build and focused E2E tests passed 36/36. Elevated app smoke passed, but D falsely returned VERIFIED on both BAD F11 cases; recorded in FINDINGS.md and did not weaken D.
 - Y4: file, folder, and search smoke runs passed; the first search smoke exposed and the Eval-only runner fixed an empty F1 receipt deserialization bug. The combined app development batch was interrupted after app smoke exceeded the practical run window; partial dev-run-3 output and logs were retained, and dev-run-1/dev-run-2 are marked superseded.
-- Y5: Amendment 4 and the single authorized `InternalsVisibleTo("Jarvis.Eval")` declaration were added; the fake scheduler, reminder mutations, and real-format collector integration remain unfinished.
+- Y5: completed the fake scheduler and reminder mutations F0/F1/F12-F17b through the production XML collector; fake reminder smoke produced D=VERIFIED for both F0 controls and D=FAILED for every BAD fault. Added `--scheduler fake|real`; real mode is guarded and was not run.
 
 ## How CI maps to local commands
 

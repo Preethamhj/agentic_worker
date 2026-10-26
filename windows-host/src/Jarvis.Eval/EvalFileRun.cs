@@ -17,6 +17,7 @@ public sealed class EvalFileRunOptions
     public bool Smoke { get; init; }
     public string OutputDirectory { get; init; } = Path.Combine(Environment.CurrentDirectory, "eval-output");
     public string? ToolFilter { get; init; }
+    public string Scheduler { get; init; } = "fake";
 }
 
 public sealed class EvalFileRunner
@@ -25,6 +26,14 @@ public sealed class EvalFileRunner
 
     public async Task<int> RunAsync(EvalFileRunOptions options, CancellationToken cancellationToken = default)
     {
+        if (!string.Equals(options.Scheduler, "fake", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(options.Scheduler, "real", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("Scheduler must be fake or real.", nameof(options));
+        if (string.Equals(options.Scheduler, "real", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(Environment.GetEnvironmentVariable("JARVIS_REAL_SCHEDULER"), "1", StringComparison.Ordinal))
+            throw new InvalidOperationException("Real scheduler evaluation requires JARVIS_REAL_SCHEDULER=1.");
+        if (string.Equals(options.Scheduler, "real", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Real scheduler evaluation is intentionally disabled for this development session.");
         var runId = $"{DateTimeOffset.UtcNow:yyyyMMddTHHmmssfffZ}-{Guid.NewGuid():N}";
         var sandbox = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -156,20 +165,28 @@ public sealed class EvalFileRunner
         Directory.CreateDirectory(root);
         var auditStore = new InMemoryAuditStore();
         var keyStore = new InMemoryDpapiKeyStore();
+        var reminderLocation = new EvalReminderDataLocation(Path.Combine(root, "reminders"));
+        var reminderStore = new ReminderDataFileStore(reminderLocation);
         var authService = new AuthorizationService(
             keyStore, SystemClock.Instance, auditStore,
-            new EvalHostPathProvider(Path.Combine(root, "Jarvis.Eval.exe")));
+            new EvalHostPathProvider(Path.Combine(root, "Jarvis.Cli.exe")),
+            reminderLocation);
         var policy = LoadToolPolicy();
         var target = Path.Combine(root, evalCase.ToolId == "fs.create_folder" ? "folder" : evalCase.TaskId + ".txt");
+        EvalFakeReminderScheduler? fakeScheduler = evalCase.ToolId == "task.schedule_reminder"
+            ? new EvalFakeReminderScheduler(evalCase.FaultId, reminderStore.BaseDirectory, evalCase.TaskId)
+            : null;
         IToolExecutor inner = evalCase.ToolId switch
         {
             "fs.create_file" => new CreateFileExecutor(new PathPolicy([root]), authService),
             "fs.create_folder" => new CreateFolderExecutor(new PathPolicy([root]), authService),
             "fs.search_files" => new SearchFilesExecutor(new PathPolicy([root]), authService),
             "app.launch" => new AppLaunchExecutor(policy, authService, new WindowsElevationChecker()),
+            "task.schedule_reminder" => new TaskScheduleReminderExecutor(authService, fakeScheduler!, dataFileStore: reminderStore, hostPathProvider: new EvalHostPathProvider(Path.Combine(root, "Jarvis.Cli.exe"))),
             _ => throw new ArgumentException($"Unsupported W1-W3 tool '{evalCase.ToolId}'.", nameof(evalCase))
         };
-        IToolExecutor executor = (evalCase.ToolId == "app.launch" && evalCase.FaultId != "F18") || (evalCase.FaultId == "F0" || evalCase.FaultId == "F18")
+        IToolExecutor executor = evalCase.ToolId == "task.schedule_reminder"
+            || (evalCase.ToolId == "app.launch" && evalCase.FaultId != "F18") || (evalCase.FaultId == "F0" || evalCase.FaultId == "F18")
             ? inner
             : new EvalFaultInjectingExecutor(inner, evalCase.FaultId, Path.Combine(root, "unauthorized-extra.txt"), process => _startedProcesses.Add((process, process.StartTime)));
         if (evalCase.ToolId == "app.launch" && evalCase.FaultId != "F18")
@@ -187,6 +204,7 @@ public sealed class EvalFileRunner
                 ["max_results"] = 100
             },
             "app.launch" => new Dictionary<string, object?> { ["app_id"] = "notepad" },
+            "task.schedule_reminder" => new Dictionary<string, object?> { ["task_name"] = $"Evaluation reminder {evalCase.TaskId}", ["time_iso"] = ReminderTime().ToString("O"), ["message"] = $"Evaluation reminder {evalCase.TaskId}" },
             _ => throw new ArgumentException($"Unsupported W1-W3 tool '{evalCase.ToolId}'.", nameof(evalCase))
         };
         if (evalCase.ToolId == "fs.search_files")
@@ -196,7 +214,9 @@ public sealed class EvalFileRunner
         }
         var authorization = stepExecutor.PrepareAuthorization(
             evalCase.TaskId, "step-1", evalCase.ToolId, args, "low", "auto-low");
-        var engine = new VerificationEngine(authService, auditStore);
+        var engine = fakeScheduler is null
+            ? new VerificationEngine(authService, auditStore)
+            : new VerificationEngine(authService, auditStore, SystemClock.Instance, 10_000, null, null, fakeScheduler);
         var token = await engine.BeginStepAsync(authorization, cancellationToken).ConfigureAwait(false);
         var startedAt = DateTimeOffset.UtcNow;
         var receipt = await stepExecutor.ExecuteStepAsync(authorization, cancellationToken).ConfigureAwait(false);
@@ -214,7 +234,8 @@ public sealed class EvalFileRunner
                 ? (string.IsNullOrWhiteSpace(receipt.Stdout)
                     ? []
                     : JsonSerializer.Deserialize<string[]>(receipt.Stdout) ?? [])
-                : []);
+                : [],
+            fakeScheduler);
         var verifiers = new IEvalVerifier[]
         {
             new ReceiptEvalVerifier(),
@@ -237,6 +258,12 @@ public sealed class EvalFileRunner
         return ToolPolicy.FromFile(
             Path.Combine(directory.FullName, "config", "tools.registry.json"),
             Path.Combine(directory.FullName, "config", "apps.allowlist.json"));
+    }
+
+    private static DateTimeOffset ReminderTime()
+    {
+        var now = DateTimeOffset.UtcNow.AddHours(1);
+        return new DateTimeOffset(now.Year, now.Month, now.Day, now.Hour, now.Minute, now.Second, TimeSpan.Zero);
     }
 
     private sealed class EvalHostPathProvider(string path) : IHostPathProvider

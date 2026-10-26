@@ -41,6 +41,7 @@ public static class Program
         var output = Path.Combine(Environment.CurrentDirectory, "eval-output");
         string? tool = null;
         var smoke = false;
+        var scheduler = "fake";
         for (var index = 0; index < args.Length; index++)
         {
             switch (args[index])
@@ -50,8 +51,9 @@ public static class Program
                 case "--tools": tool = args[++index]; break;
                 case "--out": output = Path.GetFullPath(args[++index]); break;
                 case "--smoke": smoke = true; break;
+                case "--scheduler": scheduler = args[++index]; break;
             }
         }
-        return new EvalFileRunOptions { Seed = seed, Repetitions = reps, ToolFilter = tool, OutputDirectory = output, Smoke = smoke };
+        return new EvalFileRunOptions { Seed = seed, Repetitions = reps, ToolFilter = tool, OutputDirectory = output, Smoke = smoke, Scheduler = scheduler };
     }
 }
