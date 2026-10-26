@@ -118,3 +118,7 @@ The threat statement in Amendment 1 is clarified to include F18: C structurally 
 
 (e) The paper run is authorized only from the final development commit intended to be tagged `eval-paper-v1`, after all development findings are resolved; no code change is allowed after that point. The close-out instructions prohibit creating the tag in this session, so the tag remains a release prerequisite rather than an action performed here.
 
+## AMENDMENT 4 (2026-10-26, fake scheduler access)
+
+The evaluation assembly may access the production verification scheduler evidence collector internals solely to feed REAL-format fake task XML through the production parser. This authorizes the single corresponding friend-assembly declaration; no other production change is authorized by this amendment.
+
