@@ -28,6 +28,12 @@ Branch: `phase-5`, based on `5b68602` (`phase-3c-done`).
 - X5: added eval Python gates to check-all and CI, expanded Wilson/collapse tests, and sanitized sandbox paths in raw verdict reasons; close-out validation remains to run.
 - X5 gates: eval pytest 5 passed, ruff clean, mypy clean, Eval Release build passed, focused Eval tests 36 passed; raw result path scan found no absolute user paths.
 - X5 close-out: full Release solution build passed; non-real-scheduler solution tests passed 416/416; ai-server plus eval pytest passed 131 tests; mypy and dotnet format verification passed; check-all and CI were not run because check-all enables real-scheduler tests.
+- Y0: reproduced the evaluation Python gate locally (pytest 5 passed, ruff clean, mypy clean); CI maps to `scripts/check-all.ps1` from the repository root, with its eval gate equivalent to `ai-server\\.venv\\Scripts\\python.exe -m pytest eval/tests`, `ruff.exe check eval`, and `mypy.exe --strict --explicit-package-bases eval`.
+- Y1: appended Amendment 3 documenting the dev-run-1 audit-root false failure, the C search-path correction, the frozen B/F6 pre-registration deviation, the pending F9 fidelity fix, and the no-tag release prerequisite.
+
+## How CI maps to local commands
+
+From the repository root, CI runs `scripts/setup-windows.ps1 -SkipOllamaPull -SkipOllamaCheck`, displays the locked `ollama` and `httpx` packages, runs `scripts/check-all.ps1`, then repeats the eval gate with the venv executables. The Y0 reproduction ran the eval commands in that order and each exited 0; the dry-run clean check showed only ignored caches, the venv, egg-info, and Python bytecode under `eval`/`ai-server`, none of which were removed.
 
 ## Scope still outstanding
 

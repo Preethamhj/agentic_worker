@@ -106,3 +106,15 @@ For B, the expectation follows the executor postcondition's own state check: fau
 ## AMENDMENT 2 (2026-10-26, pre-results clarification)
 
 The threat statement in Amendment 1 is clarified to include F18: C structurally cannot observe F5, F11, F15, F17, or F18. F17 denotes both F17a and F17b. This clarification records the requested scope split without changing the protocol definitions or expected verdicts.
+## AMENDMENT 3 (2026-10-26, development findings, before the paper run)
+
+(a) Development run 1 is invalid for verifier D: the harness placed the SQLite `audit.db` inside the watched snapshot root, causing `ESCALATE` on GOOD controls. D's F0 detection count of 12/12 in development run 1 is therefore a false-failure rate, and D's F5 “detection” in that run was a snapshot failure. This was fixed in commit `8a67031` by using the in-memory audit store used by the Phase 3c tests.
+
+(b) Baseline C was given an empty reported-path list for search controls. This was fixed in commit `c2c3dc5`.
+
+(c) PRE-REGISTRATION DEVIATION: the frozen expected-verdict table predicts B=`VERIFIED` on F6, but B as implemented re-reads the filesystem at verification time and returns `FAILED`. The table is not edited. B remains as implemented because this is the conservative, stronger baseline; all analyses report B/F6 as a deviation from pre-registration.
+
+(d) F9 is not yet faithful until the commit that fixes it in Y3.
+
+(e) The paper run is authorized only from the final development commit intended to be tagged `eval-paper-v1`, after all development findings are resolved; no code change is allowed after that point. The close-out instructions prohibit creating the tag in this session, so the tag remains a release prerequisite rather than an action performed here.
+
