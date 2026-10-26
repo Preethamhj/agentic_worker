@@ -6,6 +6,26 @@ namespace Jarvis.E2E.Tests;
 
 public sealed class EvalFaultInjectorTests
 {
+    [Fact] public void Folder_F1_Real_State_And_Ground_Truth() => AssertDeclaredFault("F1", "fs.create_folder");
+    [Fact] public void Folder_F4_Real_State_And_Ground_Truth() => AssertDeclaredFault("F4", "fs.create_folder");
+    [Fact] public void Folder_F5_Real_State_And_Ground_Truth() => AssertDeclaredFault("F5", "fs.create_folder");
+    [Fact] public void Folder_F6_Real_State_And_Ground_Truth() => AssertDeclaredFault("F6", "fs.create_folder");
+    [Fact] public void Search_F1_Real_State_And_Ground_Truth() => AssertDeclaredFault("F1", "fs.search_files");
+    [Fact] public void Search_F7_Real_State_And_Ground_Truth() => AssertDeclaredFault("F7", "fs.search_files");
+    [Fact] public void Search_F8_Real_State_And_Ground_Truth() => AssertDeclaredFault("F8", "fs.search_files");
+    [Fact] public void App_F1_Real_State_And_Ground_Truth() => AssertDeclaredFault("F1", "app.launch");
+    [Fact] public void App_F9_Real_State_And_Ground_Truth() => AssertDeclaredFault("F9", "app.launch");
+    [Fact] public void App_F10_Real_State_And_Ground_Truth() => AssertDeclaredFault("F10", "app.launch");
+    [Fact] public void App_F11_Real_State_And_Ground_Truth() => AssertDeclaredFault("F11", "app.launch");
+    [Fact] public void Reminder_F1_Real_State_And_Ground_Truth() => AssertDeclaredFault("F1", "task.schedule_reminder");
+    [Fact] public void Reminder_F12_Real_State_And_Ground_Truth() => AssertDeclaredFault("F12", "task.schedule_reminder");
+    [Fact] public void Reminder_F13_Real_State_And_Ground_Truth() => AssertDeclaredFault("F13", "task.schedule_reminder");
+    [Fact] public void Reminder_F14_Real_State_And_Ground_Truth() => AssertDeclaredFault("F14", "task.schedule_reminder");
+    [Fact] public void Reminder_F15_Real_State_And_Ground_Truth() => AssertDeclaredFault("F15", "task.schedule_reminder");
+    [Fact] public void Reminder_F16_Real_State_And_Ground_Truth() => AssertDeclaredFault("F16", "task.schedule_reminder");
+    [Fact] public void Reminder_F17a_Real_State_And_Ground_Truth() => AssertDeclaredFault("F17a", "task.schedule_reminder");
+    [Fact] public void Reminder_F17b_Real_State_And_Ground_Truth() => AssertDeclaredFault("F17b", "task.schedule_reminder");
+
     [Theory]
     [InlineData("F0", "fs.create_file")]
     [InlineData("F1", "fs.create_file")]
@@ -116,5 +136,12 @@ public sealed class EvalFaultInjectorTests
             EvalFaultState.CreateGood("fs.create_file"));
 
         act.Should().Throw<ArgumentException>();
+    }
+
+    private static void AssertDeclaredFault(string faultId, string toolId)
+    {
+        var result = new EvalFaultInjector().Inject(faultId, EvalFaultState.CreateGood(toolId));
+        result.GroundTruth.Should().Be(EvalGroundTruth.Bad);
+        result.ToolId.Should().Be(toolId);
     }
 }
