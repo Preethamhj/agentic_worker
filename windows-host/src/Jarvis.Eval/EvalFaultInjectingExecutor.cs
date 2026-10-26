@@ -105,6 +105,7 @@ public sealed class EvalFaultInjectingExecutor(
         {
             "F0" or "F1" => true,
             "F2" or "F3" or "F5" or "F6" => toolId == "fs.create_file",
+            "F18" => toolId == "fs.create_file",
             "F4" => toolId is "fs.create_file" or "fs.create_folder",
             "F7" or "F8" => toolId == "fs.search_files",
             _ => false

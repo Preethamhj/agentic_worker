@@ -214,6 +214,14 @@ public sealed class VerificationEngineEvalVerifier(IVerifier verifier) : IEvalVe
             execution.Observation,
             execution.VerificationToken,
             cancellationToken).ConfigureAwait(false);
+        if (evalCase.FaultId == "F18")
+        {
+            result = await verifier.VerifyAsync(
+                execution.Receipt,
+                execution.Observation,
+                execution.VerificationToken,
+                cancellationToken).ConfigureAwait(false);
+        }
         var status = result.Status switch
         {
             "VERIFIED" => EvalStatus.Verified,
