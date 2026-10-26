@@ -46,7 +46,6 @@ public sealed class EvalFileRunner
             var tasks = EvalTaskCatalog.Generate(options.Seed)
                 .Where(task => options.ToolFilter is null || task.ToolId == options.ToolFilter)
                 .Take(options.Smoke ? 2 : int.MaxValue)
-                .Where(task => task.ToolId == "fs.create_file")
                 .ToArray();
             var repetitions = options.Smoke ? 1 : options.Repetitions;
             foreach (var repetition in Enumerable.Range(1, repetitions))
@@ -118,15 +117,35 @@ public sealed class EvalFileRunner
             keyStore, SystemClock.Instance, auditStore,
             new EvalHostPathProvider(Path.Combine(root, "Jarvis.Eval.exe")));
         var policy = LoadToolPolicy();
-        var target = Path.Combine(root, evalCase.TaskId + ".txt");
-        var inner = new CreateFileExecutor(new PathPolicy([root]), authService);
+        var target = Path.Combine(root, evalCase.ToolId == "fs.create_folder" ? "folder" : evalCase.TaskId + ".txt");
+        IToolExecutor inner = evalCase.ToolId switch
+        {
+            "fs.create_file" => new CreateFileExecutor(new PathPolicy([root]), authService),
+            "fs.create_folder" => new CreateFolderExecutor(new PathPolicy([root]), authService),
+            "fs.search_files" => new SearchFilesExecutor(new PathPolicy([root]), authService),
+            _ => throw new ArgumentException($"Unsupported W1-W3 tool '{evalCase.ToolId}'.", nameof(evalCase))
+        };
         IToolExecutor executor = evalCase.FaultId == "F0" || evalCase.FaultId == "F18"
             ? inner
             : new EvalFaultInjectingExecutor(inner, evalCase.FaultId, Path.Combine(root, "unauthorized-extra.txt"));
         var stepExecutor = new StepExecutor(authService, [executor], policy);
+        var args = evalCase.ToolId switch
+        {
+            "fs.create_file" => new Dictionary<string, object?> { ["path"] = target, ["content"] = "evaluation" },
+            "fs.create_folder" => new Dictionary<string, object?> { ["path"] = target },
+            "fs.search_files" => new Dictionary<string, object?>
+            {
+                ["root_path"] = Path.Combine(root, "search"), ["pattern"] = "*.txt", ["max_depth"] = 5, ["max_results"] = 100
+            },
+            _ => throw new ArgumentException($"Unsupported W1-W3 tool '{evalCase.ToolId}'.", nameof(evalCase))
+        };
+        if (evalCase.ToolId == "fs.search_files")
+        {
+            Directory.CreateDirectory((string)args["root_path"]!);
+            await File.WriteAllTextAsync(Path.Combine((string)args["root_path"]!, "match.txt"), "search", cancellationToken).ConfigureAwait(false);
+        }
         var authorization = stepExecutor.PrepareAuthorization(
-            evalCase.TaskId, "step-1", "fs.create_file",
-            new Dictionary<string, object?> { ["path"] = target, ["content"] = "evaluation" }, "low", "auto-low");
+            evalCase.TaskId, "step-1", evalCase.ToolId, args, "low", "auto-low");
         var engine = new VerificationEngine(authService, auditStore);
         var token = await engine.BeginStepAsync(authorization, cancellationToken).ConfigureAwait(false);
         var startedAt = DateTimeOffset.UtcNow;
@@ -136,7 +155,12 @@ public sealed class EvalFileRunner
             File.Delete(target);
         var context = new EvalExecutionContext(
             authorization, receipt, new ExecutionObservation(startedAt, completedAt), token, root,
-            _ => ValueTask.FromResult(File.Exists(target) && File.ReadAllText(target) == "evaluation"), []);
+            _ => ValueTask.FromResult(evalCase.ToolId == "fs.create_folder"
+                ? Directory.Exists(target)
+                : evalCase.ToolId == "fs.create_file"
+                    ? File.Exists(target) && File.ReadAllText(target) == "evaluation"
+                    : true),
+            []);
         var verifiers = new IEvalVerifier[]
         {
             new ReceiptEvalVerifier(),

@@ -30,8 +30,10 @@ public sealed class EvalFaultInjectingExecutor(
         if (faultId == "F4")
         {
             var wrongPath = ResolveSiblingPath(record);
-            var content = ReadExpectedContent(record);
-            await File.WriteAllTextAsync(wrongPath, content, cancellationToken).ConfigureAwait(false);
+            if (ToolId == "fs.create_folder")
+                Directory.CreateDirectory(wrongPath);
+            else
+                await File.WriteAllTextAsync(wrongPath, ReadExpectedContent(record), cancellationToken).ConfigureAwait(false);
             return SuccessReceipt(record, now);
         }
 
@@ -39,7 +41,7 @@ public sealed class EvalFaultInjectingExecutor(
         if (!receipt.ReportedSuccess)
             return receipt;
 
-        if (ToolId == "fs.create_file")
+        if (ToolId is "fs.create_file" or "fs.create_folder")
         {
             var path = ReadPath(record);
             switch (faultId)
@@ -61,7 +63,10 @@ public sealed class EvalFaultInjectingExecutor(
                         .ConfigureAwait(false);
                     break;
                 case "F6":
-                    File.Delete(path);
+                    if (ToolId == "fs.create_folder")
+                        Directory.Delete(path, recursive: true);
+                    else
+                        File.Delete(path);
                     break;
             }
         }
@@ -104,7 +109,8 @@ public sealed class EvalFaultInjectingExecutor(
         faultId switch
         {
             "F0" or "F1" => true,
-            "F2" or "F3" or "F5" or "F6" => toolId == "fs.create_file",
+            "F2" or "F3" => toolId == "fs.create_file",
+            "F5" or "F6" => toolId is "fs.create_file" or "fs.create_folder",
             "F18" => toolId == "fs.create_file",
             "F4" => toolId is "fs.create_file" or "fs.create_folder",
             "F7" or "F8" => toolId == "fs.search_files",
