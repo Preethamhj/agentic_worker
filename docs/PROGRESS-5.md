@@ -20,6 +20,7 @@ Branch: `phase-5`, based on `5b68602` (`phase-3c-done`).
 - W1: file smoke built and ran via the direct Eval DLL; 65 rows (1 metadata + 64 verdicts) for 2 tasks × 8 faults × 4 verifiers, sandbox cleaned; D returned ESCALATE for both GOOD F0 controls and the result was recorded in `docs/eval/FINDINGS.md`.
 - W2: two-repetition file development run completed with 769 rows; analyzer BOM handling fixed and `docs/eval/results/dev-run-1/README.md` marks it development-only; no new D finding beyond W1.
 - W3: folder smoke produced 49 rows and search smoke 41 rows; real folder F4/F5/F6 and search F7/F8 runner paths built successfully; focused eval tests passed 36/36.
+- X1: diagnosed the prior F0 D escalation three times; all returned VERIFIED with stages 1–6, 9, and 10 passing; classified as harness construction difference and fixed only Jarvis.Eval by using InMemoryAuditStore.
 
 ## Scope still outstanding
 

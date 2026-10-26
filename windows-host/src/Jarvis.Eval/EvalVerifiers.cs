@@ -197,7 +197,7 @@ public sealed class PredicateOnlyEvalVerifier(IEvalPredicateChecker predicateChe
     }
 }
 
-public sealed class VerificationEngineEvalVerifier(IVerifier verifier) : IEvalVerifier
+public sealed class VerificationEngineEvalVerifier(IVerifier verifier, bool includeStageDetails = false) : IEvalVerifier
 {
     public string VerifierId => "D";
 
@@ -229,10 +229,13 @@ public sealed class VerificationEngineEvalVerifier(IVerifier verifier) : IEvalVe
             "ESCALATE" => EvalStatus.Escalate,
             _ => EvalStatus.Error
         };
+        IReadOnlyList<string> reasons = includeStageDetails
+            ? result.Reasons.Concat(result.Stages.Select(stage => $"{stage.Name}: {stage.Outcome} - {stage.Detail}")).ToArray()
+            : result.Reasons;
         return new EvalVerdict(
             VerifierId,
             status,
-            result.Reasons,
+            reasons,
             TimeSpan.FromMilliseconds(result.DurationMs),
             status == EvalStatus.Error ? $"Unknown VerificationEngine status '{result.Status}'." : null);
     }

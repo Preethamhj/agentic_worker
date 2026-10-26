@@ -88,6 +88,35 @@ public sealed class EvalFileRunner
         }
     }
 
+    public async Task DiagnoseAsync(string caseId, CancellationToken cancellationToken = default)
+    {
+        var evalCase = EvalTaskCatalog.ExpandCases(
+                EvalTaskCatalog.Generate(EvalTaskCatalog.DefaultSeed).Where(task => task.ToolId == "fs.create_file").ToArray(),
+                1,
+                EvalTaskCatalog.DefaultSeed)
+            .Single(evalCase => evalCase.Id == caseId);
+        var runId = $"diagnose-{Guid.NewGuid():N}";
+        var sandbox = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Jarvis", "eval-sandbox", runId);
+        Directory.CreateDirectory(sandbox);
+        try
+        {
+            var result = await RunCaseAsync(evalCase, sandbox, cancellationToken, diagnostics: true).ConfigureAwait(false);
+            foreach (var verdict in result.Verdicts)
+            {
+                Console.WriteLine($"verifier={verdict.VerifierId} status={verdict.Status}");
+                foreach (var reason in verdict.Reasons)
+                    Console.WriteLine(reason);
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(sandbox))
+                Directory.Delete(sandbox, recursive: true);
+        }
+    }
+
     private static HashSet<string> LoadCompleted(string rawPath)
     {
         var completed = new HashSet<string>(StringComparer.Ordinal);
@@ -106,12 +135,12 @@ public sealed class EvalFileRunner
     private static async Task<EvalRunResult> RunCaseAsync(
         EvalCase evalCase,
         string sandbox,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool diagnostics = false)
     {
         var root = Path.Combine(sandbox, evalCase.Id);
         Directory.CreateDirectory(root);
-        var auditPath = Path.Combine(root, "audit.db");
-        using var auditStore = new SqliteAuditStore(auditPath);
+        var auditStore = new InMemoryAuditStore();
         var keyStore = new InMemoryDpapiKeyStore();
         var authService = new AuthorizationService(
             keyStore, SystemClock.Instance, auditStore,
@@ -166,7 +195,7 @@ public sealed class EvalFileRunner
             new ReceiptEvalVerifier(),
             new SelfCheckEvalVerifier(),
             new PredicateOnlyEvalVerifier(new FileSystemEvalPredicateChecker()),
-            new VerificationEngineEvalVerifier(engine)
+            new VerificationEngineEvalVerifier(engine, diagnostics)
         };
         return await new EvalRunner(evalCase.Seed)
             .RunCaseAsync(evalCase, _ => Task.FromResult(context), verifiers, cancellationToken)
