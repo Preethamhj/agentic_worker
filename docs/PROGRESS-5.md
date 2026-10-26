@@ -30,6 +30,7 @@ Branch: `phase-5`, based on `5b68602` (`phase-3c-done`).
 - X5 close-out: full Release solution build passed; non-real-scheduler solution tests passed 416/416; ai-server plus eval pytest passed 131 tests; mypy and dotnet format verification passed; check-all and CI were not run because check-all enables real-scheduler tests.
 - Y0: reproduced the evaluation Python gate locally (pytest 5 passed, ruff clean, mypy clean); CI maps to `scripts/check-all.ps1` from the repository root, with its eval gate equivalent to `ai-server\\.venv\\Scripts\\python.exe -m pytest eval/tests`, `ruff.exe check eval`, and `mypy.exe --strict --explicit-package-bases eval`.
 - Y1: appended Amendment 3 documenting the dev-run-1 audit-root false failure, the C search-path correction, the frozen B/F6 pre-registration deviation, the pending F9 fidelity fix, and the no-tag release prerequisite.
+- Y2: analysis now parses the frozen pre-registration table, puts control verdicts first, reports false-success/false-failure rates, deviations, D-not-better cases, and instability; eval tests 8 passed, ruff and strict mypy passed.
 
 ## How CI maps to local commands
 
