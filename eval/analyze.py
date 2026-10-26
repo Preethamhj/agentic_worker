@@ -35,17 +35,17 @@ def _majority(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 def collapse(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Collapse repetitions per distinct case and preserve instability counts."""
-    grouped: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
-        if row.get("verifier") == "metadata":
+        if row.get("row_type") == "metadata" or row.get("verifier") == "metadata":
             continue
-        grouped[(str(row["case_id"]), str(row["verifier"]))].append(row)
+        grouped[(str(row["task_id"]), str(row["fault"]), str(row["verifier"]))].append(row)
     return [_majority(group) for group in grouped.values()]
 
 
 def analyze(input_path: Path, output_dir: Path) -> None:
     """Write summary.csv and summary.md for a raw evaluation file."""
-    rows = [json.loads(line) for line in input_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    rows = [json.loads(line) for line in input_path.read_text(encoding="utf-8-sig").splitlines() if line.strip()]
     cases = collapse(rows)
     output_dir.mkdir(parents=True, exist_ok=True)
     grouped: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)

@@ -12,9 +12,9 @@ def test_wilson_known_two_of_four() -> None:
 
 def test_collapse_majority_and_instability() -> None:
     rows = [
-        {"case_id": "c1", "verifier": "D", "status": "FAILED", "fault": "F1", "latency_ms": 1},
-        {"case_id": "c1", "verifier": "D", "status": "FAILED", "fault": "F1", "latency_ms": 2},
-        {"case_id": "c1", "verifier": "D", "status": "VERIFIED", "fault": "F1", "latency_ms": 3},
+        {"case_id": "c1-r1", "task_id": "t1", "verifier": "D", "status": "FAILED", "fault": "F1", "latency_ms": 1},
+        {"case_id": "c1-r2", "task_id": "t1", "verifier": "D", "status": "FAILED", "fault": "F1", "latency_ms": 2},
+        {"case_id": "c1-r3", "task_id": "t1", "verifier": "D", "status": "VERIFIED", "fault": "F1", "latency_ms": 3},
     ]
     result = collapse(rows)
     assert result[0]["status"] == "FAILED"
@@ -23,7 +23,7 @@ def test_collapse_majority_and_instability() -> None:
 
 def test_analyze_writes_outputs(tmp_path: Path) -> None:
     raw = tmp_path / "raw.jsonl"
-    raw.write_text("\n".join(json.dumps({"case_id": f"c{i}", "verifier": "D", "fault": "F1", "status": "FAILED", "latency_ms": i}) for i in range(1, 4)), encoding="utf-8")
+    raw.write_text("\n".join(json.dumps({"case_id": f"c{i}", "task_id": f"t{i}", "verifier": "D", "fault": "F1", "status": "FAILED", "latency_ms": i}) for i in range(1, 4)), encoding="utf-8")
     out = tmp_path / "out"
     analyze(raw, out)
     assert (out / "summary.csv").exists()

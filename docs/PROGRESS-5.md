@@ -18,6 +18,7 @@ Branch: `phase-5`, based on `5b68602` (`phase-3c-done`).
 - V3: uncommitted; added `eval/analyze.py` and synthetic tests; Python environment configuration hung before pytest/ruff/mypy could run.
 - W0: `Engine_Verifier_Rejects_Tampered_Signed_Authorization`, `Engine_Verifier_Uses_Real_VerificationEngine_For_Control_And_File_Faults`, and `Control_Gives_Verified_For_All_Four_Verifiers` passed (7 total, 0 failed, 0 skipped); eval pytest 3 passed, ruff clean, mypy clean; added Amendment 2 clarifying F18 scope and ignored generated egg-info.
 - W1: file smoke built and ran via the direct Eval DLL; 65 rows (1 metadata + 64 verdicts) for 2 tasks × 8 faults × 4 verifiers, sandbox cleaned; D returned ESCALATE for both GOOD F0 controls and the result was recorded in `docs/eval/FINDINGS.md`.
+- W2: two-repetition file development run completed with 769 rows; analyzer BOM handling fixed and `docs/eval/results/dev-run-1/README.md` marks it development-only; no new D finding beyond W1.
 
 ## Scope still outstanding
 
