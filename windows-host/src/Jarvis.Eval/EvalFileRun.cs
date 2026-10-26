@@ -38,9 +38,13 @@ public sealed class EvalFileRunner
             await using var output = new StreamWriter(rawPath, append: true, Encoding.UTF8);
             await output.WriteLineAsync(JsonSerializer.Serialize(new
             {
-                row_type = "metadata", run_id = runId, os_build = Environment.OSVersion.VersionString,
-                dotnet_version = Environment.Version.ToString(), git_commit = Environment.GetEnvironmentVariable("GIT_COMMIT") ?? "unknown",
-                seed = options.Seed, timestamp = DateTimeOffset.UtcNow
+                row_type = "metadata",
+                run_id = runId,
+                os_build = Environment.OSVersion.VersionString,
+                dotnet_version = Environment.Version.ToString(),
+                git_commit = Environment.GetEnvironmentVariable("GIT_COMMIT") ?? "unknown",
+                seed = options.Seed,
+                timestamp = DateTimeOffset.UtcNow
             })).ConfigureAwait(false);
 
             var tasks = EvalTaskCatalog.Generate(options.Seed)
@@ -49,25 +53,32 @@ public sealed class EvalFileRunner
                 .ToArray();
             var repetitions = options.Smoke ? 1 : options.Repetitions;
             foreach (var repetition in Enumerable.Range(1, repetitions))
-            foreach (var evalCase in EvalTaskCatalog.ExpandCases(tasks, repetition, options.Seed))
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                var result = await RunCaseAsync(evalCase, sandbox, cancellationToken)
-                    .WaitAsync(TimeSpan.FromSeconds(30), cancellationToken).ConfigureAwait(false);
-                foreach (var verdict in result.Verdicts)
+                foreach (var evalCase in EvalTaskCatalog.ExpandCases(tasks, repetition, options.Seed))
                 {
-                    if (completed.Contains($"{evalCase.Id}:{verdict.VerifierId}"))
-                        continue;
-                    await output.WriteLineAsync(JsonSerializer.Serialize(new
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var result = await RunCaseAsync(evalCase, sandbox, cancellationToken)
+                        .WaitAsync(TimeSpan.FromSeconds(30), cancellationToken).ConfigureAwait(false);
+                    foreach (var verdict in result.Verdicts)
                     {
-                        run_id = runId, case_id = evalCase.Id, task_id = evalCase.TaskId,
-                        tool = evalCase.ToolId, fault = evalCase.FaultId, ground_truth = evalCase.GroundTruth.ToString().ToUpperInvariant(),
-                        rep = evalCase.Repetition, verifier = verdict.VerifierId, status = verdict.Status.ToString().ToUpperInvariant(),
-                        reasons = verdict.Reasons.Select(reason => SanitizeReason(reason, sandbox)), latency_ms = verdict.Latency.TotalMilliseconds
-                    })).ConfigureAwait(false);
-                    await output.FlushAsync().ConfigureAwait(false);
+                        if (completed.Contains($"{evalCase.Id}:{verdict.VerifierId}"))
+                            continue;
+                        await output.WriteLineAsync(JsonSerializer.Serialize(new
+                        {
+                            run_id = runId,
+                            case_id = evalCase.Id,
+                            task_id = evalCase.TaskId,
+                            tool = evalCase.ToolId,
+                            fault = evalCase.FaultId,
+                            ground_truth = evalCase.GroundTruth.ToString().ToUpperInvariant(),
+                            rep = evalCase.Repetition,
+                            verifier = verdict.VerifierId,
+                            status = verdict.Status.ToString().ToUpperInvariant(),
+                            reasons = verdict.Reasons.Select(reason => SanitizeReason(reason, sandbox)),
+                            latency_ms = verdict.Latency.TotalMilliseconds
+                        })).ConfigureAwait(false);
+                        await output.FlushAsync().ConfigureAwait(false);
+                    }
                 }
-            }
             return 0;
         }
         finally
@@ -170,7 +181,10 @@ public sealed class EvalFileRunner
             "fs.create_folder" => new Dictionary<string, object?> { ["path"] = target },
             "fs.search_files" => new Dictionary<string, object?>
             {
-                ["root_path"] = Path.Combine(root, "search"), ["pattern"] = "*.txt", ["max_depth"] = 5, ["max_results"] = 100
+                ["root_path"] = Path.Combine(root, "search"),
+                ["pattern"] = "*.txt",
+                ["max_depth"] = 5,
+                ["max_results"] = 100
             },
             "app.launch" => new Dictionary<string, object?> { ["app_id"] = "notepad" },
             _ => throw new ArgumentException($"Unsupported W1-W3 tool '{evalCase.ToolId}'.", nameof(evalCase))

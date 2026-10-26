@@ -27,6 +27,7 @@ Branch: `phase-5`, based on `5b68602` (`phase-3c-done`).
 - X4: not implemented; fake scheduler injection is blocked by the production collector interface being internal, and production changes are prohibited.
 - X5: added eval Python gates to check-all and CI, expanded Wilson/collapse tests, and sanitized sandbox paths in raw verdict reasons; close-out validation remains to run.
 - X5 gates: eval pytest 5 passed, ruff clean, mypy clean, Eval Release build passed, focused Eval tests 36 passed; raw result path scan found no absolute user paths.
+- X5 close-out: full Release solution build passed; non-real-scheduler solution tests passed 416/416; ai-server plus eval pytest passed 131 tests; mypy and dotnet format verification passed; check-all and CI were not run because check-all enables real-scheduler tests.
 
 ## Scope still outstanding
 

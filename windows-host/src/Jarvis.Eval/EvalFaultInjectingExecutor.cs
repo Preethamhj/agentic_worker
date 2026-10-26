@@ -56,7 +56,9 @@ public sealed class EvalFaultInjectingExecutor(
             {
                 using var extra = Process.Start(new ProcessStartInfo
                 {
-                    FileName = "notepad.exe", UseShellExecute = false, CreateNoWindow = true
+                    FileName = "notepad.exe",
+                    UseShellExecute = false,
+                    CreateNoWindow = true
                 });
                 if (extra is null)
                     throw new InvalidOperationException("Could not start the tracked extra Notepad child.");
