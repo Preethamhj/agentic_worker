@@ -63,7 +63,7 @@ public sealed class EvalFileRunner
                         run_id = runId, case_id = evalCase.Id, task_id = evalCase.TaskId,
                         tool = evalCase.ToolId, fault = evalCase.FaultId, ground_truth = evalCase.GroundTruth.ToString().ToUpperInvariant(),
                         rep = evalCase.Repetition, verifier = verdict.VerifierId, status = verdict.Status.ToString().ToUpperInvariant(),
-                        reasons = verdict.Reasons, latency_ms = verdict.Latency.TotalMilliseconds
+                        reasons = verdict.Reasons.Select(reason => SanitizeReason(reason, sandbox)), latency_ms = verdict.Latency.TotalMilliseconds
                     })).ConfigureAwait(false);
                     await output.FlushAsync().ConfigureAwait(false);
                 }
@@ -131,6 +131,9 @@ public sealed class EvalFileRunner
         }
         return completed;
     }
+
+    private static string SanitizeReason(string reason, string sandbox) =>
+        reason.Replace(sandbox, "<sandbox>", StringComparison.OrdinalIgnoreCase);
 
     private async Task<EvalRunResult> RunCaseAsync(
         EvalCase evalCase,

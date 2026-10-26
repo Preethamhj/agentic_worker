@@ -24,6 +24,9 @@ Branch: `phase-5`, based on `5b68602` (`phase-3c-done`).
 - X2: file/folder/search smoke completed with 64/48/40 verdict rows; all D F0 controls were VERIFIED; recorded and fixed an eval-only C search-control context defect.
 - X2 dev-run-2: completed with 769 rows and 384 distinct collapsed rows; summary starts with control verdicts per verifier, all 12 controls VERIFIED for A/B/C/D; README marks it development-only and preserves dev-run-1.
 - X3: app smoke completed with 49 rows (1 metadata + 48 verdicts); D verified both F0 controls and rejected F1/F9/F10/F11; tracked Notepad PIDs were cleaned in finally; focused eval tests passed 36/36.
+- X4: not implemented; fake scheduler injection is blocked by the production collector interface being internal, and production changes are prohibited.
+- X5: added eval Python gates to check-all and CI, expanded Wilson/collapse tests, and sanitized sandbox paths in raw verdict reasons; close-out validation remains to run.
+- X5 gates: eval pytest 5 passed, ruff clean, mypy clean, Eval Release build passed, focused Eval tests 36 passed; raw result path scan found no absolute user paths.
 
 ## Scope still outstanding
 

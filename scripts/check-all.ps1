@@ -70,6 +70,19 @@ try {
     Pop-Location
 }
 
+Write-Host "`n=== Step 2b: Evaluation Python Tests & Linting ===" -ForegroundColor Cyan
+Push-Location $repoRoot
+try {
+    & $venvPython -m pytest eval/tests
+    if ($LASTEXITCODE -ne 0) { throw "eval pytest failed" }
+    & "$aiServerDir\.venv\Scripts\ruff.exe" check eval
+    if ($LASTEXITCODE -ne 0) { throw "eval ruff check failed" }
+    & "$aiServerDir\.venv\Scripts\mypy.exe" --strict --explicit-package-bases eval
+    if ($LASTEXITCODE -ne 0) { throw "eval mypy check failed" }
+} finally {
+    Pop-Location
+}
+
 Write-Host "`n=== Step 3: C# Formatting Verification ===" -ForegroundColor Cyan
 Push-Location $windowsHostDir
 try {

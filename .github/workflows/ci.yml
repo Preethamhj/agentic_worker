@@ -37,3 +37,10 @@ jobs:
         shell: powershell
         run: |
           .\scripts\check-all.ps1
+
+      - name: Run Evaluation Python Gate
+        shell: powershell
+        run: |
+          .\ai-server\.venv\Scripts\python.exe -m pytest eval/tests
+          .\ai-server\.venv\Scripts\ruff.exe check eval
+          .\ai-server\.venv\Scripts\mypy.exe --strict --explicit-package-bases eval

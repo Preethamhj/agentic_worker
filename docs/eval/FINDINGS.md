@@ -25,3 +25,7 @@ Evidence from three runs: D returned `Verified` each time. Stages 1–6, 9, and 
 - Fault: F0 control (`GOOD`)
 - Evidence: X2 search smoke raw rows reported C=`FAILED` for both F0 task cases while D=`VERIFIED` for both.
 - Cause: the eval context supplied an empty `ReportedPaths` list instead of deserializing the real search executor receipt. This was corrected in `Jarvis.Eval`; D was unaffected and all D F0 controls remained VERIFIED.
+
+### X4 blocker
+
+The requested fake-scheduler integration cannot be implemented under the session invariants without changing production code: `IScheduledTaskEvidenceCollector` and the injectable `VerificationEngine` constructor are internal to `Jarvis.Verification`, while `Jarvis.Eval` is a separate assembly. Adding friend access or making the interface public would violate the prohibition on production edits outside `Jarvis.Eval`. X4 is therefore unfinished and no scheduler evaluation was run.
