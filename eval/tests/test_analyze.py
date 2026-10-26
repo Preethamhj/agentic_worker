@@ -82,3 +82,18 @@ def test_analysis_reports_d_not_better_and_false_rates(tmp_path: Path) -> None:
     assert "## Cases where D is not better" in markdown
     assert "| t1 | F1 | VERIFIED |" in markdown
     assert "False-success on BAD" in markdown
+
+
+def test_analysis_includes_reminder_and_f11_synthetic_cases(tmp_path: Path) -> None:
+    rows = []
+    for verifier in ("A", "B", "C", "D"):
+        rows.append({"task_id": "reminder-1", "verifier": verifier, "fault": "F12", "ground_truth": "BAD", "status": "FAILED", "latency_ms": 2})
+        rows.append({"task_id": "app-1", "verifier": verifier, "fault": "F11", "ground_truth": "BAD", "status": "VERIFIED" if verifier == "D" else "FAILED", "latency_ms": 3})
+    raw = tmp_path / "raw.jsonl"
+    raw.write_text("\n".join(json.dumps(row) for row in rows), encoding="utf-8")
+    out = tmp_path / "out"
+    analyze(raw, out)
+    markdown = (out / "summary.md").read_text(encoding="utf-8")
+    assert "| D | F11 |" in markdown
+    assert "| app-1 | F11 | VERIFIED |" in markdown
+    assert "| D | F11 | 1 | expected FAILED, actual VERIFIED |" in markdown
