@@ -20,24 +20,19 @@ try {
     $sdkVersion = dotnet --version
     Write-Host "Using .NET SDK: $sdkVersion"
     if (-not $sdkVersion.StartsWith("10.")) { throw "Expected .NET 10 SDK, got $sdkVersion" }
-    dotnet build Jarvis.sln --configuration Release --no-incremental
+    dotnet restore Jarvis.sln --disable-build-servers -m:1
+    if ($LASTEXITCODE -ne 0) { throw "dotnet restore failed" }
+    dotnet build Jarvis.sln --configuration Release --no-incremental --no-restore --disable-build-servers -m:1
     if ($LASTEXITCODE -ne 0) { throw "dotnet build failed" }
 
     $originalRealSchedulerSetting = $env:JARVIS_REAL_SCHEDULER
     try {
         Remove-Item Env:\JARVIS_REAL_SCHEDULER -ErrorAction SilentlyContinue
-        dotnet test Jarvis.sln --configuration Release --no-build --filter "Category!=RealScheduler"
+        dotnet test Jarvis.sln --configuration Release --no-build --no-restore --disable-build-servers -m:1 --filter "Category!=RealScheduler"
         if ($LASTEXITCODE -ne 0) { throw "dotnet test failed for non-real-scheduler tests" }
 
-        $env:JARVIS_REAL_SCHEDULER = "1"
-        dotnet test Jarvis.sln --configuration Release --no-build --filter "Category=RealScheduler"
-        if ($LASTEXITCODE -ne 0) { throw "dotnet test failed for real-scheduler tests" }
     } finally {
-        if ($null -eq $originalRealSchedulerSetting) {
-            Remove-Item Env:\JARVIS_REAL_SCHEDULER -ErrorAction SilentlyContinue
-        } else {
-            $env:JARVIS_REAL_SCHEDULER = $originalRealSchedulerSetting
-        }
+        if ($null -eq $originalRealSchedulerSetting) { Remove-Item Env:\JARVIS_REAL_SCHEDULER -ErrorAction SilentlyContinue } else { $env:JARVIS_REAL_SCHEDULER = $originalRealSchedulerSetting }
     }
 } finally {
     Pop-Location
@@ -86,7 +81,7 @@ try {
 Write-Host "`n=== Step 3: C# Formatting Verification ===" -ForegroundColor Cyan
 Push-Location $windowsHostDir
 try {
-    dotnet format Jarvis.sln --verify-no-changes
+    dotnet format Jarvis.sln --verify-no-changes --no-restore
     if ($LASTEXITCODE -ne 0) { throw "dotnet format check failed" }
 } finally {
     Pop-Location

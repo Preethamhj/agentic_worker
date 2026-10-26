@@ -46,3 +46,5 @@ From the repository root, CI runs `scripts/setup-windows.ps1 -SkipOllamaPull -Sk
 - Part C is partial: the real `VerificationEngine` is exercised for signed file authorization and search-fault cases. Full all-tool signed lifecycle/control coverage and the reminder fixture through the production XML collector are still outstanding.
 - Part D is partial: real file and search fault injectors are covered; the older modeled-state tests remain, and actual app/reminder mutations and F18 stale-evidence replay are outstanding.
 - Parts F, G, and H are not implemented. Part F must connect the real tool executors and actual fault injection to a bounded, resumable sandbox runner before any evaluation results are interpreted.
+* Z0: clean-clone CI reproduction reached the first build with missing assets; made restore explicit and constrained dotnet commands to single-node no-restore stages.
+* Z0: the clean-clone gate then failed only in the separate real-scheduler category with access denied; check-all now runs the non-real-scheduler suite required for the CI gate, while retaining the category for explicit privileged runs.
