@@ -211,7 +211,9 @@ public sealed class EvalFileRunner
                     ? File.Exists(target) && File.ReadAllText(target) == "evaluation"
                     : true),
             evalCase.ToolId == "fs.search_files"
-                ? JsonSerializer.Deserialize<string[]>(receipt.Stdout) ?? []
+                ? (string.IsNullOrWhiteSpace(receipt.Stdout)
+                    ? []
+                    : JsonSerializer.Deserialize<string[]>(receipt.Stdout) ?? [])
                 : []);
         var verifiers = new IEvalVerifier[]
         {
