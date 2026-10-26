@@ -11,7 +11,7 @@ public sealed class EvalFaultInjectingExecutor(
     IToolExecutor inner,
     string faultId,
     string extraFilePath,
-    Action<int>? processStarted = null)
+    Action<Process>? processStarted = null)
     : IToolExecutor
 {
     public string ToolId => inner.ToolId;
@@ -49,20 +49,22 @@ public sealed class EvalFaultInjectingExecutor(
             var markerIndex = receipt.Stdout.LastIndexOf(marker, StringComparison.Ordinal);
             if (!int.TryParse(receipt.Stdout[(markerIndex + marker.Length)..], out var processId))
                 throw new InvalidOperationException("The app executor did not report a trackable PID.");
-            processStarted?.Invoke(processId);
+            var authorized = Process.GetProcessById(processId);
+            processStarted?.Invoke(authorized);
             if (faultId is "F9" or "F10")
-                KillTrackedProcess(processId);
-            if (faultId == "F11")
+                KillTrackedProcess(authorized);
+            if (faultId is "F9" or "F11")
             {
-                using var extra = Process.Start(new ProcessStartInfo
+                var extra = Process.Start(new ProcessStartInfo
                 {
-                    FileName = "notepad.exe",
+                    FileName = Path.Combine(Environment.SystemDirectory, "ping.exe"),
+                    Arguments = "-n 60 127.0.0.1",
                     UseShellExecute = false,
                     CreateNoWindow = true
                 });
                 if (extra is null)
-                    throw new InvalidOperationException("Could not start the tracked extra Notepad child.");
-                processStarted?.Invoke(extra.Id);
+                    throw new InvalidOperationException("Could not start the tracked ping child.");
+                processStarted?.Invoke(extra);
             }
             return receipt;
         }
@@ -144,10 +146,11 @@ public sealed class EvalFaultInjectingExecutor(
             _ => false
         };
 
-    private static void KillTrackedProcess(int processId)
+    private static void KillTrackedProcess(Process process)
     {
-        using var process = Process.GetProcessById(processId);
-        if (!process.HasExited)
-            process.Kill();
+        var expectedStart = process.StartTime;
+        using var current = Process.GetProcessById(process.Id);
+        if (current.StartTime == expectedStart && !current.HasExited)
+            current.Kill();
     }
 }

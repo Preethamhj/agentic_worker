@@ -21,7 +21,7 @@ public sealed class EvalFileRunOptions
 
 public sealed class EvalFileRunner
 {
-    private readonly List<int> _startedProcessIds = [];
+    private readonly List<(Process Process, DateTime StartTime)> _startedProcesses = [];
 
     public async Task<int> RunAsync(EvalFileRunOptions options, CancellationToken cancellationToken = default)
     {
@@ -83,13 +83,13 @@ public sealed class EvalFileRunner
         }
         finally
         {
-            foreach (var processId in _startedProcessIds)
+            foreach (var tracked in _startedProcesses)
             {
                 try
                 {
-                    using var process = Process.GetProcessById(processId);
-                    if (!process.HasExited)
-                        process.Kill(entireProcessTree: true);
+                    using var current = Process.GetProcessById(tracked.Process.Id);
+                    if (current.StartTime == tracked.StartTime && !current.HasExited)
+                        current.Kill(entireProcessTree: true);
                 }
                 catch (ArgumentException) { }
                 catch (InvalidOperationException) { }
@@ -171,9 +171,9 @@ public sealed class EvalFileRunner
         };
         IToolExecutor executor = (evalCase.ToolId == "app.launch" && evalCase.FaultId != "F18") || (evalCase.FaultId == "F0" || evalCase.FaultId == "F18")
             ? inner
-            : new EvalFaultInjectingExecutor(inner, evalCase.FaultId, Path.Combine(root, "unauthorized-extra.txt"), processId => _startedProcessIds.Add(processId));
+            : new EvalFaultInjectingExecutor(inner, evalCase.FaultId, Path.Combine(root, "unauthorized-extra.txt"), process => _startedProcesses.Add((process, process.StartTime)));
         if (evalCase.ToolId == "app.launch" && evalCase.FaultId != "F18")
-            executor = new EvalFaultInjectingExecutor(inner, evalCase.FaultId, Path.Combine(root, "unused"), processId => _startedProcessIds.Add(processId));
+            executor = new EvalFaultInjectingExecutor(inner, evalCase.FaultId, Path.Combine(root, "unused"), process => _startedProcesses.Add((process, process.StartTime)));
         var stepExecutor = new StepExecutor(authService, [executor], policy);
         var args = evalCase.ToolId switch
         {
