@@ -18,3 +18,10 @@ Classification: **(1) harness construction difference**. Replacing the eval-only
 Diagnosis command: `dotnet windows-host\src\Jarvis.Eval\bin\Release\net10.0-windows\Jarvis.Eval.dll --diagnose-case 594b5994f68f93ac1ff88e89cc566eac-r1-F0`
 
 Evidence from three runs: D returned `Verified` each time. Stages 1–6, 9, and 10 were `PASSED`; stages 7 and 8 were `NOT_RUN` because they are deferred to Phase 6. No evidence exception was reported after the harness fix.
+
+### X2 smoke — C false negative on GOOD search control
+
+- Tool: `fs.search_files`
+- Fault: F0 control (`GOOD`)
+- Evidence: X2 search smoke raw rows reported C=`FAILED` for both F0 task cases while D=`VERIFIED` for both.
+- Cause: the eval context supplied an empty `ReportedPaths` list instead of deserializing the real search executor receipt. This was corrected in `Jarvis.Eval`; D was unaffected and all D F0 controls remained VERIFIED.

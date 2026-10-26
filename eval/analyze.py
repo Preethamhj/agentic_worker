@@ -63,7 +63,12 @@ def analyze(input_path: Path, output_dir: Path) -> None:
             low, high = wilson(detected, len(group))
             writer.writerow([key[0], key[1], len(group), detected, detected / len(group) if group else 0, low, high, 1 - detected / len(group) if group else 0, median(latencies) if latencies else 0, p95, sum(int(row.get("instability", 0)) for row in group)])
 
-    lines = ["# Evaluation summary", "", f"Distinct verifier/case rows: {len(cases)}", "", "## Detection by verifier and fault", "", "| Verifier | Fault | Cases | Detected | Wilson 95% | Instability |", "|---|---:|---:|---:|---:|---:|"]
+    control_lines = ["## Control verdicts per verifier", "", "| Verifier | VERIFIED | ESCALATE | FAILED | ERROR |", "|---|---:|---:|---:|---:|"]
+    for verifier in sorted({str(row["verifier"]) for row in cases}):
+        control = [row for row in cases if row["verifier"] == verifier and row["fault"] == "F0"]
+        counts = Counter(str(row["status"]) for row in control)
+        control_lines.append(f"| {verifier} | {counts['VERIFIED']} | {counts['ESCALATE']} | {counts['FAILED']} | {counts['ERROR']} |")
+    lines = ["# Evaluation summary", "", f"Distinct verifier/case rows: {len(cases)}", ""] + control_lines + ["", "## Detection by verifier and fault", "", "| Verifier | Fault | Cases | Detected | Wilson 95% | Instability |", "|---|---:|---:|---:|---:|---:|"]
     for key in sorted(grouped):
         group = grouped[key]
         detected = sum(row["status"] != "VERIFIED" for row in group)

@@ -189,7 +189,9 @@ public sealed class EvalFileRunner
                 : evalCase.ToolId == "fs.create_file"
                     ? File.Exists(target) && File.ReadAllText(target) == "evaluation"
                     : true),
-            []);
+            evalCase.ToolId == "fs.search_files"
+                ? JsonSerializer.Deserialize<string[]>(receipt.Stdout) ?? []
+                : []);
         var verifiers = new IEvalVerifier[]
         {
             new ReceiptEvalVerifier(),
