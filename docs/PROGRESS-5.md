@@ -49,3 +49,4 @@ From the repository root, CI runs `scripts/setup-windows.ps1 -SkipOllamaPull -Sk
 * Z0: clean-clone CI reproduction reached the first build with missing assets; made restore explicit and constrained dotnet commands to single-node no-restore stages.
 * Z0: the clean-clone gate then failed only in the separate real-scheduler category with access denied; check-all now runs the non-real-scheduler suite required for the CI gate, while retaining the category for explicit privileged runs.
 * Z1: added 19 explicit E2E fault-case tests for folder, search, app, and reminder catalogue states; focused E2E total is 106 passing. Diagnose-case and PID-reuse cleanup tests remain for follow-up.
+* Z2: documented F11 as a genuine D scope-limit finding: the collector filters to the authorized image, so the live unauthorized ping child is ignored; added Amendment 5 without changing D.

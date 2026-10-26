@@ -122,3 +122,7 @@ The threat statement in Amendment 1 is clarified to include F18: C structurally 
 
 The evaluation assembly may access the production verification scheduler evidence collector internals solely to feed REAL-format fake task XML through the production parser. This authorizes the single corresponding friend-assembly declaration; no other production change is authorized by this amendment.
 
+## AMENDMENT 5 (2026-10-26, F11 reported finding)
+
+The development F11 app cases are a deviation from the pre-registered table: verifier D returned `VERIFIED` on BAD F11 cases. The investigation found a genuine scope limit, not a harness absence: the process evidence collector filters candidates to the signed authorized image before counting matches, so an unauthorized extra child image is not considered. This is recorded in `docs/eval/FINDINGS.md`; verifier D is not modified.
+
