@@ -76,3 +76,29 @@ Evaluation data lives under `%LOCALAPPDATA%\Jarvis\eval-sandbox\<run-id>`, never
 ## Change control
 
 No tuning after seeing results. Any later change must be documented in an **AMENDMENT** section with its reason and commit hash.
+
+## AMENDMENT 1 (pre-results)
+
+This dated amendment is recorded before evaluation results. Date: 2026-10-26.
+
+### Unit of analysis and repetitions
+
+The unit of analysis is the distinct `(task, fault)` case. Repetitions of deterministic cases are not independent trials. The per-case outcome is the majority verdict across repetitions; any disagreement across repetitions is reported as an instability count. Wilson 95% intervals are computed over distinct cases. Repetitions are used for stability and latency only.
+
+### Threats and scope
+
+The fault catalogue and verifier D were designed by the same author, and some faults deliberately exercise D's checks. C structurally cannot observe F5, F11, F15, F17a, or F17b; therefore the inside-scope versus outside-scope split is the fair comparison and must be reported first.
+
+### Pre-registered expected verdicts
+
+The following expectations are derived from the verifier definitions above, before running the evaluation. `V` means VERIFIED and `F` means FAILED. D is expected to return `V` only for F0 and `F` for every applicable BAD case, subject to the separate F18 stale-evidence diagnostic.
+
+| Fault(s) | A | B | C | D |
+|---|---|---|---|---|
+| F0 | V | V | V | V |
+| F1, F2, F3, F4, F7, F8, F9, F10, F12, F13, F14, F16 | V | F | F | F |
+| F5, F11, F15, F17a, F17b | V | V | V | F |
+| F6 | V | V | F | F |
+| F18 (D-only diagnostic) | V | V | V | F |
+
+For B, the expectation follows the executor postcondition's own state check: faults that invalidate that postcondition are expected to fail, while unauthorized side effects and changes outside that check remain VERIFIED. For C, the outside-scope faults are expected to remain VERIFIED by definition. Any later deviation from this table is reported as a finding, not silently normalized.
