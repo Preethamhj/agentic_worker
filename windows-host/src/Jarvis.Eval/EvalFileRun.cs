@@ -32,8 +32,11 @@ public sealed class EvalFileRunner
         if (string.Equals(options.Scheduler, "real", StringComparison.OrdinalIgnoreCase)
             && !string.Equals(Environment.GetEnvironmentVariable("JARVIS_REAL_SCHEDULER"), "1", StringComparison.Ordinal))
             throw new InvalidOperationException("Real scheduler evaluation requires JARVIS_REAL_SCHEDULER=1.");
-        if (string.Equals(options.Scheduler, "real", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("Real scheduler evaluation is intentionally disabled for this development session.");
+        var realScheduler = string.Equals(options.Scheduler, "real", StringComparison.OrdinalIgnoreCase);
+        if (realScheduler && options.ToolFilter != "task.schedule_reminder")
+            throw new InvalidOperationException("Real scheduler evaluation is limited to task.schedule_reminder.");
+        if (realScheduler && options.Repetitions != 1)
+            throw new InvalidOperationException("Real scheduler evaluation requires exactly one repetition.");
         var runId = $"{DateTimeOffset.UtcNow:yyyyMMddTHHmmssfffZ}-{Guid.NewGuid():N}";
         var sandbox = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -62,10 +65,11 @@ public sealed class EvalFileRunner
                 .ToArray();
             var repetitions = options.Smoke ? 1 : options.Repetitions;
             foreach (var repetition in Enumerable.Range(1, repetitions))
-                foreach (var evalCase in EvalTaskCatalog.ExpandCases(tasks, repetition, options.Seed))
+                foreach (var evalCase in EvalTaskCatalog.ExpandCases(tasks, repetition, options.Seed)
+                    .Where(evalCase => !realScheduler || evalCase.FaultId is "F0" or "F12" or "F14" or "F15"))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    var result = await RunCaseAsync(evalCase, sandbox, cancellationToken)
+                    var result = await RunCaseAsync(evalCase, sandbox, cancellationToken, realScheduler)
                         .WaitAsync(TimeSpan.FromSeconds(30), cancellationToken).ConfigureAwait(false);
                     foreach (var verdict in result.Verdicts)
                     {
@@ -122,7 +126,7 @@ public sealed class EvalFileRunner
         Directory.CreateDirectory(sandbox);
         try
         {
-            var result = await RunCaseAsync(evalCase, sandbox, cancellationToken, diagnostics: true).ConfigureAwait(false);
+            var result = await RunCaseAsync(evalCase, sandbox, cancellationToken, realScheduler: false, diagnostics: true).ConfigureAwait(false);
             foreach (var verdict in result.Verdicts)
             {
                 Console.WriteLine($"verifier={verdict.VerifierId} status={verdict.Status}");
@@ -159,6 +163,7 @@ public sealed class EvalFileRunner
         EvalCase evalCase,
         string sandbox,
         CancellationToken cancellationToken,
+        bool realScheduler = false,
         bool diagnostics = false)
     {
         var root = Path.Combine(sandbox, evalCase.Id);
@@ -173,16 +178,19 @@ public sealed class EvalFileRunner
             reminderLocation);
         var policy = LoadToolPolicy();
         var target = Path.Combine(root, evalCase.ToolId == "fs.create_folder" ? "folder" : evalCase.TaskId + ".txt");
-        EvalFakeReminderScheduler? fakeScheduler = evalCase.ToolId == "task.schedule_reminder"
+        EvalFakeReminderScheduler? fakeScheduler = evalCase.ToolId == "task.schedule_reminder" && !realScheduler
             ? new EvalFakeReminderScheduler(evalCase.FaultId, reminderStore.BaseDirectory, evalCase.TaskId)
             : null;
+        IReminderTaskScheduler? scheduler = fakeScheduler is not null
+            ? fakeScheduler
+            : evalCase.ToolId == "task.schedule_reminder" ? new WindowsReminderTaskScheduler() : null;
         IToolExecutor inner = evalCase.ToolId switch
         {
             "fs.create_file" => new CreateFileExecutor(new PathPolicy([root]), authService),
             "fs.create_folder" => new CreateFolderExecutor(new PathPolicy([root]), authService),
             "fs.search_files" => new SearchFilesExecutor(new PathPolicy([root]), authService),
             "app.launch" => new AppLaunchExecutor(policy, authService, new WindowsElevationChecker()),
-            "task.schedule_reminder" => new TaskScheduleReminderExecutor(authService, fakeScheduler!, dataFileStore: reminderStore, hostPathProvider: new EvalHostPathProvider(Path.Combine(root, "Jarvis.Cli.exe"))),
+            "task.schedule_reminder" => new TaskScheduleReminderExecutor(authService, scheduler!, dataFileStore: reminderStore, hostPathProvider: new EvalHostPathProvider(Path.Combine(root, "Jarvis.Cli.exe"))),
             _ => throw new ArgumentException($"Unsupported W1-W3 tool '{evalCase.ToolId}'.", nameof(evalCase))
         };
         IToolExecutor executor = evalCase.ToolId == "task.schedule_reminder"
