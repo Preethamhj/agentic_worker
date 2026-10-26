@@ -132,7 +132,7 @@ public sealed class EvalFileRunner
         return completed;
     }
 
-    private static async Task<EvalRunResult> RunCaseAsync(
+    private async Task<EvalRunResult> RunCaseAsync(
         EvalCase evalCase,
         string sandbox,
         CancellationToken cancellationToken,
@@ -152,11 +152,14 @@ public sealed class EvalFileRunner
             "fs.create_file" => new CreateFileExecutor(new PathPolicy([root]), authService),
             "fs.create_folder" => new CreateFolderExecutor(new PathPolicy([root]), authService),
             "fs.search_files" => new SearchFilesExecutor(new PathPolicy([root]), authService),
+            "app.launch" => new AppLaunchExecutor(policy, authService, new WindowsElevationChecker()),
             _ => throw new ArgumentException($"Unsupported W1-W3 tool '{evalCase.ToolId}'.", nameof(evalCase))
         };
-        IToolExecutor executor = evalCase.FaultId == "F0" || evalCase.FaultId == "F18"
+        IToolExecutor executor = (evalCase.ToolId == "app.launch" && evalCase.FaultId != "F18") || (evalCase.FaultId == "F0" || evalCase.FaultId == "F18")
             ? inner
-            : new EvalFaultInjectingExecutor(inner, evalCase.FaultId, Path.Combine(root, "unauthorized-extra.txt"));
+            : new EvalFaultInjectingExecutor(inner, evalCase.FaultId, Path.Combine(root, "unauthorized-extra.txt"), processId => _startedProcessIds.Add(processId));
+        if (evalCase.ToolId == "app.launch" && evalCase.FaultId != "F18")
+            executor = new EvalFaultInjectingExecutor(inner, evalCase.FaultId, Path.Combine(root, "unused"), processId => _startedProcessIds.Add(processId));
         var stepExecutor = new StepExecutor(authService, [executor], policy);
         var args = evalCase.ToolId switch
         {
@@ -166,6 +169,7 @@ public sealed class EvalFileRunner
             {
                 ["root_path"] = Path.Combine(root, "search"), ["pattern"] = "*.txt", ["max_depth"] = 5, ["max_results"] = 100
             },
+            "app.launch" => new Dictionary<string, object?> { ["app_id"] = "notepad" },
             _ => throw new ArgumentException($"Unsupported W1-W3 tool '{evalCase.ToolId}'.", nameof(evalCase))
         };
         if (evalCase.ToolId == "fs.search_files")

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using Jarvis.Contracts;
 using Jarvis.Safety;
@@ -9,7 +10,8 @@ namespace Jarvis.Eval;
 public sealed class EvalFaultInjectingExecutor(
     IToolExecutor inner,
     string faultId,
-    string extraFilePath)
+    string extraFilePath,
+    Action<int>? processStarted = null)
     : IToolExecutor
 {
     public string ToolId => inner.ToolId;
@@ -40,6 +42,28 @@ public sealed class EvalFaultInjectingExecutor(
         var receipt = await inner.ExecuteAsync(authorization, cancellationToken).ConfigureAwait(false);
         if (!receipt.ReportedSuccess)
             return receipt;
+
+        if (ToolId == "app.launch")
+        {
+            var marker = "PID ";
+            var markerIndex = receipt.Stdout.LastIndexOf(marker, StringComparison.Ordinal);
+            if (!int.TryParse(receipt.Stdout[(markerIndex + marker.Length)..], out var processId))
+                throw new InvalidOperationException("The app executor did not report a trackable PID.");
+            processStarted?.Invoke(processId);
+            if (faultId is "F9" or "F10")
+                KillTrackedProcess(processId);
+            if (faultId == "F11")
+            {
+                using var extra = Process.Start(new ProcessStartInfo
+                {
+                    FileName = "notepad.exe", UseShellExecute = false, CreateNoWindow = true
+                });
+                if (extra is null)
+                    throw new InvalidOperationException("Could not start the tracked extra Notepad child.");
+                processStarted?.Invoke(extra.Id);
+            }
+            return receipt;
+        }
 
         if (ToolId is "fs.create_file" or "fs.create_folder")
         {
@@ -111,9 +135,17 @@ public sealed class EvalFaultInjectingExecutor(
             "F0" or "F1" => true,
             "F2" or "F3" => toolId == "fs.create_file",
             "F5" or "F6" => toolId is "fs.create_file" or "fs.create_folder",
+            "F9" or "F10" or "F11" => toolId == "app.launch",
             "F18" => toolId == "fs.create_file",
             "F4" => toolId is "fs.create_file" or "fs.create_folder",
             "F7" or "F8" => toolId == "fs.search_files",
             _ => false
         };
+
+    private static void KillTrackedProcess(int processId)
+    {
+        using var process = Process.GetProcessById(processId);
+        if (!process.HasExited)
+            process.Kill();
+    }
 }
