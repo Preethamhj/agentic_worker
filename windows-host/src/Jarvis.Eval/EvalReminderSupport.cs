@@ -21,6 +21,10 @@ internal sealed class EvalFakeReminderScheduler(
     private string? _expectedPath;
     private string? _expectedName;
 
+    public string? TaskXml => _xml;
+    public bool TaskEnabled => _enabled;
+    public bool ExtraTaskExists => _extraTask;
+
     public void Register(ReminderTaskRegistration registration)
     {
         if (faultId == "F1")

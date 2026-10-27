@@ -78,6 +78,20 @@ public sealed class EvalFileRunner
         return result;
     }
 
+    public static bool StopOwnedProcessIfMatch(Process process, DateTime expectedStartTime)
+    {
+        try
+        {
+            using var current = Process.GetProcessById(process.Id);
+            if (current.StartTime != expectedStartTime || current.HasExited)
+                return false;
+            current.Kill(entireProcessTree: true);
+            return true;
+        }
+        catch (ArgumentException) { return false; }
+        catch (InvalidOperationException) { return false; }
+    }
+
     public async Task<int> RunAsync(EvalFileRunOptions options, CancellationToken cancellationToken = default)
     {
         if (!string.Equals(options.Scheduler, "fake", StringComparison.OrdinalIgnoreCase)
@@ -155,16 +169,7 @@ public sealed class EvalFileRunner
         finally
         {
             foreach (var tracked in _startedProcesses)
-            {
-                try
-                {
-                    using var current = Process.GetProcessById(tracked.Process.Id);
-                    if (current.StartTime == tracked.StartTime && !current.HasExited)
-                        current.Kill(entireProcessTree: true);
-                }
-                catch (ArgumentException) { }
-                catch (InvalidOperationException) { }
-            }
+                StopOwnedProcessIfMatch(tracked.Process, tracked.StartTime);
             if (Directory.Exists(sandbox))
                 Directory.Delete(sandbox, recursive: true);
         }
