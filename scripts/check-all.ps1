@@ -31,6 +31,11 @@ try {
         dotnet test Jarvis.sln --configuration Release --no-build --no-restore --disable-build-servers -m:1 --filter "Category!=RealScheduler"
         if ($LASTEXITCODE -ne 0) { throw "dotnet test failed for non-real-scheduler tests" }
 
+        # RealScheduler tests require the normal user/admin desktop session used by CI.
+        $env:JARVIS_REAL_SCHEDULER = "1"
+        dotnet test Jarvis.sln --configuration Release --no-build --no-restore --disable-build-servers -m:1 --filter "Category=RealScheduler"
+        if ($LASTEXITCODE -ne 0) { throw "dotnet test failed for real-scheduler tests" }
+
     } finally {
         if ($null -eq $originalRealSchedulerSetting) { Remove-Item Env:\JARVIS_REAL_SCHEDULER -ErrorAction SilentlyContinue } else { $env:JARVIS_REAL_SCHEDULER = $originalRealSchedulerSetting }
     }

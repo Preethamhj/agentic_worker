@@ -52,3 +52,4 @@ From the repository root, CI runs `scripts/setup-windows.ps1 -SkipOllamaPull -Sk
 * Z2: documented F11 as a genuine D scope-limit finding: the collector filters to the authorized image, so the live unauthorized ping child is ignored; added Amendment 5 without changing D.
 * Z3: added scripts/run-eval.ps1 for sequential fake-scheduler tool runs, per-tool logs/analysis, resumability, and final cleanup reporting. Full development runs remain user-run.
 * Z4: release build, non-real-scheduler solution tests, Python tests/lint/type checks, architecture test, format verification, and final check-all all passed; no paper run or tag was created.
+* Q0: restored the Category=RealScheduler pass in check-all with the normal user/admin desktop-session note; elevated local run passed 13 tests.
