@@ -18,11 +18,65 @@ public sealed class EvalFileRunOptions
     public string OutputDirectory { get; init; } = Path.Combine(Environment.CurrentDirectory, "eval-output");
     public string? ToolFilter { get; init; }
     public string Scheduler { get; init; } = "fake";
+    public bool AllowPreexistingProcesses { get; init; }
 }
+
+public sealed record EvalPreexistingProcess(
+    string ProcessName,
+    int ProcessId,
+    DateTimeOffset StartTime,
+    string WindowTitle);
 
 public sealed class EvalFileRunner
 {
     private readonly List<(Process Process, DateTime StartTime)> _startedProcesses = [];
+
+    public static IReadOnlyList<EvalPreexistingProcess> PreflightAppProcesses(bool allowPreexistingProcesses)
+    {
+        var processes = EnumeratePreexistingProcesses();
+        if (processes.Count > 0 && !allowPreexistingProcesses)
+        {
+            var details = string.Join(
+                "; ",
+                processes.Select(process =>
+                    $"{process.ProcessName} PID={process.ProcessId} StartTime={process.StartTime:o} WindowTitle={process.WindowTitle}"));
+            throw new InvalidOperationException(
+                $"App evaluation aborted because pre-existing Notepad/ping processes were found: {details}. " +
+                "Close only processes you own, or pass --allow-preexisting-processes to record them explicitly.");
+        }
+        return processes;
+    }
+
+    public static IReadOnlyList<EvalPreexistingProcess> EnumeratePreexistingProcesses()
+    {
+        var result = new List<EvalPreexistingProcess>();
+        foreach (var processName in new[] { "notepad", "ping" })
+        {
+            foreach (var process in Process.GetProcessesByName(processName))
+            {
+                using (process)
+                {
+                    try
+                    {
+                        result.Add(new EvalPreexistingProcess(
+                            process.ProcessName,
+                            process.Id,
+                            new DateTimeOffset(process.StartTime),
+                            process.MainWindowTitle));
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        // A process can exit between enumeration and inspection; it is not a preflight blocker.
+                    }
+                    catch (System.ComponentModel.Win32Exception)
+                    {
+                        // An inaccessible process is not treated as an owned evaluation process.
+                    }
+                }
+            }
+        }
+        return result;
+    }
 
     public async Task<int> RunAsync(EvalFileRunOptions options, CancellationToken cancellationToken = default)
     {
@@ -37,6 +91,9 @@ public sealed class EvalFileRunner
             throw new InvalidOperationException("Real scheduler evaluation is limited to task.schedule_reminder.");
         if (realScheduler && options.Repetitions != 1)
             throw new InvalidOperationException("Real scheduler evaluation requires exactly one repetition.");
+        var preexistingProcesses = options.ToolFilter == "app.launch"
+            ? PreflightAppProcesses(options.AllowPreexistingProcesses)
+            : Array.Empty<EvalPreexistingProcess>();
         var runId = $"{DateTimeOffset.UtcNow:yyyyMMddTHHmmssfffZ}-{Guid.NewGuid():N}";
         var sandbox = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -56,7 +113,8 @@ public sealed class EvalFileRunner
                 dotnet_version = Environment.Version.ToString(),
                 git_commit = Environment.GetEnvironmentVariable("GIT_COMMIT") ?? "unknown",
                 seed = options.Seed,
-                timestamp = DateTimeOffset.UtcNow
+                timestamp = DateTimeOffset.UtcNow,
+                preexisting_processes = preexistingProcesses
             })).ConfigureAwait(false);
 
             var tasks = EvalTaskCatalog.Generate(options.Seed)

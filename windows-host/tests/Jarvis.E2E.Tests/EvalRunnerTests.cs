@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Jarvis.Contracts;
 using Jarvis.Eval;
+using System.Diagnostics;
 using Xunit;
 
 namespace Jarvis.E2E.Tests;
@@ -60,6 +61,40 @@ public sealed class EvalRunnerTests
         result.Verdicts[0].Status.Should().Be(EvalStatus.Error);
         result.Verdicts[0].Status.Should().NotBe(EvalStatus.Verified);
         result.Verdicts[0].Error.Should().Contain("verifier failed");
+    }
+
+    [Fact]
+    public void App_Preflight_Aborts_For_A_Preexisting_Decoy_And_Override_Records_It()
+    {
+        using var decoy = Process.Start(new ProcessStartInfo
+        {
+            FileName = Path.Combine(Environment.SystemDirectory, "ping.exe"),
+            Arguments = "-n 60 127.0.0.1",
+            UseShellExecute = false,
+            CreateNoWindow = true
+        });
+        decoy.Should().NotBeNull();
+        var startTime = decoy!.StartTime;
+        try
+        {
+            var processes = EvalFileRunner.EnumeratePreexistingProcesses();
+            processes.Should().Contain(process => process.ProcessId == decoy.Id && process.StartTime == startTime);
+            var abort = () => EvalFileRunner.PreflightAppProcesses(allowPreexistingProcesses: false);
+            abort.Should().Throw<InvalidOperationException>().Which.Message.Should().Contain($"PID={decoy.Id}");
+            EvalFileRunner.PreflightAppProcesses(allowPreexistingProcesses: true)
+                .Should().Contain(process => process.ProcessId == decoy.Id);
+        }
+        finally
+        {
+            try
+            {
+                using var current = Process.GetProcessById(decoy.Id);
+                if (current.StartTime == startTime && !current.HasExited)
+                    current.Kill(entireProcessTree: true);
+            }
+            catch (ArgumentException) { }
+            catch (InvalidOperationException) { }
+        }
     }
 
     private static EvalCase CreateCase() =>

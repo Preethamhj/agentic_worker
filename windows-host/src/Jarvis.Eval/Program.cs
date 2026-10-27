@@ -42,6 +42,7 @@ public static class Program
         string? tool = null;
         var smoke = false;
         var scheduler = "fake";
+        var allowPreexistingProcesses = false;
         for (var index = 0; index < args.Length; index++)
         {
             switch (args[index])
@@ -52,8 +53,9 @@ public static class Program
                 case "--out": output = Path.GetFullPath(args[++index]); break;
                 case "--smoke": smoke = true; break;
                 case "--scheduler": scheduler = args[++index]; break;
+                case "--allow-preexisting-processes": allowPreexistingProcesses = true; break;
             }
         }
-        return new EvalFileRunOptions { Seed = seed, Repetitions = reps, ToolFilter = tool, OutputDirectory = output, Smoke = smoke, Scheduler = scheduler };
+        return new EvalFileRunOptions { Seed = seed, Repetitions = reps, ToolFilter = tool, OutputDirectory = output, Smoke = smoke, Scheduler = scheduler, AllowPreexistingProcesses = allowPreexistingProcesses };
     }
 }
