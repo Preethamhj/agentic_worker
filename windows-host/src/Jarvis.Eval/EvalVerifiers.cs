@@ -74,7 +74,7 @@ public sealed class FileSystemEvalPredicateChecker : IEvalPredicateChecker
             case "fs.search_files":
                 return CheckSearchResults(authorization, execution.ReportedPaths);
             case "app.launch":
-                return CheckAuthorizedProcess(authorization);
+                return CheckAuthorizedProcess(authorization, execution.Observation);
             case "task.schedule_reminder":
                 if (execution.ReminderPredicateReader is null)
                     return ["No independent reminder-task predicate reader was supplied."];
@@ -135,7 +135,9 @@ public sealed class FileSystemEvalPredicateChecker : IEvalPredicateChecker
         return [];
     }
 
-    private static IReadOnlyList<string> CheckAuthorizedProcess(AuthorizationRecordDto authorization)
+    private static IReadOnlyList<string> CheckAuthorizedProcess(
+        AuthorizationRecordDto authorization,
+        ExecutionObservation observation)
     {
         if (!authorization.Expected.TryGetValue("image_path", out var rawImagePath)
             || rawImagePath is not string imagePath)
@@ -155,7 +157,10 @@ public sealed class FileSystemEvalPredicateChecker : IEvalPredicateChecker
                         Path.GetFullPath(imagePath),
                         StringComparison.OrdinalIgnoreCase))
                     {
-                        return [];
+                        var processStartedAt = new DateTimeOffset(process.StartTime);
+                        if (processStartedAt >= observation.StartedAtUtc
+                            && processStartedAt <= observation.CompletedAtUtc)
+                            return [];
                     }
                 }
                 catch (Exception exception) when (

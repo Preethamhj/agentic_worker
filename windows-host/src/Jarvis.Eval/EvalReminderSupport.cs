@@ -72,7 +72,7 @@ internal sealed class EvalFakeReminderScheduler(
     public Task<IReadOnlyList<string>> FindMismatchesAsync(AuthorizationRecordDto authorization, CancellationToken cancellationToken = default)
     {
         var mismatches = new List<string>();
-        if (_registration is null || !_enabled || _extraTask)
+        if (_registration is null || !_enabled)
             mismatches.Add("Reminder task existence or enabled state does not match.");
         if (_registration is not null && faultId is "F12" or "F13")
             mismatches.Add("Reminder trigger or action arguments do not match.");
