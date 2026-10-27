@@ -29,6 +29,8 @@ Evidence from three runs: D returned `Verified` each time. Stages 1–6, 9, and 
 ### X4 blocker
 
 The requested fake-scheduler integration cannot be implemented under the session invariants without changing production code: `IScheduledTaskEvidenceCollector` and the injectable `VerificationEngine` constructor are internal to `Jarvis.Verification`, while `Jarvis.Eval` is a separate assembly. Adding friend access or making the interface public would violate the prohibition on production edits outside `Jarvis.Eval`. X4 is therefore unfinished and no scheduler evaluation was run.
+
+**Status: RESOLVED by Amendment 4.** The single authorized `InternalsVisibleTo("Jarvis.Eval")` declaration permits the Eval-only fake scheduler to feed real-format XML through the production collector. The historical blocker text is retained; the fake-scheduler implementation and tests now exist.
 - Y3 app smoke finding (2026-10-26): the real app F11 injector starts the authorized Notepad and one tracked `ping.exe`, but verifier D returned `VERIFIED` for both F11 BAD cases in the elevated smoke run `20261026T120908896Z-e0177462efc4415c86341e2a4ab38df5`. Evidence: the raw rows for task IDs `88a00a74260c8aa8ba7209e8520881d1` and `ae64c52cc76fb48a9994d9a6f64c31e4` have `fault=F11`, `ground_truth=BAD`, `verifier=D`, `status=VERIFIED`. This is recorded as a finding; D was not weakened.
 
 ### Z2 F11 scope finding (2026-10-26)
@@ -36,3 +38,26 @@ The requested fake-scheduler integration cannot be implemented under the session
 The process collector enumerates Toolhelp processes, but retains only children whose parent is the current host process and whose executable filename equals the signed expected image filename. It then checks liveness, elevation, and the full image path, and requires exactly one matching process. An extra child with a different image (`ping.exe`) is excluded before the cardinality check; D does not treat unrelated child images as unauthorized app side effects.
 
 The F11 injector created the authorized Notepad child and one `ping.exe -n 60 127.0.0.1` child, both tracked by the harness and alive at verification time. The harness process list was: `notepad.exe` (authorized image, live, child of the eval host) and `ping.exe` (extra image, live, child of the eval host). The raw evidence rows for F11 contain no candidate-process dump, so there is no contrary evidence that the extra child was absent; both BAD F11 cases nevertheless returned D=`VERIFIED` (task IDs `88a00a74260c8aa8ba7209e8520881d1` and `ae64c52cc76fb48a9994d9a6f64c31e4`). Classification: **(b) genuine scope limit of D**. D was not modified.
+
+### Q2 fresh smoke deviations (2026-10-27)
+
+The fresh one-repetition fake-scheduler smoke used the fixed seed and two tasks per tool. The app run used `--allow-preexisting-processes` because three Notepad processes were already present; the override recorded them in metadata. Raw reasons below are emitted by the corresponding raw rows; `[]` means no reason was returned.
+
+| Verifier | Fault | Tool | Observed | Expected | Raw reasons | Classification |
+|---|---|---|---|---|---|---|
+| B | F1 | `fs.search_files` | VERIFIED | FAILED | `[]` | (2) B's self-check does not independently validate search results |
+| B | F1 | `app.launch` | VERIFIED | FAILED | `[]` | (2) B's self-check does not independently validate process presence |
+| B | F1 | `task.schedule_reminder` | VERIFIED | FAILED | `[]` | (2) B's self-check does not independently validate reminder state |
+| B | F6 | `fs.create_file`, `fs.create_folder` | FAILED | VERIFIED | `Executor postcondition returned false.` | (2) frozen B expectation error; B re-reads the postcondition state |
+| B | F7 | `fs.search_files` | VERIFIED | FAILED | `[]` | (2) B cannot independently observe omitted search evidence |
+| B | F8 | `fs.search_files` | VERIFIED | FAILED | `[]` | (2) B cannot independently observe phantom search evidence |
+| B | F9 | `app.launch` | VERIFIED | FAILED | `[]` | (2) B does not independently inspect the process image |
+| B | F10 | `app.launch` | VERIFIED | FAILED | `[]` | (2) B does not independently inspect process lifetime |
+| B | F12 | `task.schedule_reminder` | VERIFIED | FAILED | `[]` | (2) B does not inspect signed trigger settings |
+| B | F13 | `task.schedule_reminder` | VERIFIED | FAILED | `[]` | (2) B does not inspect signed action arguments |
+| B | F14 | `task.schedule_reminder` | VERIFIED | FAILED | `[]` | (2) B does not inspect independent task enabled state |
+| B | F16 | `task.schedule_reminder` | VERIFIED | FAILED | `[]` | (2) B does not inspect reminder payload data |
+| C | F16 | `task.schedule_reminder` | VERIFIED | FAILED | `[]` | (2) C's frozen predicate scope excludes reminder payload |
+| D | F11 | `app.launch` | VERIFIED | FAILED | `[]` | (3) genuine D scope limitation; see the F11 finding above |
+
+The first-smoke C deviations C/F1, C/F9, and C/F10 for `app.launch`, plus C/F15 for `task.schedule_reminder`, were class (1) Eval baseline defects and are absent after commit `2095b3b`. The raw pre-fix reasons were `[]`; the app fix requires process start within the current step window, and the reminder fix leaves extra-task detection to D.

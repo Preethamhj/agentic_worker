@@ -126,3 +126,7 @@ The evaluation assembly may access the production verification scheduler evidenc
 
 The development F11 app cases are a deviation from the pre-registered table: verifier D returned `VERIFIED` on BAD F11 cases. The investigation found a genuine scope limit, not a harness absence: the process evidence collector filters candidates to the signed authorized image before counting matches, so an unauthorized extra child image is not considered. This is recorded in `docs/eval/FINDINGS.md`; verifier D is not modified.
 
+## AMENDMENT 6 (2026-10-27, Eval baseline fidelity)
+
+Commit `2095b3b` corrected two Eval-only baseline implementation defects without changing verifier D or the frozen expected-verdict table. Baseline C now requires an authorized app process to have started within the current step's observation window, preventing a prior case's Notepad from contaminating F1/F9/F10. Baseline C no longer treats an extra reminder task as a mismatch because the protocol predicate covers task existence, enabled state, trigger time, and action arguments, not extra-task detection. The F9 injector is faithful as of commit `f1d9211`, which added tracked process creation and cleanup for the wrong-process case. All remaining Q2 deviations are reported in `docs/eval/FINDINGS.md` and are not tuned.
+

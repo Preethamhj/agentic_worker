@@ -54,3 +54,4 @@ From the repository root, CI runs `scripts/setup-windows.ps1 -SkipOllamaPull -Sk
 * Z4: release build, non-real-scheduler solution tests, Python tests/lint/type checks, architecture test, format verification, and final check-all all passed; no paper run or tag was created.
 * Q0: restored the Category=RealScheduler pass in check-all with the normal user/admin desktop-session note; elevated local run passed 13 tests.
 * Q1: added app preflight for existing Notepad/ping processes, explicit metadata override support, and a passing decoy-process preflight test; run-eval now fails early unless overridden.
+* Q2: fresh fake-scheduler smoke completed for all five tools; fixed C's app time-window and reminder extra-task baseline defects in `2095b3b`, added Amendment 6, and classified all remaining deviations in FINDINGS.
