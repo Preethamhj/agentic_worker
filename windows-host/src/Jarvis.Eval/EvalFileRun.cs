@@ -158,7 +158,7 @@ public sealed class EvalFileRunner
                             rep = evalCase.Repetition,
                             verifier = verdict.VerifierId,
                             status = verdict.Status.ToString().ToUpperInvariant(),
-                            reasons = verdict.Reasons.Select(reason => SanitizeReason(reason, sandbox)),
+                            reasons = verdict.Reasons.Select(reason => SanitizeRawString(reason, sandbox)),
                             latency_ms = verdict.Latency.TotalMilliseconds
                         })).ConfigureAwait(false);
                         await output.FlushAsync().ConfigureAwait(false);
@@ -219,8 +219,14 @@ public sealed class EvalFileRunner
         return completed;
     }
 
-    private static string SanitizeReason(string reason, string sandbox) =>
-        reason.Replace(sandbox, "<sandbox>", StringComparison.OrdinalIgnoreCase);
+    internal static string SanitizeRawString(string value, string sandbox)
+    {
+        var sanitized = value.Replace(sandbox, "<sandbox>", StringComparison.OrdinalIgnoreCase);
+        var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (!string.IsNullOrEmpty(userProfile))
+            sanitized = sanitized.Replace(userProfile.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar), "<user>", StringComparison.OrdinalIgnoreCase);
+        return sanitized;
+    }
 
     private async Task<EvalRunResult> RunCaseAsync(
         EvalCase evalCase,

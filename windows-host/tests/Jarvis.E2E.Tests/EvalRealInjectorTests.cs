@@ -14,6 +14,19 @@ namespace Jarvis.E2E.Tests;
 
 public sealed class EvalRealInjectorTests
 {
+    [Fact]
+    public void Raw_Output_Sanitization_Replaces_Absolute_User_Paths()
+    {
+        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        profile.Should().NotBeNullOrWhiteSpace();
+        var path = Path.Combine(profile, "Documents", "private.txt");
+
+        var sanitized = EvalFileRunner.SanitizeRawString($"Observed {path}", Path.Combine(profile, "AppData", "Local", "Jarvis", "eval-sandbox"));
+
+        sanitized.Should().Be($"Observed {Path.Combine("<user>", "Documents", "private.txt")}");
+        sanitized.Contains(profile, StringComparison.OrdinalIgnoreCase).Should().BeFalse();
+    }
+
     [Theory]
     [InlineData("F1", "fs.create_file")]
     [InlineData("F4", "fs.create_file")]

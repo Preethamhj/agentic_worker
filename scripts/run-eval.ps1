@@ -1,34 +1,61 @@
 [CmdletBinding()]
 param(
     [int]$Reps = 2,
-    [Parameter(Mandatory = $true)][string]$Out,
-    [switch]$Smoke,
-    [switch]$AllowPreexistingProcesses,
-    [switch]$DryRun
+    [string]$Out = '',
+    [switch]$DryRun,
+    [switch]$RealReminderSubset,
+    [switch]$AllowInRepo
 )
 
 $ErrorActionPreference = 'Stop'
 $startedAt = Get-Date
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path.TrimEnd('\')
+if ([string]::IsNullOrWhiteSpace($Out)) {
+    $Out = Join-Path $env:LOCALAPPDATA ("Jarvis\eval-results\" + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+}
+$outRoot = [IO.Path]::GetFullPath($Out)
+$repoPrefix = $repoRoot + '\'
+if (-not $AllowInRepo -and ($outRoot.Equals($repoRoot, [StringComparison]::OrdinalIgnoreCase) -or $outRoot.StartsWith($repoPrefix, [StringComparison]::OrdinalIgnoreCase))) {
+    throw "Output path is inside the repository; choose another path or explicitly pass -AllowInRepo."
+}
+if ($Reps -lt 1) { throw '-Reps must be at least 1.' }
+if ($RealReminderSubset -and $env:JARVIS_REAL_SCHEDULER -ne '1') {
+    throw '-RealReminderSubset requires JARVIS_REAL_SCHEDULER=1.'
+}
+
 $dll = Join-Path $repoRoot 'windows-host\src\Jarvis.Eval\bin\Release\net10.0-windows\Jarvis.Eval.dll'
 $python = Join-Path $repoRoot 'ai-server\.venv\Scripts\python.exe'
-$outRoot = [IO.Path]::GetFullPath($Out)
-if (-not $DryRun) { New-Item -ItemType Directory -Force -Path $outRoot | Out-Null }
-
-if (-not (Test-Path $dll)) { throw "Eval DLL not found: $dll" }
-if (-not (Test-Path $python)) { throw "Python venv not found: $python" }
-
+$analyzer = Join-Path $repoRoot 'eval\analyze.py'
 if (-not $DryRun) {
-    $preexisting = Get-Process -Name notepad,ping -ErrorAction SilentlyContinue |
+    if (-not (Test-Path $dll)) { throw "Eval DLL not found: $dll" }
+    if (-not (Test-Path $python)) { throw "Python venv not found: $python" }
+    New-Item -ItemType Directory -Force -Path $outRoot | Out-Null
+}
+
+$preexisting = @()
+if (-not $DryRun) {
+    $preexisting = @(Get-Process -Name notepad,ping -ErrorAction SilentlyContinue |
         ForEach-Object {
-            try { [PSCustomObject]@{ ProcessName = $_.ProcessName; Id = $_.Id; StartTime = $_.StartTime; WindowTitle = $_.MainWindowTitle } } catch { }
-        }
-    if (@($preexisting).Count -gt 0 -and -not $AllowPreexistingProcesses) {
-        $details = @($preexisting | ForEach-Object { "$($_.ProcessName) PID=$($_.Id) StartTime=$($_.StartTime.ToUniversalTime().ToString('o')) WindowTitle=$($_.WindowTitle)" }) -join '; '
-        throw "App evaluation aborted because pre-existing Notepad/ping processes were found: $details. Close only processes you own, or rerun with -AllowPreexistingProcesses."
+            try {
+                [PSCustomObject]@{
+                    ProcessName = $_.ProcessName
+                    Id = $_.Id
+                    StartTime = $_.StartTime
+                    WindowTitle = $_.MainWindowTitle
+                }
+            } catch {
+                throw "Could not safely inspect a pre-existing Notepad/ping process: $($_.Exception.Message)"
+            }
+        })
+    if ($preexisting.Count -gt 0) {
+        $details = ($preexisting | ForEach-Object {
+            "$($_.ProcessName) PID=$($_.Id) StartTime=$($_.StartTime.ToUniversalTime().ToString('o')) WindowTitle=$($_.WindowTitle)"
+        }) -join '; '
+        throw "App evaluation aborted because Notepad/ping processes already exist: $details. Close only processes you own, then rerun."
     }
 } else {
-    Write-Host 'DRY RUN: would preflight notepad.exe and ping.exe and fail unless -AllowPreexistingProcesses is supplied.'
+    Write-Host 'DRY RUN: no directories or files will be created.'
+    Write-Host 'DRY RUN: would preflight notepad.exe and ping.exe and stop if either exists.'
 }
 
 $tools = @(
@@ -38,40 +65,54 @@ $tools = @(
     @{ Name = 'app.launch'; Directory = 'app-launch' },
     @{ Name = 'task.schedule_reminder'; Directory = 'task-schedule-reminder' }
 )
+if ($RealReminderSubset) {
+    $tools = @($tools | Where-Object { $_.Name -eq 'task.schedule_reminder' })
+}
 
 foreach ($tool in $tools) {
     $toolOut = Join-Path $outRoot $tool.Directory
-    if (-not $DryRun) { New-Item -ItemType Directory -Force -Path $toolOut | Out-Null }
     $log = Join-Path $toolOut 'run.log'
-    $arguments = @($dll, 'run', '--seed', '20261025', '--reps', $Reps, '--tools', $tool.Name, '--scheduler', 'fake', '--out', $toolOut)
-    if ($Smoke) { $arguments += '--smoke' }
-    if ($AllowPreexistingProcesses) { $arguments += '--allow-preexisting-processes' }
-    $display = 'dotnet ' + (($arguments | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }) -join ' ')
+    $repetitions = if ($RealReminderSubset) { 1 } else { $Reps }
+    $scheduler = if ($RealReminderSubset) { 'real' } else { 'fake' }
+    $arguments = @($dll, 'run', '--seed', '20261025', '--reps', $repetitions, '--tools', $tool.Name, '--scheduler', $scheduler, '--out', $toolOut)
+    $display = 'dotnet ' + (($arguments | ForEach-Object {
+        if ($_ -match '\s') { '"' + $_ + '"' } else { $_ }
+    }) -join ' ')
     if ($DryRun) {
         Write-Host $display
-        Write-Host "analyze: $python $(Join-Path $repoRoot 'eval\analyze.py') $(Join-Path $toolOut 'raw.jsonl') --out $toolOut"
         continue
     }
+    New-Item -ItemType Directory -Force -Path $toolOut | Out-Null
     & dotnet @arguments *> $log
     if ($LASTEXITCODE -ne 0) { throw "Eval failed for $($tool.Name); see $log" }
-    $raw = Join-Path $toolOut 'raw.jsonl'
-    if (Test-Path $raw) {
-        & $python (Join-Path $repoRoot 'eval\analyze.py') $raw --out $toolOut *> (Join-Path $toolOut 'analyze.log')
-        if ($LASTEXITCODE -ne 0) { throw "Analysis failed for $($tool.Name); see $toolOut" }
-    }
 }
 
-$sandbox = Join-Path $env:LOCALAPPDATA 'Jarvis\eval-sandbox'
+$analysisArguments = @($analyzer, $outRoot, '--out', $outRoot)
+$analysisDisplay = '"' + $python + '" ' + (($analysisArguments | ForEach-Object {
+    if ($_ -match '\s') { '"' + $_ + '"' } else { $_ }
+}) -join ' ')
 if ($DryRun) {
-    Write-Host 'DRY RUN: would query scheduled tasks under \\Jarvis\\, Notepad/ping started after the script start, and the eval sandbox.'
-} else {
-    Write-Host '=== Final cleanup check ==='
-    Write-Host 'Scheduled tasks under \\Jarvis\\:'
-    try { Get-ScheduledTask -TaskPath '\Jarvis\' -ErrorAction Stop | Select-Object TaskPath,TaskName,State } catch { Write-Host $_.Exception.Message }
-    Write-Host 'Notepad/ping processes started after this script began:'
-    Get-Process -Name notepad,ping -ErrorAction SilentlyContinue |
-        Where-Object { $_.StartTime -ge $startedAt } |
-        Select-Object Id,ProcessName,StartTime,HasExited
-    Write-Host "Eval sandbox: $sandbox"
-    if (Test-Path $sandbox) { Get-ChildItem $sandbox -Directory | Select-Object FullName }
+    Write-Host $analysisDisplay
+    Write-Host "Output directory: $outRoot"
+    Write-Host 'DRY RUN: would perform one combined analysis over every raw.jsonl under the output directory.'
+    Write-Host 'DRY RUN: would query scheduled tasks under \Jarvis\, notepad/calc/CalculatorApp/mspaint/ping processes, eval sandbox, and reminders folder.'
+    exit 0
 }
+
+& $python @analysisArguments *> (Join-Path $outRoot 'analyze.log')
+if ($LASTEXITCODE -ne 0) { throw "Combined analysis failed; see $(Join-Path $outRoot 'analyze.log')" }
+
+Write-Host '=== Final cleanup check ==='
+Write-Host 'Scheduled tasks under \Jarvis\:'
+try { Get-ScheduledTask -TaskPath '\Jarvis\' -ErrorAction Stop | Select-Object TaskPath,TaskName,State } catch { Write-Host $_.Exception.Message }
+Write-Host 'Notepad/calc/CalculatorApp/mspaint/ping processes started after this script began:'
+Get-Process -Name notepad,calc,CalculatorApp,mspaint,ping -ErrorAction SilentlyContinue |
+    Where-Object { $_.StartTime -ge $startedAt } |
+    Select-Object Id,ProcessName,StartTime,HasExited
+$sandbox = Join-Path $env:LOCALAPPDATA 'Jarvis\eval-sandbox'
+Write-Host "Eval sandbox: $sandbox"
+if (Test-Path $sandbox) { Get-ChildItem $sandbox -Directory | Select-Object FullName }
+$reminders = Join-Path $env:LOCALAPPDATA 'Jarvis\reminders'
+Write-Host "Reminders folder: $reminders"
+if (Test-Path $reminders) { Get-ChildItem $reminders -File | Select-Object Name,Length }
+Write-Host "Combined results: $outRoot"

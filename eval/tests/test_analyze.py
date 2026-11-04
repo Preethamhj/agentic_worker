@@ -45,6 +45,30 @@ def test_analyze_writes_outputs(tmp_path: Path) -> None:
     assert (out / "summary.md").exists()
 
 
+def test_analyze_combines_multiple_files_and_directory_inputs(tmp_path: Path) -> None:
+    first = tmp_path / "first" / "raw.jsonl"
+    second = tmp_path / "second" / "raw.jsonl"
+    first.parent.mkdir()
+    second.parent.mkdir()
+    first.write_text(
+        json.dumps({"task_id": "t1", "verifier": "D", "fault": "F0", "status": "VERIFIED"}),
+        encoding="utf-8",
+    )
+    second.write_text(
+        json.dumps({"task_id": "t2", "verifier": "D", "fault": "F0", "status": "VERIFIED"}),
+        encoding="utf-8",
+    )
+    out = tmp_path / "combined"
+
+    analyze([first, second], out)
+    markdown = (out / "summary.md").read_text(encoding="utf-8")
+    assert "Distinct verifier/case rows: 2" in markdown
+
+    analyze(tmp_path, out)
+    markdown = (out / "summary.md").read_text(encoding="utf-8")
+    assert "Distinct verifier/case rows: 2" in markdown
+
+
 def test_protocol_table_is_parsed_from_real_file() -> None:
     protocol = Path(__file__).parents[2] / "docs" / "eval" / "PROTOCOL.md"
     expected = parse_expected_verdicts(protocol)

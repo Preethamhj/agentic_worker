@@ -69,9 +69,25 @@ def _is_good(row: dict[str, Any]) -> bool:
     return str(row.get("ground_truth", "BAD")).upper() == "GOOD" or str(row.get("fault")) == "F0"
 
 
-def analyze(input_path: Path, output_dir: Path) -> None:
-    """Write summary.csv and summary.md for a raw evaluation file."""
-    rows = [json.loads(line) for line in input_path.read_text(encoding="utf-8-sig").splitlines() if line.strip()]
+def _raw_files(input_paths: Path | list[Path]) -> list[Path]:
+    candidates = [input_paths] if isinstance(input_paths, Path) else input_paths
+    files: list[Path] = []
+    for candidate in candidates:
+        if candidate.is_dir():
+            files.extend(sorted(candidate.rglob("raw.jsonl")))
+        else:
+            files.append(candidate)
+    return list(dict.fromkeys(path.resolve() for path in files))
+
+
+def analyze(input_paths: Path | list[Path], output_dir: Path) -> None:
+    """Write a combined summary from one or more raw JSONL files or a directory."""
+    rows = [
+        json.loads(line)
+        for input_path in _raw_files(input_paths)
+        for line in input_path.read_text(encoding="utf-8-sig").splitlines()
+        if line.strip()
+    ]
     cases = collapse(rows)
     expected = parse_expected_verdicts(Path(__file__).resolve().parents[1] / "docs" / "eval" / "PROTOCOL.md")
     grouped: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
@@ -144,10 +160,10 @@ def analyze(input_path: Path, output_dir: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("raw", type=Path)
+    parser.add_argument("raw", type=Path, nargs="+")
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
-    analyze(args.raw, args.out)
+    analyze(args.raw[0] if len(args.raw) == 1 else args.raw, args.out)
 
 
 if __name__ == "__main__":
