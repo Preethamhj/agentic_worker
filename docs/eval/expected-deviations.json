@@ -1,0 +1,137 @@
+[
+  {
+    "verifier": "B",
+    "fault": "F1",
+    "tool": "fs.search_files",
+    "observed": "VERIFIED",
+    "expected": "FAILED",
+    "class": 2,
+    "paper_wording": "B's self-check does not independently validate search results."
+  },
+  {
+    "verifier": "B",
+    "fault": "F1",
+    "tool": "app.launch",
+    "observed": "VERIFIED",
+    "expected": "FAILED",
+    "class": 2,
+    "paper_wording": "B's self-check does not independently validate process presence."
+  },
+  {
+    "verifier": "B",
+    "fault": "F1",
+    "tool": "task.schedule_reminder",
+    "observed": "VERIFIED",
+    "expected": "FAILED",
+    "class": 2,
+    "paper_wording": "B's self-check does not independently validate reminder state."
+  },
+  {
+    "verifier": "B",
+    "fault": "F6",
+    "tool": "fs.create_file",
+    "observed": "FAILED",
+    "expected": "VERIFIED",
+    "class": 2,
+    "paper_wording": "B re-reads the postcondition after deletion, contrary to its frozen pre-removal expectation."
+  },
+  {
+    "verifier": "B",
+    "fault": "F6",
+    "tool": "fs.create_folder",
+    "observed": "FAILED",
+    "expected": "VERIFIED",
+    "class": 2,
+    "paper_wording": "B re-reads the postcondition after deletion, contrary to its frozen pre-removal expectation."
+  },
+  {
+    "verifier": "B",
+    "fault": "F7",
+    "tool": "fs.search_files",
+    "observed": "VERIFIED",
+    "expected": "FAILED",
+    "class": 2,
+    "paper_wording": "B cannot independently observe omitted search evidence."
+  },
+  {
+    "verifier": "B",
+    "fault": "F8",
+    "tool": "fs.search_files",
+    "observed": "VERIFIED",
+    "expected": "FAILED",
+    "class": 2,
+    "paper_wording": "B cannot independently observe phantom search evidence."
+  },
+  {
+    "verifier": "B",
+    "fault": "F9",
+    "tool": "app.launch",
+    "observed": "VERIFIED",
+    "expected": "FAILED",
+    "class": 2,
+    "paper_wording": "B does not independently inspect the process image."
+  },
+  {
+    "verifier": "B",
+    "fault": "F10",
+    "tool": "app.launch",
+    "observed": "VERIFIED",
+    "expected": "FAILED",
+    "class": 2,
+    "paper_wording": "B does not independently inspect process lifetime."
+  },
+  {
+    "verifier": "B",
+    "fault": "F12",
+    "tool": "task.schedule_reminder",
+    "observed": "VERIFIED",
+    "expected": "FAILED",
+    "class": 2,
+    "paper_wording": "B does not inspect signed trigger settings."
+  },
+  {
+    "verifier": "B",
+    "fault": "F13",
+    "tool": "task.schedule_reminder",
+    "observed": "VERIFIED",
+    "expected": "FAILED",
+    "class": 2,
+    "paper_wording": "B does not inspect signed action arguments."
+  },
+  {
+    "verifier": "B",
+    "fault": "F14",
+    "tool": "task.schedule_reminder",
+    "observed": "VERIFIED",
+    "expected": "FAILED",
+    "class": 2,
+    "paper_wording": "B does not inspect independent task enabled state."
+  },
+  {
+    "verifier": "B",
+    "fault": "F16",
+    "tool": "task.schedule_reminder",
+    "observed": "VERIFIED",
+    "expected": "FAILED",
+    "class": 2,
+    "paper_wording": "B does not inspect reminder payload data."
+  },
+  {
+    "verifier": "C",
+    "fault": "F16",
+    "tool": "task.schedule_reminder",
+    "observed": "VERIFIED",
+    "expected": "FAILED",
+    "class": 2,
+    "paper_wording": "C's frozen predicate scope excludes reminder payload data."
+  },
+  {
+    "verifier": "D",
+    "fault": "F11",
+    "tool": "app.launch",
+    "observed": "VERIFIED",
+    "expected": "FAILED",
+    "class": 3,
+    "paper_wording": "D filters process evidence to the authorized image, so an extra child with a different image is outside its current scope."
+  }
+]

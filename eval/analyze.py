@@ -80,14 +80,61 @@ def _raw_files(input_paths: Path | list[Path]) -> list[Path]:
     return list(dict.fromkeys(path.resolve() for path in files))
 
 
-def analyze(input_paths: Path | list[Path], output_dir: Path) -> None:
-    """Write a combined summary from one or more raw JSONL files or a directory."""
-    rows = [
+def _read_rows(input_paths: Path | list[Path]) -> list[dict[str, Any]]:
+    return [
         json.loads(line)
         for input_path in _raw_files(input_paths)
         for line in input_path.read_text(encoding="utf-8-sig").splitlines()
         if line.strip()
     ]
+
+
+def _deviation_key(row: dict[str, Any]) -> tuple[str, str, str, str, str]:
+    return (
+        str(row["verifier"]),
+        str(row["fault"]),
+        str(row["tool"]),
+        str(row["observed"]),
+        str(row["expected"]),
+    )
+
+
+def check_deviations(input_paths: Path | list[Path], deviations_path: Path) -> int:
+    """Compare observed protocol deviations with the frozen expected-deviations file."""
+    expected_rows = json.loads(deviations_path.read_text(encoding="utf-8-sig"))
+    expected = {_deviation_key(row) for row in expected_rows}
+    protocol_expected = parse_expected_verdicts(
+        Path(__file__).resolve().parents[1] / "docs" / "eval" / "PROTOCOL.md"
+    )
+    observed: set[tuple[str, str, str, str, str]] = set()
+    for row in collapse(_read_rows(input_paths)):
+        verifier = str(row["verifier"])
+        fault = str(row["fault"])
+        wanted = protocol_expected.get((verifier, fault))
+        actual = str(row["status"])
+        if wanted is not None and actual != wanted:
+            observed.add(
+                (
+                    verifier,
+                    fault,
+                    str(row["tool"]),
+                    actual,
+                    wanted,
+                )
+            )
+
+    unlisted = sorted(observed - expected)
+    missing = sorted(expected - observed)
+    print("Unlisted observed deviations:")
+    print("\n".join(" | ".join(row) for row in unlisted) if unlisted else "none")
+    print("Listed deviations not observed:")
+    print("\n".join(" | ".join(row) for row in missing) if missing else "none")
+    return 1 if unlisted or missing else 0
+
+
+def analyze(input_paths: Path | list[Path], output_dir: Path) -> None:
+    """Write a combined summary from one or more raw JSONL files or a directory."""
+    rows = _read_rows(input_paths)
     cases = collapse(rows)
     expected = parse_expected_verdicts(Path(__file__).resolve().parents[1] / "docs" / "eval" / "PROTOCOL.md")
     grouped: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
@@ -161,9 +208,18 @@ def analyze(input_paths: Path | list[Path], output_dir: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("raw", type=Path, nargs="+")
-    parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--out", type=Path)
+    parser.add_argument("--check-deviations", type=Path)
     args = parser.parse_args()
-    analyze(args.raw[0] if len(args.raw) == 1 else args.raw, args.out)
+    inputs = args.raw[0] if len(args.raw) == 1 else args.raw
+    result = 0
+    if args.check_deviations is not None:
+        result = check_deviations(inputs, args.check_deviations)
+    if args.out is not None:
+        analyze(inputs, args.out)
+    elif args.check_deviations is None:
+        parser.error("--out is required unless --check-deviations is specified")
+    raise SystemExit(result)
 
 
 if __name__ == "__main__":

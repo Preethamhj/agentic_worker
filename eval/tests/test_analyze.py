@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 import pytest
-from eval.analyze import analyze, collapse, parse_expected_verdicts, wilson
+from eval.analyze import analyze, check_deviations, collapse, parse_expected_verdicts, wilson
 
 
 def test_wilson_known_two_of_four() -> None:
@@ -121,3 +121,84 @@ def test_analysis_includes_reminder_and_f11_synthetic_cases(tmp_path: Path) -> N
     assert "| D | F11 |" in markdown
     assert "| app-1 | F11 | VERIFIED |" in markdown
     assert "| D | F11 | 1 | expected FAILED, actual VERIFIED |" in markdown
+
+
+def test_deviation_check_accepts_listed_and_observed_deviation(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    raw = tmp_path / "raw.jsonl"
+    raw.write_text(
+        "\n".join(
+            json.dumps(
+                {
+                    "task_id": "app-1",
+                    "tool": "app.launch",
+                    "verifier": "D",
+                    "fault": "F11",
+                    "status": "VERIFIED",
+                    "ground_truth": "BAD",
+                }
+            )
+            for _ in range(2)
+        ),
+        encoding="utf-8",
+    )
+    deviations = tmp_path / "expected.json"
+    deviations.write_text(
+        json.dumps(
+            [
+                {
+                    "verifier": "D",
+                    "fault": "F11",
+                    "tool": "app.launch",
+                    "observed": "VERIFIED",
+                    "expected": "FAILED",
+                    "class": 3,
+                    "paper_wording": "A known scope limitation.",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    assert check_deviations(raw, deviations) == 0
+    output = capsys.readouterr().out
+    assert "Unlisted observed deviations:\nnone" in output
+    assert "Listed deviations not observed:\nnone" in output
+
+
+def test_deviation_check_fails_for_unlisted_and_missing_entries(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    raw = tmp_path / "raw.jsonl"
+    raw.write_text(
+        json.dumps(
+            {
+                "task_id": "reminder-1",
+                "tool": "task.schedule_reminder",
+                "verifier": "C",
+                "fault": "F16",
+                "status": "VERIFIED",
+                "ground_truth": "BAD",
+            }
+        ),
+        encoding="utf-8",
+    )
+    deviations = tmp_path / "expected.json"
+    deviations.write_text(
+        json.dumps(
+            [
+                {
+                    "verifier": "D",
+                    "fault": "F11",
+                    "tool": "app.launch",
+                    "observed": "VERIFIED",
+                    "expected": "FAILED",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    assert check_deviations(raw, deviations) == 1
+    output = capsys.readouterr().out
+    assert "C | F16 | task.schedule_reminder | VERIFIED | FAILED" in output
+    assert "D | F11 | app.launch | VERIFIED | FAILED" in output
