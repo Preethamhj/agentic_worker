@@ -130,3 +130,33 @@ The development F11 app cases are a deviation from the pre-registered table: ver
 
 Commit `2095b3b` corrected two Eval-only baseline implementation defects without changing verifier D or the frozen expected-verdict table. Baseline C now requires an authorized app process to have started within the current step's observation window, preventing a prior case's Notepad from contaminating F1/F9/F10. Baseline C no longer treats an extra reminder task as a mismatch because the protocol predicate covers task existence, enabled state, trigger time, and action arguments, not extra-task detection. The F9 injector is faithful as of commit `f1d9211`, which added tracked process creation and cleanup for the wrong-process case. All remaining Q2 deviations are reported in `docs/eval/FINDINGS.md` and are not tuned.
 
+## AMENDMENT 7 (2026-11-04, paper-run freeze)
+
+The paper run is reproducible only from the release tag `eval-paper-v1`. After the paper run starts, no evaluation code, analysis code, fault injector, baseline, or expected-deviation file may be changed.
+
+Exact Windows PowerShell commands for the owner:
+
+```powershell
+git switch --detach eval-paper-v1
+$paperOut = Join-Path $env:LOCALAPPDATA 'Jarvis\eval-results\paper-v1'
+.\scripts\run-eval.ps1 -Reps 5 -Out $paperOut
+
+$priorSchedulerSetting = $env:JARVIS_REAL_SCHEDULER
+try {
+    $env:JARVIS_REAL_SCHEDULER = '1'
+    $realOut = Join-Path $env:LOCALAPPDATA 'Jarvis\eval-results\paper-v1-real-reminder'
+    .\scripts\run-eval.ps1 -RealReminderSubset -Out $realOut
+} finally {
+    if ($null -eq $priorSchedulerSetting) {
+        Remove-Item Env:\JARVIS_REAL_SCHEDULER -ErrorAction SilentlyContinue
+    } else {
+        $env:JARVIS_REAL_SCHEDULER = $priorSchedulerSetting
+    }
+}
+```
+
+The unit of analysis is a distinct `(task, fault)` case for each verifier. Repeated deterministic outcomes are collapsed by majority verdict; disagreement is reported as instability, and repetitions are not counted as independent samples. `FAILED`, `ESCALATE`, and `ERROR` are each reported separately. Detection is any status other than `VERIFIED`; neither `ESCALATE` nor `ERROR` is relabeled as `FAILED` or `VERIFIED`.
+
+Report results in this order: (1) control verdicts, (2) faults inside C's predicate scope, (3) faults outside C's predicate scope, and (4) deviations from pre-registration. Keep F18 separate as specified above.
+
+Amendment 6 intentionally lowered C's F15 detection: extra-task detection is outside C's frozen predicate definition, which covers only reminder task existence, enabled state, trigger time, and action arguments. Therefore C's F15 result is reported as an outside-scope baseline limitation, not tuned to resemble D.
