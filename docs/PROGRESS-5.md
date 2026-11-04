@@ -58,3 +58,4 @@ From the repository root, CI runs `scripts/setup-windows.ps1 -SkipOllamaPull -Sk
 * Q2: fresh fake-scheduler smoke completed for all five tools; fixed C's app time-window and reminder extra-task baseline defects in `2095b3b`, added Amendment 6, and classified all remaining deviations in FINDINGS.
 * Q3: added 25 real-state E2E cases covering folder/search/app/reminder injectors, diagnose-case output, and PID/start-time mismatch cleanup; E2E total is 131 and solution total is 441.
 * Q4: marked X4 resolved by Amendment 4, recorded F9 fidelity in Amendment 6, and verified run-eval DryRun prints all five commands plus cleanup checks without executing them.
+* R0: CI: not checked (no actionable CI log was provided; the prompt contained only its placeholder).
