@@ -131,10 +131,10 @@ public sealed class EvalFileRunner
                 preexisting_processes = preexistingProcesses
             })).ConfigureAwait(false);
 
-            var tasks = EvalTaskCatalog.Generate(options.Seed)
-                .Where(task => options.ToolFilter is null || task.ToolId == options.ToolFilter)
-                .Take(options.Smoke ? 2 : int.MaxValue)
-                .ToArray();
+            var tasks = SelectTasks(
+                EvalTaskCatalog.Generate(options.Seed),
+                options.ToolFilter,
+                options.Smoke);
             var repetitions = options.Smoke ? 1 : options.Repetitions;
             foreach (var repetition in Enumerable.Range(1, repetitions))
                 foreach (var evalCase in EvalTaskCatalog.ExpandCases(tasks, repetition, options.Seed)
@@ -169,7 +169,11 @@ public sealed class EvalFileRunner
         finally
         {
             foreach (var tracked in _startedProcesses)
-                StopOwnedProcessIfMatch(tracked.Process, tracked.StartTime);
+            {
+                var stopped = StopOwnedProcessIfMatch(tracked.Process, tracked.StartTime);
+                Console.WriteLine(
+                    $"EVAL_PROCESS_CLEANUP PID={tracked.Process.Id} START={tracked.StartTime:o} STOPPED={stopped}");
+            }
             if (Directory.Exists(sandbox))
                 Directory.Delete(sandbox, recursive: true);
         }
@@ -219,6 +223,19 @@ public sealed class EvalFileRunner
         return completed;
     }
 
+    internal static IReadOnlyList<EvalTask> SelectTasks(
+        IEnumerable<EvalTask> catalog,
+        string? toolFilter,
+        bool smoke)
+    {
+        var filtered = catalog.Where(task => toolFilter is null || task.ToolId == toolFilter);
+        return smoke
+            ? filtered.GroupBy(task => task.ToolId, StringComparer.Ordinal)
+                .SelectMany(group => group.Take(2))
+                .ToArray()
+            : filtered.ToArray();
+    }
+
     internal static string SanitizeRawString(string value, string sandbox)
     {
         var sanitized = value.Replace(sandbox, "<sandbox>", StringComparison.OrdinalIgnoreCase);
@@ -265,9 +282,9 @@ public sealed class EvalFileRunner
         IToolExecutor executor = evalCase.ToolId == "task.schedule_reminder"
             || (evalCase.ToolId == "app.launch" && evalCase.FaultId != "F18") || (evalCase.FaultId == "F0" || evalCase.FaultId == "F18")
             ? inner
-            : new EvalFaultInjectingExecutor(inner, evalCase.FaultId, Path.Combine(root, "unauthorized-extra.txt"), process => _startedProcesses.Add((process, process.StartTime)));
+            : new EvalFaultInjectingExecutor(inner, evalCase.FaultId, Path.Combine(root, "unauthorized-extra.txt"), TrackStartedProcess);
         if (evalCase.ToolId == "app.launch" && evalCase.FaultId != "F18")
-            executor = new EvalFaultInjectingExecutor(inner, evalCase.FaultId, Path.Combine(root, "unused"), process => _startedProcesses.Add((process, process.StartTime)));
+            executor = new EvalFaultInjectingExecutor(inner, evalCase.FaultId, Path.Combine(root, "unused"), TrackStartedProcess);
         var stepExecutor = new StepExecutor(authService, [executor], policy);
         var args = evalCase.ToolId switch
         {
@@ -341,6 +358,13 @@ public sealed class EvalFileRunner
     {
         var now = DateTimeOffset.UtcNow.AddHours(1);
         return new DateTimeOffset(now.Year, now.Month, now.Day, now.Hour, now.Minute, now.Second, TimeSpan.Zero);
+    }
+
+    private void TrackStartedProcess(Process process)
+    {
+        var startTime = process.StartTime;
+        _startedProcesses.Add((process, startTime));
+        Console.WriteLine($"EVAL_PROCESS_STARTED PID={process.Id} START={startTime:o}");
     }
 
     private sealed class EvalHostPathProvider(string path) : IHostPathProvider

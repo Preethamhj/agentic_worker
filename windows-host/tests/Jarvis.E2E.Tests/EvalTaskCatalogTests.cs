@@ -10,6 +10,20 @@ namespace Jarvis.E2E.Tests;
 public sealed class EvalTaskCatalogTests
 {
     [Fact]
+    public void Smoke_Selection_Includes_Two_Tasks_Per_Tool()
+    {
+        var selected = EvalFileRunner.SelectTasks(
+            EvalTaskCatalog.Generate(EvalTaskCatalog.DefaultSeed),
+            toolFilter: null,
+            smoke: true);
+
+        selected.Should().HaveCount(10);
+        selected.GroupBy(task => task.ToolId)
+            .Should()
+            .OnlyContain(group => group.Count() == 2);
+    }
+
+    [Fact]
     public void Checked_In_Catalog_Is_Deterministic_And_Valid_Against_Its_Schema()
     {
         var root = FindRepositoryRoot();
