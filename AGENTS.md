@@ -48,3 +48,13 @@ You are a senior engineer implementing Jarvis, a local-first Windows assistant w
 
 ## FINAL REPORT FORMAT
 1) What was built. 2) Gate checklist with PASS or FAIL and evidence for each item. 3) Deviations. 4) Risks and open blockers. 5) Prerequisites for the next phase.
+
+## OPERATIONAL RULES (learned from earlier sessions)
+- Environment: Windows PowerShell 5 (no && operator). rg is NOT installed; use Get-ChildItem -Recurse -Filter *.cs | Select-String. Call venv tools directly (ai-server\.venv\Scripts\python.exe, ruff.exe, mypy.exe); never trigger VS Code Python environment configuration. Run dotnet with --disable-build-servers -m:1 (and --no-restore after the first restore). On a NuGet or .git lock error wait 20 s and retry up to 3 times; never delete lock files.
+- Budget: do not re-explore the repo; read only the files a step needs. Commit and push after each part and add one line to the phase PROGRESS file. If budget runs low, commit and list done / not done. Never leave uncommitted work. Never run a command that may exceed 5 minutes; give the user a script instead.
+- Processes: never Stop-Process by name or by a PID you did not start yourself with Process.Start. Hold the Process object and compare StartTime before killing. Use 30 s hard timeouts, only notepad and ping.exe for app tests, and never touch a Notepad you did not start. Real Task Scheduler tests only with JARVIS_REAL_SCHEDULER=1 and --filter "Category=RealScheduler". Real-scheduler evaluations are run by the user.
+- Gates: never remove a test category or step from scripts/check-all.ps1 or the CI workflow. Never edit the frozen evaluation protocol or its expected-verdict table; changes go in a dated AMENDMENT section.
+- Evidence: never state a CI result unless you have the run URL and its status; otherwise write "CI: not checked". Report per-project test counts copied from command output. Anything you could not run is "reported, not verified".
+- Verifier results: VERIFIED on a BAD case or non-VERIFIED on a GOOD case is a FINDING for docs/eval/FINDINGS.md. Never fix it by weakening a verifier or a check.
+- Boundaries: host projects never reference Jarvis.Eval. Evaluation work must not change production code, except a one-line seam explicitly authorized in a dated amendment.
+- State: docs/STATUS.md is the single source of current state; update it at the end of every session. Ignore everything under reports/.
