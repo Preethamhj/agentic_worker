@@ -8,6 +8,7 @@ import json
 import math
 import re
 from collections import Counter, defaultdict
+from collections.abc import Callable
 from pathlib import Path
 from statistics import median
 from typing import Any
@@ -144,42 +145,53 @@ def analyze(input_paths: Path | list[Path], output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     with (output_dir / "summary.csv").open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
-        writer.writerow(["verifier", "fault", "cases", "detected", "detection_rate", "wilson_low", "wilson_high", "false_success_rate", "false_failure_rate", "median_latency_ms", "p95_latency_ms", "instability_count"])
+        writer.writerow(["verifier", "fault", "scope", "cases", "detected", "failed_count", "escalate_count", "error_count", "detection_rate", "wilson_low", "wilson_high", "false_success_rate", "false_failure_rate", "median_latency_ms", "p95_latency_ms", "instability_count"])
         for verifier, fault in sorted(grouped):
             group = grouped[(verifier, fault)]
-            detected = sum(str(row["status"]) != "VERIFIED" for row in group)
+            status_counts = Counter(str(row["status"]) for row in group)
+            detected = sum(count for status, count in status_counts.items() if status != "VERIFIED")
             bad = sum(not _is_good(row) for row in group)
             good = len(group) - bad
             false_success = sum(str(row["status"]) == "VERIFIED" for row in group if not _is_good(row))
             false_failure = sum(str(row["status"]) != "VERIFIED" for row in group if _is_good(row))
             latencies = sorted(float(row.get("latency_ms", 0)) for row in group)
             low, high = wilson(detected, len(group))
-            writer.writerow([verifier, fault, len(group), detected, detected / len(group) if group else 0, low, high, false_success / bad if bad else 0, false_failure / good if good else 0, median(latencies) if latencies else 0, _p95(latencies), sum(int(row.get("instability", 0)) for row in group)])
+            scope = "control" if fault == "F0" else "outside-C" if fault in {"F5", "F11", "F15", "F17a", "F17b", "F18"} else "inside-C"
+            writer.writerow([verifier, fault, scope, len(group), detected, status_counts["FAILED"], status_counts["ESCALATE"], status_counts["ERROR"], detected / len(group) if group else 0, low, high, false_success / bad if bad else 0, false_failure / good if good else 0, median(latencies) if latencies else 0, _p95(latencies), sum(int(row.get("instability", 0)) for row in group)])
 
     lines = ["# Evaluation summary", "", f"Distinct verifier/case rows: {len(cases)}", "", "## Control verdicts per verifier", "", "| Verifier | VERIFIED | FAILED | ESCALATE | ERROR |", "|---|---:|---:|---:|---:|"]
     for verifier in sorted({str(row["verifier"]) for row in cases}):
         counts = Counter(str(row["status"]) for row in cases if row["verifier"] == verifier and row["fault"] == "F0")
         lines.append(f"| {verifier} | {counts['VERIFIED']} | {counts['FAILED']} | {counts['ESCALATE']} | {counts['ERROR']} |")
-    lines += ["", "## Detection by verifier and fault", "", "| Verifier | Fault | Cases | Detected (non-control) | False-success on BAD | False-failure on GOOD | Wilson 95% | Instability |", "|---|---|---:|---:|---:|---:|---|---:|"]
-    for verifier, fault in sorted(grouped):
-        group = grouped[(verifier, fault)]
-        bad = sum(not _is_good(row) for row in group)
-        good = len(group) - bad
-        detected = sum(str(row["status"]) != "VERIFIED" for row in group) if fault != "F0" else 0
-        false_success = sum(str(row["status"]) == "VERIFIED" for row in group if not _is_good(row))
-        false_failure = sum(str(row["status"]) != "VERIFIED" for row in group if _is_good(row))
-        low, high = wilson(detected, len(group))
-        lines.append(f"| {verifier} | {fault} | {len(group)} | {detected} | {false_success}/{bad} | {false_failure}/{good} | [{low:.3f}, {high:.3f}] | {sum(int(row.get('instability', 0)) for row in group)} |")
+    scope_groups: tuple[tuple[str, Callable[[str], bool]], ...] = (
+        ("Faults inside C's predicate scope", lambda fault: fault != "F0" and fault not in {"F5", "F11", "F15", "F17a", "F17b", "F18"}),
+        ("Faults outside C's predicate scope", lambda fault: fault in {"F5", "F11", "F15", "F17a", "F17b", "F18"}),
+    )
+    for heading, in_scope in scope_groups:
+        lines += ["", f"## {heading}", "", "| Verifier | Fault | Cases | Detected | FAILED | ESCALATE | ERROR | False-success on BAD | False-failure on GOOD | Wilson 95% | Instability |", "|---|---|---:|---:|---:|---:|---:|---:|---:|---|---:|"]
+        for verifier, fault in sorted(grouped):
+            if not in_scope(fault):
+                continue
+            group = grouped[(verifier, fault)]
+            statuses = Counter(str(row["status"]) for row in group)
+            bad = sum(not _is_good(row) for row in group)
+            good = len(group) - bad
+            detected = sum(count for status, count in statuses.items() if status != "VERIFIED")
+            false_success = sum(str(row["status"]) == "VERIFIED" for row in group if not _is_good(row))
+            false_failure = sum(str(row["status"]) != "VERIFIED" for row in group if _is_good(row))
+            low, high = wilson(detected, len(group))
+            lines.append(f"| {verifier} | {fault} | {len(group)} | {detected} | {statuses['FAILED']} | {statuses['ESCALATE']} | {statuses['ERROR']} | {false_success}/{bad} | {false_failure}/{good} | [{low:.3f}, {high:.3f}] | {sum(int(row.get('instability', 0)) for row in group)} |")
 
-    deviations: list[tuple[str, str, str, int]] = []
+    deviations: list[tuple[str, str, str, int, str]] = []
     for (verifier, fault), group in sorted(grouped.items()):
         wanted = expected.get((verifier, fault))
-        status = str(group[0]["status"])
-        if wanted is not None and status != wanted:
-            label = "ESCALATE where F expected" if wanted == "FAILED" and status == "ESCALATE" else f"expected {wanted}, actual {status}"
-            deviations.append((verifier, fault, label, len(group)))
-    lines += ["", "## Deviations from pre-registration", "", "| Verifier | Fault | Cases | Deviation |", "|---|---|---:|---|"]
-    lines.extend(f"| {v} | {f} | {n} | {label} |" for v, f, label, n in deviations)
+        if wanted is not None:
+            for status, count in sorted(Counter(str(row["status"]) for row in group).items()):
+                if status != wanted:
+                    label = "ESCALATE where F expected" if wanted == "FAILED" and status == "ESCALATE" else f"expected {wanted}, actual {status}"
+                    deviations.append((verifier, fault, status, count, label))
+    lines += ["", "## Deviations from pre-registration", "", "| Verifier | Fault | Observed | Cases | Deviation |", "|---|---|---|---:|---|"]
+    lines.extend(f"| {v} | {f} | {status} | {n} | {label} |" for v, f, status, n, label in deviations)
     if not deviations:
         lines.append("| none | — | 0 | none |")
 
@@ -201,7 +213,7 @@ def analyze(input_paths: Path | list[Path], output_dir: Path) -> None:
     lines.extend(f"| {task} | {fault} | {status} | {peers} |" for task, fault, status, peers in not_better)
     if not not_better:
         lines.append("| none | — | — | none |")
-    lines += ["", "## C scope", "", "Inside-scope faults are listed before outside-scope faults: F5, F11, F15, F17a, and F17b are outside C's predicate scope.", "", "## Instability", "", f"Instability count: {sum(int(row.get('instability', 0)) for row in cases)}."]
+    lines += ["", "## Instability", "", f"Instability count: {sum(int(row.get('instability', 0)) for row in cases)}."]
     (output_dir / "summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 

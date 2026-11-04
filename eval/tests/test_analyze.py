@@ -87,8 +87,10 @@ def test_analysis_reports_b_f6_deviation_and_control_table_first(tmp_path: Path)
     out = tmp_path / "out"
     analyze(raw, out)
     markdown = (out / "summary.md").read_text(encoding="utf-8")
-    assert markdown.index("## Control verdicts per verifier") < markdown.index("## Deviations from pre-registration")
-    assert "| B | F6 | 1 | expected VERIFIED, actual FAILED |" in markdown
+    assert markdown.index("## Control verdicts per verifier") < markdown.index("## Faults inside C's predicate scope")
+    assert markdown.index("## Faults inside C's predicate scope") < markdown.index("## Faults outside C's predicate scope")
+    assert markdown.index("## Faults outside C's predicate scope") < markdown.index("## Deviations from pre-registration")
+    assert "| B | F6 | FAILED | 1 | expected VERIFIED, actual FAILED |" in markdown
 
 
 def test_analysis_reports_d_not_better_and_false_rates(tmp_path: Path) -> None:
@@ -106,6 +108,7 @@ def test_analysis_reports_d_not_better_and_false_rates(tmp_path: Path) -> None:
     assert "## Cases where D is not better" in markdown
     assert "| t1 | F1 | VERIFIED |" in markdown
     assert "False-success on BAD" in markdown
+    assert "| Verifier | Fault | Cases | Detected | FAILED | ESCALATE | ERROR |" in markdown
 
 
 def test_analysis_includes_reminder_and_f11_synthetic_cases(tmp_path: Path) -> None:
@@ -120,7 +123,7 @@ def test_analysis_includes_reminder_and_f11_synthetic_cases(tmp_path: Path) -> N
     markdown = (out / "summary.md").read_text(encoding="utf-8")
     assert "| D | F11 |" in markdown
     assert "| app-1 | F11 | VERIFIED |" in markdown
-    assert "| D | F11 | 1 | expected FAILED, actual VERIFIED |" in markdown
+    assert "| D | F11 | VERIFIED | 1 | expected FAILED, actual VERIFIED |" in markdown
 
 
 def test_deviation_check_accepts_listed_and_observed_deviation(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
