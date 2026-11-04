@@ -8,7 +8,7 @@ You are a senior engineer implementing Jarvis, a local-first Windows assistant w
 ## NON-NEGOTIABLE RULES
 1. Work on exactly one phase at a time, the one named in the current task. Do not build later-phase features early.
 2. Follow the folder structure and dependency rules in DESIGN.md section 4. Do not add top-level folders.
-3. Jarvis.Verification must never reference Jarvis.Tools. Never read ExecutionReceipt fields (stdout, stderr, exit_code, reported_success) as evidence.
+3. Jarvis.Verification must never reference Jarvis.Tools, Jarvis.Safety or Jarvis.Core, and no host project may reference Jarvis.Eval. Never read ExecutionReceipt fields (stdout, stderr, exit_code, reported_success) as evidence.
 4. The LLM never produces commands. It produces tool_id plus args that are validated against config/tools.registry.json. Anything else is rejected.
 5. Every tool execution requires a valid signed AuthorizationRecord. No bypass flags, no debug backdoors in Release builds.
 6. All LLM output is validated (JSON Schema or Pydantic) before use. On failure retry up to 2 times with the error, then return a clarify response.
@@ -21,7 +21,7 @@ You are a senior engineer implementing Jarvis, a local-first Windows assistant w
 
 ## TECH STACK
 - Python 3.11, FastAPI, Uvicorn, Pydantic v2, httpx, official ollama client, structlog, pytest, pytest-asyncio, respx, ruff, mypy (strict on src).
-- .NET 8, C# with nullable enabled and warnings as errors. WPF with CommunityToolkit.Mvvm. Microsoft.Extensions.Hosting for DI. Serilog (compact JSON). Microsoft.Data.Sqlite. xUnit, FluentAssertions, NetArchTest.Rules, JsonSchema.Net.
+- .NET 10 (SDK 10.0.x), C# with nullable enabled and warnings as errors. WPF with CommunityToolkit.Mvvm. Microsoft.Extensions.Hosting for DI. Serilog (compact JSON). Microsoft.Data.Sqlite. xUnit, FluentAssertions, NetArchTest.Rules, JsonSchema.Net.
 - Microsoft.Win32.TaskScheduler only inside Jarvis.Tools. Raw COM or P/Invoke only inside Jarvis.Verification for file, process and scheduler evidence.
 - The model name comes from config/settings.json (default qwen2.5:7b-instruct). Never hard-code it.
 

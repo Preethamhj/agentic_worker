@@ -36,7 +36,7 @@ Branch: `phase-5`, based on `5b68602` (`phase-3c-done`).
 - Y5: completed the fake scheduler and reminder mutations F0/F1/F12-F17b through the production XML collector; fake reminder smoke produced D=VERIFIED for both F0 controls and D=FAILED for every BAD fault. Added `--scheduler fake|real`; real mode is guarded and was not run.
 - Y6: Release solution build passed; non-real-scheduler solution tests passed 416/416; check-all passed with its RealScheduler category tests 13/13; Python ai-server/eval tests passed 121/8, ruff and both mypy gates passed, and dotnet format verification passed.
 - Y6 follow-up: real scheduler mode now has the explicit environment/flag guard and restricts execution to reminder F0/F12/F14/F15 at one repetition; it was not executed.
-- Ops + reminder contract: `TBD`; `ReminderDataLocationContractTests` passed 16/16, covering shared injected location, invalid out-of-base path rejection, valid in-base write, signed policy registration, and tamper detection across scheduler settings.
+- Ops + reminder contract: `7534b2fde00861f21c75c77b04cc46b7331a014b`; `ReminderDataLocationContractTests` passed 16/16, covering shared injected location, invalid out-of-base path rejection, valid in-base write, signed policy registration, and tamper detection across scheduler settings.
 
 ## How CI maps to local commands
 

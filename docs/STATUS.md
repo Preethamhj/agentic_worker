@@ -1,9 +1,23 @@
-Status: Jarvis repo snapshot (default branch: master).
-phase-3b-done = 878635d; phase-3c-done = 5b68602.
-Latest verified suite: Release solution tests 381 passed, 0 failed, 2 RealScheduler skips; non-real C# 370 passed; RealScheduler 13 passed.
-Project totals from verified baselines and phase runs: Contracts 47, Core 61, Safety 110, Tools 11, Architecture 6, E2E 31, Verification 72; eval harness focused tests 36 passed.
-Python gates: ai-server + eval pytest 121 passed, 0 failed, 4 warnings; Ruff clean; mypy clean; dotnet format clean.
-Done: signed reminder policy path is in place; real verification engine tests cover file/folder/search faults; fake scheduler XML verification works; app launch timeout and cleanup guardrails are in place; phase-5 eval harness and task catalogue exist.
-Open: full end-to-end CLI runtime still uses a test/stub path in the normal host flow; reminder lifecycle completion (naming, expiry, end-boundary, unregistering) remains partial; audit validation/approval separation and migration remain partial; fake/real scheduler closeout and CI check remain not fully signed off.
-Known findings: D returned VERIFIED for BAD F11 in app smoke, recorded as a finding (do not weaken D); B and C deviations remain documented in phase progress and must remain visible rather than hidden.
-Known limitations: real Task Scheduler execution is opt-in only via JARVIS_REAL_SCHEDULER=1; no real-scheduler evaluation was run here; reports/ is excluded from status and ignored by agent instructions.
+# STATUS (single source of truth). Updated 2026-10-26 by the project owner.
+
+Default branch: master. Working branch: phase-5. Tags: phase-3b-done = 878635d, phase-3c-done = 5b68602. The tag eval-paper-v1 does NOT exist yet.
+
+## Verified test totals (Release default solution run at 6321285, owner's own output)
+Contracts 47, Core 61, Safety 118, Tools 11, Architecture 7, E2E 132, Verification 96 passed plus 2 skipped (they need JARVIS_REAL_SCHEDULER=1). RealScheduler category: 13 passed (owner-verified). Python: ai-server 121 passed; eval pytest 9 at last check.
+
+## Done (do NOT reimplement)
+- The real VerificationEngine is wired into the CLI host. StubVerifier exists only in tests. A task completes only on VERIFIED. ESCALATE handler exists. The true verification_status is reported to /v1/report.
+- Signed reminder scheduler policy (HMAC-covered settings), task name reminder-<id>, EndBoundary, DeleteExpiredTaskAfter, dispatcher self-unregister, verifier checks every signed setting.
+- Audit: separate policy-validation and approval events, approver names, SQLite migration of old rows.
+- Debug-only executor-lie switch compiled out of Release. Packaged-Notepad resolution hardened (ADR-0005).
+- Phase 5 harness: frozen protocol with dated amendments, runner for file, folder, search, app and reminder (fake scheduler; --scheduler real is a guarded subset the USER runs), preflight for pre-existing Notepad processes, baseline predicates aligned with the protocol (2095b3b), deviations classified (440b3e1), analysis in eval/analyze.py, scripts/run-eval.ps1.
+
+## Open
+- CI has been red since run #66 (0e4a7d0). The failing step is scripts/check-all.ps1. Root cause NOT confirmed. Latest run status not checked.
+- The owner has not yet reviewed the Q2 baseline fixes and deviation classification.
+- scripts/run-eval.ps1 has not been run by the owner. The paper run has not been executed. The tag eval-paper-v1 is pending.
+- Known finding: verifier D returns VERIFIED on F11 (extra process of a different image). Scope limit, recorded in an amendment. D must NOT be changed before the paper run.
+- Not started: Phase 4 UI, Phase 6.
+
+## Limits
+Real Task Scheduler runs are opt-in (JARVIS_REAL_SCHEDULER=1). No real-scheduler evaluation has been run. Ignore everything under reports/.
