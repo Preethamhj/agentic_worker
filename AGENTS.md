@@ -1,3 +1,5 @@
+Read docs/STATUS.md first. Ignore any file under reports/.
+
 # AGENTS.md - Jarvis coding agent instructions
 
 ## ROLE
