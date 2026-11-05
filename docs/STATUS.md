@@ -1,24 +1,27 @@
 # Jarvis status
 
-Updated 2026-11-05 from Phase 4 Release and lint outputs. Default branch: `master`; working branch: `phase-4`; close-out baseline: Phase 5 head `b6de340`.
-Tags were not changed. The frozen `eval-paper-v1` tag remains at `7b5b7e88de868e22c1e8f04d4f5de178bb807c66`.
+Updated 2026-11-05 from the full Release-prep gate. Default branch: `master`; current branch: `release-prep`, based on Phase 4 head `d5b50551ff037353a194bb3324e4014276f1d8f1`. The full gate was run on `77c6f6500db30f61fa143afa83d0644c9753c8cc`; this status update is a documentation-only follow-up.
+The `eval-paper-v1` tag remains frozen at `7b5b7e88de868e22c1e8f04d4f5de178bb807c66`. No tags were created, moved, or deleted.
 
-## Latest verified Phase 4 checks
+## Latest verified gate
 
-Release solution build: 0 warnings, 0 errors.
-Release solution tests excluding RealScheduler: Architecture 10, Contracts 47, Core 61, E2E 134, Safety 118, Tools 11, Verification 85, UI 23; **489 passed, 0 failed, 0 skipped**.
-AI-server Python: 121 passed, 4 dependency deprecation warnings. Evaluation Python: 12 passed. Ruff and mypy passed for both areas. .NET format verification passed.
-CLI compatibility selection (`CliEndToEndTests` and `CliOutputTests`): 9 passed, 0 failed, 0 skipped.
-`scripts/check-all.ps1`: not run because it unconditionally runs RealScheduler tests after setting `JARVIS_REAL_SCHEDULER=1`; those tests are excluded from this Phase 4 close-out. Its equivalent non-real build, tests, Python, lint/type checks, and format checks were run separately and passed. RealScheduler on this head: not checked. CI: not checked.
+`scripts/check-all.ps1`: **passed**, ending with `ALL CHECKS PASSED SUCCESSFULLY!`; .NET SDK reported by the gate: `10.0.300`.
+Release build: 0 warnings, 0 errors.
+Non-RealScheduler Release solution tests: Architecture 10, Contracts 47, Core 61, E2E 134, Safety 118, Tools 11, Verification 85, UI 23; **489 passed, 0 failed, 0 skipped**.
+RealScheduler category: Verification **13 passed, 0 failed, 0 skipped**. Combined C# total: **502 passed, 0 failed, 0 skipped**.
+AI-server Python: **121 passed**, 4 dependency deprecation warnings. Evaluation Python: **12 passed**. Ruff and mypy passed for both areas; .NET format verification passed.
+Full gate log: `%TEMP%\jarvis-release-prep-check-all.log`. CI: not checked.
 
-## Done
+## Release preparation completed
 
-Phases 3b and 3c remain complete. Phase 5 evaluation and its frozen evaluation tag were not modified.
-Phase 4 U0-U4 are implemented and pushed on `phase-4`: ADR-0006, headless view models and decision handlers, shared CLI/WPF host composition, WPF main task/evidence/history/settings views, and UI/Eval architecture rules. Debug-only low-risk auto-approval matches the existing console behavior; Release has no auto-approval.
+H0–H4 are committed and pushed on `release-prep`: updated README, MIT license and SECURITY policy, tracked-file and ignore-rule hygiene changes, reproducibility guide with raw metadata disclosure, and merge/PR/tag preparation in `docs/RELEASE-PREP.md`.
+H2 found no credential-like literals, private key markers, GitHub token patterns, or AWS access-key patterns. Machine-specific `ASUS` path/user references were removed from tracked examples, fixture generation, and documentation; six remaining `C:\Users\test\...` matches are generic test inputs. `.gitignore` covers reports, logs, eval-sandbox, venvs, egg-info, bin, and obj.
+The latest raw evaluation metadata records Windows `10.0.26300.0` and `dotnet_version` `10.0.9`; it does not record Python or Ollama model. Current config selects `qwen2.5:7b-instruct`, but that is not proof of the model loaded for the recorded run.
 
 ## Findings and open work
 
-Known Phase 5 finding remains: D returned VERIFIED for all 6 BAD F11 paper cases (extra child with another image); retain as a finding and do not tune without an amendment. Known Q2 deviations remain recorded in `docs/eval/expected-deviations.json`.
-Owner interactive validation remains pending; see `docs/phases/PHASE-4-manual-test.md`. RealScheduler and CI were not checked for the Phase 4 head.
+Known Phase 5 finding remains: verifier D returned VERIFIED for all 6 BAD F11 paper cases (extra child with another image); do not tune without an amendment. Known Q2 deviations remain recorded in `docs/eval/expected-deviations.json`.
+The owner’s Phase 4 interactive checklist remains pending in `docs/phases/PHASE-4-manual-test.md`.
+`master` at `b83d305` is not an ancestor of `release-prep`; merge requires a merge commit and is not fast-forwardable. No merge, pull request, or completion tag was created. The owner-managed requested tags are `phase-4-done` and `phase-5-done`; see `docs/RELEASE-PREP.md` for proposed targets and merge commands.
 
 Ignore everything under `reports/`.

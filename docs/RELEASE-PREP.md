@@ -30,7 +30,7 @@ Resolve any merge conflicts deliberately and rerun the gate before pushing. Thes
 - Ignore release/evaluation output directories and add the Phase 4 UI host documentation.
 
 ## Validation
-- [Add the exact full-gate output for this PR head.]
+- `scripts/check-all.ps1`: passed on `77c6f6500db30f61fa143afa83d0644c9753c8cc`; 489 non-RealScheduler and 13 RealScheduler tests passed, with 0 failures/skips. Release build had 0 warnings/errors; Python tests, Ruff, mypy, and format verification passed.
 - CI: [add run URL and status after checking this exact head.]
 
 ## Release notes
