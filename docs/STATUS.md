@@ -22,7 +22,7 @@ The required production diff from `5b68602` is only `[assembly: InternalsVisible
 
 Known finding: D returned VERIFIED for all 6 BAD F11 paper cases (extra child with another image); retain as a finding and do not tune without an amendment.
 Known Q2 deviations are enumerated in `docs/eval/expected-deviations.json`; the dev-run-4 check reported no unlisted or missing deviations. B/F6 and C/F16 deviations remain documented.
-Open: CI has not been checked. The paper run produced 7,200 verdict rows and passed the deviation check; D was not better than A/B/C for F11, and there was one app.launch F10 ESCALATE. The app-launch phase left 31 Notepad processes; they were not terminated because live host PIDs did not match harness-recorded PIDs. Phase 4 UI and Phase 6 are not started.
+Open: CI run 104 succeeded for `82cdb73` ([Actions](https://github.com/Preethamhj/agentic_worker/actions/runs/42040107525)); the docs-only follow-up is not checked. The paper run produced 7,200 verdict rows and passed the deviation check; D was not better than A/B/C for F11, and there was one app.launch F10 ESCALATE. The app-launch phase left 31 Notepad processes; they were not terminated because live host PIDs did not match harness-recorded PIDs. Phase 4 UI and Phase 6 are not started.
 Real-scheduler tests passed through the explicitly gated check-all category; no real-scheduler evaluation was run. The prior R5 cleanup query found no Jarvis tasks or app processes; the eval-sandbox and reminders directories existed but were empty.
 
 Ignore everything under `reports/`.
