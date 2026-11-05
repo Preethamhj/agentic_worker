@@ -58,3 +58,4 @@ You are a senior engineer implementing Jarvis, a local-first Windows assistant w
 - Verifier results: VERIFIED on a BAD case or non-VERIFIED on a GOOD case is a FINDING for docs/eval/FINDINGS.md. Never fix it by weakening a verifier or a check.
 - Boundaries: host projects never reference Jarvis.Eval. Evaluation work must not change production code, except a one-line seam explicitly authorized in a dated amendment.
 - State: docs/STATUS.md is the single source of current state; update it at the end of every session. Ignore everything under reports/.
+- Tags: never create, move or delete git tags. Only the owner tags, after the gate and CI are green.
