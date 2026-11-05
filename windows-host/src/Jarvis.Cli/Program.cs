@@ -4,6 +4,7 @@ using System.Net.Http;
 using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
+using Jarvis.Composition;
 using Jarvis.Contracts;
 using Jarvis.Core;
 using Jarvis.Infrastructure;
@@ -111,64 +112,14 @@ public static class Program
         var text = string.Join(" ", args);
         Console.WriteLine($"[JARVIS] Initiating task: \"{text}\"");
 
-        var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", ".."));
-        var configDir = Path.Combine(repoRoot, "config");
-        var toolsRegistryPath = Path.Combine(configDir, "tools.registry.json");
-        var appsAllowlistPath = Path.Combine(configDir, "apps.allowlist.json");
-
-        // 1. Launch AI Server child process (Job Object bound)
         Console.WriteLine("[JARVIS] Launching AI server (127.0.0.1 loopback)...");
-        await using var serverProcess = await AiServerLauncher.LaunchAsync();
-        Console.WriteLine($"[JARVIS] AI server active on port {serverProcess.Port}.");
+        var composition = new JarvisSessionFactory(JarvisSessionFactory.FindRepositoryRoot(AppContext.BaseDirectory));
+        await using var session = await composition.StartAsync(
+            new ConsoleApprovalHandler(),
+            new ConsoleEscalationHandler()).ConfigureAwait(false);
+        Console.WriteLine($"[JARVIS] AI server active on port {session.AiServerPort}.");
 
-        // 2. Setup Audit Store & DPAPI
-        var dbPath = Path.Combine(repoRoot, "audit.db");
-        using var auditStore = new SqliteAuditStore(dbPath);
-        IDpapiKeyStore keyStore = OperatingSystem.IsWindows() ? new DpapiKeyStore() : new InMemoryDpapiKeyStore();
-        var reminderLocation = new DefaultReminderDataLocation();
-        var authService = new AuthorizationService(keyStore, SystemClock.Instance, auditStore, reminderDataLocation: reminderLocation);
-
-        // 3. Setup Policies & Safety
-        var pathPolicy = new PathPolicy();
-        var toolPolicy = ToolPolicy.FromFile(toolsRegistryPath, appsAllowlistPath);
-        var safetyGate = new SafetyGate(toolPolicy, authService, pathPolicy: pathPolicy, auditStore: auditStore);
-
-        // 4. Setup Executors
-        var executors = new IToolExecutor[]
-        {
-            new CreateFileExecutor(pathPolicy, authService),
-            new CreateFolderExecutor(pathPolicy, authService),
-            new SearchFilesExecutor(pathPolicy, authService),
-            new AppLaunchExecutor(toolPolicy, authService, new WindowsElevationChecker()),
-            new TaskScheduleReminderExecutor(authService, new WindowsReminderTaskScheduler(), dataFileStore: new ReminderDataFileStore(reminderLocation))
-        };
-
-        var stepExecutor = new StepExecutor(authService, executors, toolPolicy);
-        var approvalHandler = new ConsoleApprovalHandler();
-        var verifier = CreateVerifier(authService, auditStore);
-        var escalationHandler = new ConsoleEscalationHandler();
-
-        // 5. Setup ApiClient and Planner
-        using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(95) };
-        var apiClient = new ApiClient(httpClient, serverProcess.BaseUrl, serverProcess.Token);
-        var sessionId = $"session-{Guid.NewGuid():N}"[..12];
-        var planner = new ApiClientPlanner(apiClient, sessionId);
-
-        // 6. Setup ExecutionQueue and TaskOrchestrator
-        await using var queue = new ExecutionQueue();
-        var orchestrator = new TaskOrchestrator(
-            planner,
-            safetyGate,
-            approvalHandler,
-            queue,
-            stepExecutor,
-            verifier,
-            auditStore,
-            escalationHandler: escalationHandler);
-
-        // 7. Run Orchestrator
-        var result = await orchestrator.RunTaskAsync(text);
-        await apiClient.SendReportAsync(CreateReport(sessionId, result)).ConfigureAwait(false);
+        var result = await session.RunTaskAsync(text).ConfigureAwait(false);
 
         Console.Write(RenderTaskSummary(result));
 
