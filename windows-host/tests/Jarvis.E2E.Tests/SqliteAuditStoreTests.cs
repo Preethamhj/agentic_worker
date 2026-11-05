@@ -71,12 +71,12 @@ public class SqliteAuditStoreTests : IDisposable
         await store.RecordPolicyValidationAsync(new PolicyValidationRecord(
             "task-audit", "step-audit", "fs.create_folder", "low", "medium", "medium", true, null, timestamp));
         await store.RecordApprovalDecisionAsync(new ApprovalDecisionRecord(
-            "task-audit", "step-audit", true, "ASUS", null, timestamp.AddSeconds(1)));
+            "task-audit", "step-audit", true, "test-user", null, timestamp.AddSeconds(1)));
 
         store.GetPolicyValidations("task-audit").Should().ContainSingle()
             .Which.IsValid.Should().BeTrue();
         store.GetApprovalDecisions("task-audit").Should().ContainSingle()
-            .Which.Approver.Should().Be("ASUS");
+            .Which.Approver.Should().Be("test-user");
     }
 
     [Fact]

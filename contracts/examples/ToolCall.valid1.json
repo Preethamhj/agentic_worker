@@ -2,6 +2,6 @@
   "schema_version": 1,
   "tool_id": "fs.create_folder",
   "args": {
-    "path": "C:\\Users\\ASUS\\Documents\\Jarvis\\test"
+    "path": "C:\\Users\\test\\Documents\\Jarvis\\test"
   }
 }

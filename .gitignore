@@ -20,6 +20,8 @@ obj/
 
 # Logs & Database
 logs/
+reports/
+eval-sandbox/
 *.log
 audit.db
 *.sqlite3
@@ -30,4 +32,4 @@ Thumbs.db
 .idea/
 .vscode/
 # Python build metadata is generated locally and is not a source artifact.
-ai-server/src/jarvis_ai.egg-info/
+*.egg-info/

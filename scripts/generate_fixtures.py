@@ -1,7 +1,8 @@
 import json
 import os
+from pathlib import Path
 
-examples_dir = r"C:\Users\ASUS\Desktop\agentic worker\contracts\examples"
+examples_dir = Path(__file__).resolve().parent.parent / "contracts" / "examples"
 os.makedirs(examples_dir, exist_ok=True)
 
 fixtures = {
@@ -62,7 +63,7 @@ fixtures = {
         "valid1": {
             "schema_version": 1,
             "tool_id": "fs.create_folder",
-            "args": {"path": "C:\\Users\\ASUS\\Documents\\Jarvis\\test"}
+            "args": {"path": "C:\\Users\\test\\Documents\\Jarvis\\test"}
         },
         "invalid1": {
             "schema_version": 1,

@@ -64,7 +64,7 @@ Reminder argument/path authorization and verifier independence:
 The real Task Scheduler tests print the registered XML `Exec` element. For example:
 
 ```xml
-<Exec xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task"><Command>C:\Users\ASUS\Desktop\agentic worker\windows-host\tests\Jarvis.Verification.Tests\bin\Debug\net10.0\testhost.exe</Command><Arguments>--jarvis-reminder 2b7da864774148a4b2aa756694fccb0d</Arguments><WorkingDirectory>C:\Users\ASUS\Desktop\agentic worker\windows-host\tests\Jarvis.Verification.Tests\bin\Debug\net10.0</WorkingDirectory></Exec>
+<Exec xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task"><Command>C:\Jarvis\windows-host\tests\Jarvis.Verification.Tests\bin\Debug\net10.0\testhost.exe</Command><Arguments>--jarvis-reminder 2b7da864774148a4b2aa756694fccb0d</Arguments><WorkingDirectory>C:\Jarvis\windows-host\tests\Jarvis.Verification.Tests\bin\Debug\net10.0</WorkingDirectory></Exec>
 ```
 
 This integration test runs inside `testhost.exe`, so the registered command is that test host. A production CLI invocation signs its own absolute host executable. In both cases the arguments contain only the reminder switch and task ID, never title or message.
