@@ -25,9 +25,21 @@ function Invoke-Bounded([string]$Name, [string]$FilePath, [string[]]$Arguments, 
     $stdoutPath = Join-Path $logRoot "$Name.stdout.log"
     $stderrPath = Join-Path $logRoot "$Name.stderr.log"
     $argumentLine = ($Arguments | ForEach-Object { Quote-Argument $_ }) -join ' '
-    $process = Start-Process -FilePath $FilePath -ArgumentList $argumentLine -WorkingDirectory $WorkingDirectory -PassThru -NoNewWindow -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $FilePath
+    $startInfo.Arguments = $argumentLine
+    $startInfo.WorkingDirectory = $WorkingDirectory
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $startInfo
+    if (-not $process.Start()) { throw "Could not start $Name ($FilePath)." }
     $startTime = $process.StartTime
     $script:startedProcesses += [PSCustomObject]@{ PID = $process.Id; StartTime = $startTime; Name = $Name }
+    $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+    $stderrTask = $process.StandardError.ReadToEndAsync()
     if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
         try {
             $current = Get-Process -Id $process.Id -ErrorAction Stop
@@ -37,10 +49,13 @@ function Invoke-Bounded([string]$Name, [string]$FilePath, [string[]]$Arguments, 
         }
         throw "$Name exceeded its ${TimeoutSeconds}s timeout; only its own recorded PID was terminated. Logs: $logRoot"
     }
+    $process.WaitForExit()
     $process.Refresh()
-    $stdout = if (Test-Path $stdoutPath) { Get-Content $stdoutPath -Raw } else { '' }
-    $stderr = if (Test-Path $stderrPath) { Get-Content $stderrPath -Raw } else { '' }
-    [PSCustomObject]@{ ExitCode = $process.ExitCode; Stdout = $stdout; Stderr = $stderr; Log = $stdoutPath }
+    $stdout = $stdoutTask.GetAwaiter().GetResult()
+    $stderr = $stderrTask.GetAwaiter().GetResult()
+    Set-Content -LiteralPath $stdoutPath -Value $stdout -Encoding UTF8
+    Set-Content -LiteralPath $stderrPath -Value $stderr -Encoding UTF8
+    [PSCustomObject]@{ ExitCode = [int]$process.ExitCode; Stdout = $stdout; Stderr = $stderr; Log = $stdoutPath }
 }
 
 function Get-TestTotals([string]$Text) {
@@ -65,6 +80,26 @@ try {
         $head = (git rev-parse HEAD).Trim()
         $status = @(git status --short)
         $productionDiff = @(git diff --unified=0 5b68602..HEAD -- windows-host/src ':!windows-host/src/Jarvis.Eval')
+
+        $preexistingAppProcesses = @(Get-Process -Name notepad,ping -ErrorAction SilentlyContinue |
+            ForEach-Object {
+                try {
+                    [PSCustomObject]@{
+                        ProcessName = $_.ProcessName
+                        PID = $_.Id
+                        StartTime = $_.StartTime
+                        WindowTitle = $_.MainWindowTitle
+                    }
+                } catch {
+                    throw "Could not safely inspect a pre-existing Notepad/ping process: $($_.Exception.Message)"
+                }
+            })
+        if ($preexistingAppProcesses.Count -gt 0) {
+            $details = ($preexistingAppProcesses | ForEach-Object {
+                "$($_.ProcessName) PID=$($_.PID) START=$($_.StartTime.ToUniversalTime().ToString('o')) TITLE=$($_.WindowTitle)"
+            }) -join '; '
+            throw "Gate aborted before tests because pre-existing Notepad/ping processes exist: $details. Close only processes you own and rerun."
+        }
 
         Remove-Item Env:\JARVIS_REAL_SCHEDULER -ErrorAction SilentlyContinue
         for ($run = 1; $run -le 3; $run++) {
@@ -95,6 +130,7 @@ try {
 
         Write-Host "branch=$branch"
         Write-Host "HEAD=$head"
+        Write-Host 'app_process_preflight=clear'
         Write-Host "git_status_short=$($status -join ' | ')"
         Write-Host "production_diff=$($productionDiff -join ' | ')"
         Write-Host "release_non_real_totals=$($runTotals | ConvertTo-Json -Compress -Depth 8)"
