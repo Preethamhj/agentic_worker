@@ -1,0 +1,3 @@
+# Phase 4 progress
+
+- U0: `ADR-0006-ui-composition.md` records extracting the CLI's dependency graph behind a shared host-composition library so WPF and CLI use the same orchestration and approval path. Audited `Jarvis.Cli.Program.RunCommandAsync` and the empty WPF shell; CLI compatibility tests passed: `CliEndToEndTests` and `HostVerifierCompositionTests`, 9 passed, 0 failed, 0 skipped. Command: `dotnet test .\windows-host\tests\Jarvis.E2E.Tests\Jarvis.E2E.Tests.csproj -c Release --no-restore --disable-build-servers -m:1 --filter "FullyQualifiedName~CliEndToEndTests|FullyQualifiedName~HostVerifierCompositionTests"`.
