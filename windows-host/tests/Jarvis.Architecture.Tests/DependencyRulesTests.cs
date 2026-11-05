@@ -89,7 +89,10 @@ public class DependencyRulesTests
             typeof(Jarvis.Tools.IToolExecutor).Assembly,
             typeof(Jarvis.Verification.VerificationPlaceholder).Assembly,
             typeof(Jarvis.Infrastructure.SqliteAuditStore).Assembly,
-            typeof(Jarvis.Cli.ConsoleApprovalHandler).Assembly
+            typeof(Jarvis.Cli.ConsoleApprovalHandler).Assembly,
+            typeof(Jarvis.Composition.JarvisSessionFactory).Assembly,
+            typeof(Jarvis.UI.MainWindow).Assembly,
+            typeof(Jarvis.Eval.EvalRunner).Assembly
         };
 
         _output.WriteLine("=================== PROJECT REFERENCE GRAPH ===================");
@@ -162,5 +165,46 @@ public class DependencyRulesTests
                     StringComparison.OrdinalIgnoreCase),
                     $"{assembly.GetName().Name} must not reference Jarvis.Eval");
         }
+    }
+
+    [Fact]
+    public void Ui_Must_Reference_Only_Approved_Host_Projects()
+    {
+        var uiAssembly = typeof(Jarvis.UI.MainWindow).Assembly;
+        var jarvisReferences = uiAssembly.GetReferencedAssemblies()
+            .Where(reference => reference.Name?.StartsWith("Jarvis.", StringComparison.OrdinalIgnoreCase) == true)
+            .Select(reference => reference.Name!)
+            .OrderBy(name => name)
+            .ToArray();
+
+        jarvisReferences.Should().BeEquivalentTo(
+            "Jarvis.Composition",
+            "Jarvis.Contracts",
+            "Jarvis.Core",
+            "Jarvis.Infrastructure");
+    }
+
+    [Fact]
+    public void Ui_Types_Must_Not_Call_Tool_Executors()
+    {
+        var result = Types.InAssembly(typeof(Jarvis.UI.MainWindow).Assembly)
+            .ShouldNot()
+            .HaveDependencyOnAny("Jarvis.Tools", "Jarvis.Verification", "Jarvis.Safety")
+            .GetResult();
+
+        result.IsSuccessful.Should().BeTrue(
+            "UI types may call only the shared orchestration host, never tools, verifier internals, or safety internals");
+    }
+
+    [Fact]
+    public void Evaluation_Harness_Must_Not_Reference_Ui()
+    {
+        var evalAssembly = typeof(Jarvis.Eval.EvalRunner).Assembly;
+        evalAssembly.GetReferencedAssemblies()
+            .Should()
+            .NotContain(reference => string.Equals(
+                reference.Name,
+                "Jarvis.UI",
+                StringComparison.OrdinalIgnoreCase));
     }
 }
