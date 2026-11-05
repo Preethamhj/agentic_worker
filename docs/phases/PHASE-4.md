@@ -100,4 +100,4 @@ dotnet format windows-host\Jarvis.sln --verify-no-changes --no-restore --verbosi
 - U2: `80ec897`
 - U3: `d1df091`
 - U4: `01fa235`
-- U5 close-out documentation and status are recorded in the corresponding follow-up commit.
+- U5: `2b7e0b7` (low-risk policy follow-up) and `c11ae15` (close-out documentation and status).
