@@ -36,6 +36,17 @@ public sealed class WpfApprovalHandler : IApprovalHandler
     {
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
+
+        if (string.Equals(request.Risk, "low", StringComparison.OrdinalIgnoreCase))
+        {
+#if DEBUG
+            var autoApprove = Environment.GetEnvironmentVariable("JARVIS_AUTO_APPROVE");
+            if (string.Equals(autoApprove, "1", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(autoApprove, "true", StringComparison.OrdinalIgnoreCase))
+                return new ApprovalDecision(true, "auto-low");
+#endif
+        }
+
         var viewModel = new ApprovalViewModel(
             request,
             resolvedImagePath: _resolvedImagePath?.Invoke(request),

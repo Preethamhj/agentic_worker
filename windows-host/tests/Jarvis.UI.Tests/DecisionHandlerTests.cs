@@ -67,6 +67,33 @@ public sealed class DecisionHandlerTests
     }
 
     [Fact]
+    public async Task WpfApprovalHandler_Matches_Console_Debug_LowRisk_AutoApproval_Only()
+    {
+        var originalSetting = Environment.GetEnvironmentVariable("JARVIS_AUTO_APPROVE");
+        var dialogs = new FakeDecisionDialogPresenter();
+        try
+        {
+            Environment.SetEnvironmentVariable("JARVIS_AUTO_APPROVE", "1");
+            var handler = new WpfApprovalHandler(new FakeUiDispatcher(), dialogs, userName: "test-user");
+            var lowRisk = await handler.RequestApprovalAsync(CreateApprovalRequest("low"));
+            var mediumRisk = await handler.RequestApprovalAsync(CreateApprovalRequest("medium"));
+
+#if DEBUG
+            lowRisk.Should().Be(new ApprovalDecision(true, "auto-low"));
+            dialogs.ApprovalCount.Should().Be(1, "medium risk must still require a human decision");
+#else
+            lowRisk.Should().Be(new ApprovalDecision(false, "test-user", "User denied execution."));
+            dialogs.ApprovalCount.Should().Be(2, "Release must not auto-approve, including low risk");
+#endif
+            mediumRisk.Should().Be(new ApprovalDecision(false, "test-user", "User denied execution."));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("JARVIS_AUTO_APPROVE", originalSetting);
+        }
+    }
+
+    [Fact]
     public async Task WpfApprovalHandler_Propagates_Cancellation_Without_Blocking()
     {
         using var cancellation = new CancellationTokenSource();
@@ -123,8 +150,8 @@ public sealed class DecisionHandlerTests
         (await timeoutHandler.RequestDecisionAsync(CreateEscalation())).Action.Should().Be(EscalationAction.TimedOut);
     }
 
-    private static ApprovalRequest CreateApprovalRequest() =>
-        new("task-1", "step-1", "fs.create_file", new Dictionary<string, object?> { ["path"] = @"C:\Jarvis\file.txt" }, "medium");
+    private static ApprovalRequest CreateApprovalRequest(string risk = "medium") =>
+        new("task-1", "step-1", "fs.create_file", new Dictionary<string, object?> { ["path"] = @"C:\Jarvis\file.txt" }, risk);
 
     private static VerificationResultDto CreateEscalation() =>
         new(1, "step-1", "ESCALATE", [], [], [], ["ambiguous evidence"], 1);
@@ -147,9 +174,11 @@ public sealed class DecisionHandlerTests
     {
         public TimeSpan? LastApprovalTimeout { get; private set; }
         public TimeSpan? LastEscalationTimeout { get; private set; }
+        public int ApprovalCount { get; private set; }
 
         public Task ShowApprovalAsync(ApprovalViewModel viewModel, TimeSpan timeout, CancellationToken cancellationToken)
         {
+            ApprovalCount++;
             LastApprovalTimeout = timeout;
             return approval?.Invoke(viewModel, cancellationToken) ?? Task.CompletedTask;
         }
