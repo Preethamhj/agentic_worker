@@ -7,7 +7,8 @@
       "step_id": "step-001",
       "status": "completed",
       "verification_status": "VERIFIED",
-      "summary": "Created folder"
+      "summary": "Created folder",
+      "reason": "Directory evidence matched the signed authorization."
     }
   ]
 }

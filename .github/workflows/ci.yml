@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ '**' ]
   pull_request:
-    branches: [ main, master ]
+    branches: [ '**' ]
 
 jobs:
   build-and-test:
@@ -13,10 +13,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup .NET 8
+      - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '10.0.x'
 
       - name: Setup Python 3.11
         uses: actions/setup-python@v5
@@ -26,9 +26,21 @@ jobs:
       - name: Environment Setup
         shell: powershell
         run: |
-          .\scripts\setup-windows.ps1 -SkipOllamaPull
+          .\scripts\setup-windows.ps1 -SkipOllamaPull -SkipOllamaCheck
+
+      - name: Show Locked Python Client Versions
+        shell: powershell
+        run: |
+          .\ai-server\.venv\Scripts\python.exe -m pip show ollama httpx
 
       - name: Run All Checks
         shell: powershell
         run: |
           .\scripts\check-all.ps1
+
+      - name: Run Evaluation Python Gate
+        shell: powershell
+        run: |
+          .\ai-server\.venv\Scripts\python.exe -m pytest eval/tests
+          .\ai-server\.venv\Scripts\ruff.exe check eval
+          .\ai-server\.venv\Scripts\mypy.exe --strict --explicit-package-bases eval

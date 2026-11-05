@@ -15,10 +15,16 @@ namespace Jarvis.Tools;
 /// </summary>
 public sealed class CreateFileExecutor : IToolExecutor
 {
+    private static readonly UTF8Encoding Utf8NoBom = new(false);
+
     public string ToolId => "fs.create_file";
 
     private readonly PathPolicy _pathPolicy;
     private readonly AuthorizationService _authService;
+
+#if DEBUG
+    public bool DebugReportSuccessWithoutCreatingFile { get; set; }
+#endif
 
     public CreateFileExecutor(PathPolicy pathPolicy, AuthorizationService authService)
     {
@@ -32,6 +38,22 @@ public sealed class CreateFileExecutor : IToolExecutor
 
         // 1. Consume authorization and re-verify HMAC over actual fields
         _authService.Consume(auth, auth.StepId);
+
+#if DEBUG
+        if (DebugReportSuccessWithoutCreatingFile)
+        {
+            return new ExecutionReceiptDto(
+                SchemaVersion: 1,
+                StepId: auth.StepId,
+                AuthId: auth.AuthId,
+                StartedAt: startedAt,
+                CompletedAt: DateTimeOffset.UtcNow.ToString("o"),
+                ExitCode: 0,
+                ReportedSuccess: true,
+                Stdout: "Debug test executor claimed success without creating the authorized file.",
+                Stderr: string.Empty);
+        }
+#endif
 
         // 2. Read only from CanonicalArgs
         if (!auth.CanonicalArgs.TryGetValue("path", out var pathObj) || pathObj is null)
@@ -79,7 +101,7 @@ public sealed class CreateFileExecutor : IToolExecutor
                 return FailureReceipt(auth, startedAt, $"Target file '{path}' already exists. Overwrite prohibited.");
             }
 
-            await File.WriteAllTextAsync(tempFilePath, content, Encoding.UTF8, cancellationToken);
+            await File.WriteAllTextAsync(tempFilePath, content, Utf8NoBom, cancellationToken);
 
             // Atomic move without overwrite
             File.Move(tempFilePath, path, overwrite: false);

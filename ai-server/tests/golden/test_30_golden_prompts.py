@@ -3,6 +3,7 @@ import pytest
 from jarvis_ai.llm.fake import FakeLlmClient
 from jarvis_ai.nlu.intent_parser import IntentParser
 from jarvis_ai.planning.planner import Planner
+from jarvis_ai.planning.tool_mapper import ToolMapper
 from jarvis_ai.schemas.models import PlanRequestModel
 
 GOLDEN_PROMPTS = [
@@ -73,6 +74,28 @@ def test_golden_prompt(planner: Planner, prompt_text: str, expected_status: str,
         assert response.steps[0].tool_call.tool_id == expected_action
     else:
         assert len(response.steps) == 0
+
+
+@pytest.mark.parametrize(
+    "message,expected_valid",
+    [
+        ("x" * 200, True),
+        ("x" * 201, False),
+        ("Reminder\nnext line", False),
+        ("ನಮಸ್ಕಾರ, ಜಾರ್ವಿಸ್", True),
+    ],
+)
+def test_golden_reminder_message_contract(message: str, expected_valid: bool) -> None:
+    is_valid, _, _, _ = ToolMapper().map_and_validate(
+        "task.schedule_reminder",
+        {
+            "task_name": "Review",
+            "time_iso": "2026-10-16T09:00:00Z",
+            "message": message,
+        },
+    )
+
+    assert is_valid is expected_valid
 
 
 LLM_RETRY_PROMPTS = [

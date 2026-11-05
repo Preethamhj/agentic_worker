@@ -118,6 +118,96 @@ public class OrchestratorAndQueueTests
     }
 
     [Fact]
+    public async Task TaskOrchestrator_Retry_Escalation_Reverifies_Without_Reexecution()
+    {
+        var verifier = new SequenceVerifier("ESCALATE", "VERIFIED");
+        var escalation = new FakeEscalationHandler(
+            new EscalationDecision(EscalationAction.RetryVerification));
+        var executor = new FakeStepExecutor();
+        var orchestrator = CreateTestOrchestrator(verifier, stepExecutor: executor, escalationHandler: escalation);
+
+        var result = await orchestrator.RunTaskAsync("create a test file");
+
+        result.FinalState.Should().Be(TaskState.Completed);
+        verifier.VerifyCallCount.Should().Be(2);
+        executor.ExecuteCallCount.Should().Be(1);
+        result.VerificationResults.Select(item => item.Status).Should().ContainInOrder("ESCALATE", "VERIFIED");
+    }
+
+    [Fact]
+    public async Task TaskOrchestrator_Aborting_Escalation_Fails()
+    {
+        var verifier = new SequenceVerifier("ESCALATE");
+        var escalation = new FakeEscalationHandler(new EscalationDecision(EscalationAction.Abort, "User aborted."));
+        var orchestrator = CreateTestOrchestrator(verifier, escalationHandler: escalation);
+
+        var result = await orchestrator.RunTaskAsync("create a test file");
+
+        result.FinalState.Should().Be(TaskState.Failed);
+        result.FinalState.Should().NotBe(TaskState.Completed);
+        result.StatusMessage.Should().Contain("User aborted.");
+    }
+
+    [Fact]
+    public async Task TaskOrchestrator_Escalation_Timeout_Fails()
+    {
+        var verifier = new SequenceVerifier("ESCALATE");
+        var escalation = new FakeEscalationHandler(new EscalationDecision(EscalationAction.TimedOut, "Escalation timed out."));
+        var orchestrator = CreateTestOrchestrator(verifier, escalationHandler: escalation);
+
+        var result = await orchestrator.RunTaskAsync("create a test file");
+
+        result.FinalState.Should().Be(TaskState.Failed);
+        result.StatusMessage.Should().Contain("Escalation timed out.");
+    }
+
+    [Fact]
+    public async Task TaskOrchestrator_Retrying_Escalation_Never_Converts_Escalate_To_Completed()
+    {
+        var verifier = new SequenceVerifier("ESCALATE", "ESCALATE");
+        var escalation = new FakeEscalationHandler(
+            new EscalationDecision(EscalationAction.RetryVerification),
+            new EscalationDecision(EscalationAction.Abort, "Verification remains uncertain."));
+        var orchestrator = CreateTestOrchestrator(verifier, escalationHandler: escalation);
+
+        var result = await orchestrator.RunTaskAsync("create a test file");
+
+        result.FinalState.Should().Be(TaskState.Failed);
+        result.FinalState.Should().NotBe(TaskState.Completed);
+        verifier.VerifyCallCount.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task TaskOrchestrator_Uses_Host_Observation_And_Does_Not_Trust_Receipt_Success_Claims()
+    {
+        var startedAt = new DateTimeOffset(2026, 10, 15, 0, 0, 0, TimeSpan.Zero);
+        var clock = new ManualClock(startedAt);
+        var verifier = new RecordingVerifiedVerifier();
+        var orchestrator = CreateTestOrchestrator(
+            verifier,
+            stepExecutor: new FakeStepExecutor(clock: clock, receiptReportsSuccess: false),
+            clock: clock);
+
+        var result = await orchestrator.RunTaskAsync("create a test file");
+
+        result.FinalState.Should().Be(TaskState.Completed);
+        verifier.Observation.Should().Be(new ExecutionObservation(startedAt, startedAt.AddMilliseconds(125)));
+    }
+
+    [Fact]
+    public async Task TaskOrchestrator_Fails_When_Verifier_Returns_Failed()
+    {
+        var verifier = new SequenceVerifier("FAILED");
+        var orchestrator = CreateTestOrchestrator(verifier);
+
+        var result = await orchestrator.RunTaskAsync("create a test file");
+
+        result.FinalState.Should().Be(TaskState.Failed);
+        result.FinalState.Should().NotBe(TaskState.Completed);
+        result.StatusMessage.Should().Contain("Required evidence check failed.");
+    }
+
+    [Fact]
     public async Task TaskOrchestrator_Reaches_Terminal_Failed_When_Safety_Rejects()
     {
         var stubVerifier = new StubVerifier();
@@ -176,7 +266,9 @@ public class OrchestratorAndQueueTests
         IVerifier verifier,
         ISafetyGate? safetyGate = null,
         IApprovalHandler? approvalHandler = null,
-        IStepExecutor? stepExecutor = null)
+        IStepExecutor? stepExecutor = null,
+        IClock? clock = null,
+        IEscalationHandler? escalationHandler = null)
     {
         var queue = new ExecutionQueue();
         var planner = new FakePlanner();
@@ -184,7 +276,15 @@ public class OrchestratorAndQueueTests
         var approval = approvalHandler ?? new FakeApprovalHandler(userApproved: true);
         var executor = stepExecutor ?? new FakeStepExecutor();
 
-        return new TaskOrchestrator(planner, safety, approval, queue, executor, verifier);
+        return new TaskOrchestrator(
+            planner,
+            safety,
+            approval,
+            queue,
+            executor,
+            verifier,
+            clock: clock,
+            escalationHandler: escalationHandler);
     }
 
     private class FakePlanner : IPlanner
@@ -252,30 +352,153 @@ public class OrchestratorAndQueueTests
             _userApproved = userApproved;
         }
 
-        public Task<bool> RequestApprovalAsync(string taskId, string stepId, string toolId, IReadOnlyDictionary<string, object?> canonicalArgs, string risk, CancellationToken cancellationToken = default)
+        public Task<ApprovalDecision> RequestApprovalAsync(ApprovalRequest request, CancellationToken cancellationToken = default)
         {
-            return Task.FromResult(_userApproved);
+            return Task.FromResult(new ApprovalDecision(
+                _userApproved,
+                Environment.UserName,
+                _userApproved ? null : "User rejected approval."));
         }
     }
 
     private class FakeStepExecutor : IStepExecutor
     {
         private readonly bool _shouldTimeout;
+        private readonly ManualClock? _clock;
+        private readonly bool _receiptReportsSuccess;
+        public int ExecuteCallCount { get; private set; }
 
-        public FakeStepExecutor(bool shouldTimeout = false)
+        public FakeStepExecutor(bool shouldTimeout = false, ManualClock? clock = null, bool receiptReportsSuccess = true)
         {
             _shouldTimeout = shouldTimeout;
+            _clock = clock;
+            _receiptReportsSuccess = receiptReportsSuccess;
         }
 
-        public async Task<ExecutionReceiptDto> ExecuteStepAsync(string taskId, string stepId, string toolId, IReadOnlyDictionary<string, object?> args, string risk, CancellationToken cancellationToken = default)
+        public AuthorizationRecordDto PrepareAuthorization(
+            string taskId,
+            string stepId,
+            string toolId,
+            IReadOnlyDictionary<string, object?> args,
+            string risk,
+            string approvedBy = "user") =>
+            new(
+                1,
+                "auth-dummy",
+                taskId,
+                stepId,
+                toolId,
+                new Dictionary<string, object?>(args),
+                new Dictionary<string, object?>(),
+                new List<string>(),
+                new List<string>(),
+                risk,
+                approvedBy,
+                DateTimeOffset.UtcNow.ToString("o"),
+                DateTimeOffset.UtcNow.AddMinutes(1).ToString("o"),
+                DateTimeOffset.UtcNow.AddMinutes(1).ToString("o"),
+                DateTimeOffset.UtcNow.AddMinutes(2).ToString("o"),
+                "nonce-dummy",
+                "hmac-dummy");
+
+        public async Task<ExecutionReceiptDto> ExecuteStepAsync(
+            AuthorizationRecordDto authorization,
+            CancellationToken cancellationToken = default)
         {
+            ExecuteCallCount++;
             if (_shouldTimeout)
             {
                 throw new TimeoutException("Step timed out after 50ms");
             }
 
             await Task.Yield();
-            return CreateDummyReceipt(stepId);
+            if (_clock != null)
+                _clock.UtcNow = _clock.UtcNow.AddMilliseconds(125);
+            return CreateDummyReceipt(authorization.StepId) with
+            {
+                AuthId = authorization.AuthId,
+                StartedAt = DateTimeOffset.MaxValue.ToString("o"),
+                CompletedAt = DateTimeOffset.MaxValue.ToString("o"),
+                ReportedSuccess = _receiptReportsSuccess
+            };
+        }
+    }
+
+    private sealed class SequenceVerifier(params string[] statuses) : IVerifier
+    {
+        private readonly Queue<string> _statuses = new(statuses);
+
+        public int VerifyCallCount { get; private set; }
+
+        public Task<StepToken> BeginStepAsync(AuthorizationRecordDto authorization, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new StepToken(authorization, authorization.Nonce, Array.Empty<SnapshotEntryDto>()));
+
+        public Task<VerificationResultDto> VerifyAsync(
+            ExecutionReceiptDto receipt,
+            ExecutionObservation observation,
+            StepToken token,
+            CancellationToken cancellationToken = default)
+        {
+            VerifyCallCount++;
+            var status = _statuses.Dequeue();
+            return Task.FromResult(new VerificationResultDto(
+                1,
+                receipt.StepId,
+                status,
+                new List<VerificationStageResultDto>(),
+                new List<EvidenceDto>(),
+                new List<string>(),
+                new List<string>
+                {
+                    status switch
+                    {
+                        "ESCALATE" => "Evidence is inconclusive.",
+                        "FAILED" => "Required evidence check failed.",
+                        _ => "Evidence verified."
+                    }
+                },
+                0));
+        }
+    }
+
+    private sealed class FakeEscalationHandler(params EscalationDecision[] decisions) : IEscalationHandler
+    {
+        private readonly Queue<EscalationDecision> _decisions = new(decisions);
+
+        public Task<EscalationDecision> RequestDecisionAsync(
+            VerificationResultDto verification,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(_decisions.Dequeue());
+    }
+
+    private sealed class ManualClock(DateTimeOffset utcNow) : IClock
+    {
+        public DateTimeOffset UtcNow { get; set; } = utcNow;
+    }
+
+    private sealed class RecordingVerifiedVerifier : IVerifier
+    {
+        public ExecutionObservation? Observation { get; private set; }
+
+        public Task<StepToken> BeginStepAsync(AuthorizationRecordDto authorization, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new StepToken(authorization, authorization.Nonce, Array.Empty<SnapshotEntryDto>()));
+
+        public Task<VerificationResultDto> VerifyAsync(
+            ExecutionReceiptDto receipt,
+            ExecutionObservation observation,
+            StepToken token,
+            CancellationToken cancellationToken = default)
+        {
+            Observation = observation;
+            return Task.FromResult(new VerificationResultDto(
+                1,
+                receipt.StepId,
+                "VERIFIED",
+                new List<VerificationStageResultDto>(),
+                new List<EvidenceDto>(),
+                new List<string>(),
+                new List<string>(),
+                0));
         }
     }
 }

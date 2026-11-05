@@ -14,9 +14,10 @@
           "step_id": { "type": "string" },
           "status": { "type": "string" },
           "verification_status": { "type": "string" },
-          "summary": { "type": "string" }
+          "summary": { "type": "string" },
+          "reason": { "type": "string", "minLength": 1, "maxLength": 240 }
         },
-        "required": ["step_id", "status", "verification_status", "summary"],
+        "required": ["step_id", "status", "verification_status", "summary", "reason"],
         "additionalProperties": false
       }
     }

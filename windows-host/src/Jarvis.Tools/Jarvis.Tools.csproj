@@ -3,6 +3,7 @@
     <RootNamespace>Jarvis.Tools</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="TaskScheduler" Version="2.12.2" />
     <ProjectReference Include="..\Jarvis.Contracts\Jarvis.Contracts.csproj" />
     <ProjectReference Include="..\Jarvis.Safety\Jarvis.Safety.csproj" />
   </ItemGroup>

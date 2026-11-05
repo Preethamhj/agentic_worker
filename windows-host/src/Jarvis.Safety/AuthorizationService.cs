@@ -20,11 +20,14 @@ public enum AuthorizationLifecycleState
 /// AuthorizationRecords. HMAC-SHA256 keys are managed through DPAPI (IDpapiKeyStore).
 /// All lifecycle transitions are atomically persisted and audited through IAuditStore.
 /// </summary>
-public sealed class AuthorizationService
+public sealed class AuthorizationService : IAuthorizationVerifier
 {
+    private static readonly UTF8Encoding Utf8NoBom = new(false);
     private readonly IDpapiKeyStore _keyStore;
     private readonly IClock _clock;
     private readonly IAuditStore? _auditStore;
+    private readonly IHostPathProvider _hostPathProvider;
+    private readonly IReminderDataLocation _reminderDataLocation;
     private readonly TimeSpan _defaultExecuteWindow = TimeSpan.FromSeconds(60);
     private readonly TimeSpan _defaultVerifyWindow = TimeSpan.FromSeconds(120);
     private readonly TimeSpan _defaultTotalExpiry = TimeSpan.FromMinutes(5);
@@ -33,11 +36,44 @@ public sealed class AuthorizationService
     private readonly HashSet<string> _consumedNonces = new();
     private readonly object _lock = new();
 
-    public AuthorizationService(IDpapiKeyStore keyStore, IClock? clock = null, IAuditStore? auditStore = null)
+    /// <summary>Gets the trusted reminder payload location used for issued reminder authorizations.</summary>
+    public IReminderDataLocation ReminderDataLocation => _reminderDataLocation;
+
+    public AuthorizationService(
+        IDpapiKeyStore keyStore,
+        IClock? clock = null,
+        IAuditStore? auditStore = null,
+        IHostPathProvider? hostPathProvider = null,
+        IReminderDataLocation? reminderDataLocation = null)
     {
         _keyStore = keyStore ?? throw new ArgumentNullException(nameof(keyStore));
         _clock = clock ?? SystemClock.Instance;
         _auditStore = auditStore;
+        _hostPathProvider = hostPathProvider ?? new EnvironmentHostPathProvider();
+        _reminderDataLocation = reminderDataLocation ?? new DefaultReminderDataLocation();
+
+        if (_auditStore != null)
+        {
+            try
+            {
+                var existingLifecycles = _auditStore.GetAuthorizationLifecycle();
+                foreach (var rec in existingLifecycles)
+                {
+                    if (Enum.TryParse<AuthorizationLifecycleState>(rec.State, out var state))
+                    {
+                        _recordStates[rec.AuthId] = state;
+                    }
+                    if (rec.State is "Consumed" or "Verified")
+                    {
+                        _consumedNonces.Add(rec.Nonce);
+                    }
+                }
+            }
+            catch
+            {
+                // Graceful fallback if audit store is newly initializing
+            }
+        }
     }
 
     /// <summary>
@@ -56,7 +92,8 @@ public sealed class AuthorizationService
     {
         lock (_lock)
         {
-            var authId = $"auth-{Guid.NewGuid():N}";
+            var authorizationGuid = Guid.NewGuid();
+            var authId = $"auth-{authorizationGuid:N}";
             var nonce = $"nonce-{Guid.NewGuid():N}";
             var now = _clock.UtcNow;
 
@@ -71,10 +108,19 @@ public sealed class AuthorizationService
             {
                 canonicalArgs[kv.Key] = kv.Value;
             }
+            if (string.Equals(toolId, "task.schedule_reminder", StringComparison.OrdinalIgnoreCase)
+                && !canonicalArgs.ContainsKey("task_name")
+                && canonicalArgs.TryGetValue("message", out var messageValue)
+                && messageValue is string message)
+            {
+                canonicalArgs["task_name"] = ToolPolicy.TruncateReminderTitle(message);
+            }
 
-            var exp = expected != null
-                ? new Dictionary<string, object?>(expected)
-                : DeriveExpected(toolId, canonicalArgs);
+            var exp = string.Equals(toolId, "task.schedule_reminder", StringComparison.OrdinalIgnoreCase)
+                ? DeriveExpected(toolId, canonicalArgs, authId)
+                : expected != null
+                    ? new Dictionary<string, object?>(expected)
+                    : DeriveExpected(toolId, canonicalArgs, authId);
 
             var effects = allowedEffects != null
                 ? allowedEffects.ToList()
@@ -233,6 +279,13 @@ public sealed class AuthorizationService
     /// </summary>
     public bool Verify(AuthorizationRecordDto record)
     {
+        var lifecycle = MarkVerified(record);
+        _auditStore?.RecordAuthorizationLifecycleAsync(lifecycle);
+        return true;
+    }
+
+    private AuthorizationLifecycleRecord MarkVerified(AuthorizationRecordDto record)
+    {
         lock (_lock)
         {
             // 1. Verify HMAC signature with current key first
@@ -252,6 +305,10 @@ public sealed class AuthorizationService
             {
                 throw new AuthorizationSecurityException($"Authorization record '{record.AuthId}' was never consumed by an executor.");
             }
+            if (state == AuthorizationLifecycleState.Verified)
+            {
+                throw new AuthorizationSecurityException($"Authorization record '{record.AuthId}' was already verified and cannot be replayed.");
+            }
 
             // 3. Validate deadlines
             var now = _clock.UtcNow;
@@ -268,16 +325,27 @@ public sealed class AuthorizationService
             // 4. Transition to Verified
             _recordStates[record.AuthId] = AuthorizationLifecycleState.Verified;
 
-            _auditStore?.RecordAuthorizationLifecycleAsync(new AuthorizationLifecycleRecord(
+            return new AuthorizationLifecycleRecord(
                 record.AuthId,
                 record.TaskId,
                 record.StepId,
                 "Verified",
                 record.Nonce,
                 now
-            ));
+            );
+        }
+    }
 
-            return true;
+    public async Task VerifyAndMarkVerifiedAsync(
+        AuthorizationRecordDto authorization,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(authorization);
+        cancellationToken.ThrowIfCancellationRequested();
+        var lifecycle = MarkVerified(authorization);
+        if (_auditStore is not null)
+        {
+            await _auditStore.RecordAuthorizationLifecycleAsync(lifecycle, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -374,7 +442,10 @@ public sealed class AuthorizationService
         return CryptographicOperations.FixedTimeEquals(expectedBytes, actualBytes);
     }
 
-    private static Dictionary<string, object?> DeriveExpected(string toolId, Dictionary<string, object?> args)
+    private Dictionary<string, object?> DeriveExpected(
+        string toolId,
+        Dictionary<string, object?> args,
+        string authId)
     {
         var expected = new Dictionary<string, object?>(StringComparer.Ordinal);
         switch (toolId.ToLowerInvariant())
@@ -382,6 +453,12 @@ public sealed class AuthorizationService
             case "fs.create_file":
                 expected["exists"] = true;
                 if (args.TryGetValue("path", out var p)) expected["path"] = p;
+                if (args.TryGetValue("content", out var content) && content is string text)
+                {
+                    var contentBytes = Utf8NoBom.GetBytes(text);
+                    expected["size"] = contentBytes.LongLength;
+                    expected["sha256"] = Convert.ToHexString(SHA256.HashData(contentBytes));
+                }
                 break;
             case "fs.create_folder":
                 expected["exists"] = true;
@@ -392,8 +469,33 @@ public sealed class AuthorizationService
                 expected["running"] = true;
                 break;
             case "task.schedule_reminder":
-                if (args.TryGetValue("task_name", out var tn)) expected["task_name"] = tn;
+                if (args.TryGetValue("time_iso", out var time)) expected["time_iso"] = time;
                 expected["scheduled"] = true;
+                var reminderTaskId = authId["auth-".Length..];
+                if (!ToolPolicy.IsValidReminderTaskId(reminderTaskId))
+                    throw new InvalidOperationException("Authorization generated an invalid reminder task ID.");
+                var schedulerTaskName = $"reminder-{reminderTaskId}";
+                expected["task_path"] = $@"\Jarvis\{schedulerTaskName}";
+                var hostPath = _hostPathProvider.GetHostPath();
+                if (string.Equals(Path.GetFileName(hostPath), "dotnet.exe", StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException(
+                        "Cannot register a reminder from dotnet.exe. Run the published Jarvis.Cli.exe host instead.");
+                }
+                expected["action_path"] = Path.GetFullPath(hostPath);
+                expected["task_id"] = reminderTaskId;
+                expected["action_arguments"] = $"--jarvis-reminder {reminderTaskId}";
+                expected["reminder_data_path"] = ReminderDataPaths.GetFilePath(reminderTaskId, _reminderDataLocation.DirectoryPath);
+                expected["scheduler_task_name"] = schedulerTaskName;
+                expected["disallow_start_if_on_batteries"] = ReminderSchedulerPolicy.DisallowStartIfOnBatteries;
+                expected["stop_if_going_on_batteries"] = ReminderSchedulerPolicy.StopIfGoingOnBatteries;
+                expected["execution_time_limit_seconds"] = ReminderSchedulerPolicy.ExecutionTimeLimitSeconds;
+                expected["start_when_available"] = ReminderSchedulerPolicy.StartWhenAvailable;
+                expected["multiple_instances_policy"] = ReminderSchedulerPolicy.MultipleInstances;
+                expected["logon_type"] = ReminderSchedulerPolicy.LogonType;
+                expected["run_level"] = ReminderSchedulerPolicy.RunLevel;
+                expected["end_boundary_offset_seconds"] = ReminderSchedulerPolicy.EndBoundaryOffsetSeconds;
+                expected["delete_expired_task_after_seconds"] = ReminderSchedulerPolicy.DeleteExpiredTaskAfterSeconds;
                 break;
             default:
                 expected["status"] = "success";
@@ -421,7 +523,12 @@ public sealed class AuthorizationService
         var list = new List<string>();
         if (args.TryGetValue("path", out var p) && p != null)
         {
-            list.Add(p.ToString()!);
+            var path = p.ToString()!;
+            var scope = toolId.Equals("fs.create_file", StringComparison.OrdinalIgnoreCase)
+                || toolId.Equals("fs.create_folder", StringComparison.OrdinalIgnoreCase)
+                ? Path.GetDirectoryName(Path.GetFullPath(path)) ?? path
+                : path;
+            list.Add(scope);
         }
         else if (args.TryGetValue("root_path", out var rp) && rp != null)
         {

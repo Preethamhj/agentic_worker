@@ -1,6 +1,11 @@
 import pytest
 
-from jarvis_ai.planning.tool_mapper import ToolMapper
+from jarvis_ai.planning.tool_mapper import ToolMapper, utf16_code_unit_count
+
+
+@pytest.mark.parametrize("value,expected", [("ಕನ್ನಡ", 5), ("e\u0301", 2), ("😀", 2)])
+def test_utf16_code_unit_count_matches_windows(value: str, expected: int) -> None:
+    assert utf16_code_unit_count(value) == expected
 
 
 @pytest.fixture
@@ -62,6 +67,52 @@ def test_tool_mapper_missing_required_fields(tool_mapper: ToolMapper) -> None:
     assert is_valid is False
     assert status == "clarify"
     assert "required" in err.lower() or "validation failed" in err.lower()
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "line one\nline two",
+        "line one\rline two",
+        "column\tvalue",
+        "null\0byte",
+        "x" * 201,
+    ],
+)
+def test_tool_mapper_rejects_invalid_reminder_message(
+    tool_mapper: ToolMapper, message: str
+) -> None:
+    is_valid, status, err, _ = tool_mapper.map_and_validate(
+        "task.schedule_reminder",
+        {
+            "task_name": "Review",
+            "time_iso": "2026-10-16T09:00:00Z",
+            "message": message,
+        },
+    )
+
+    assert is_valid is False
+    assert status == "clarify"
+    assert err is not None
+
+
+def test_tool_mapper_accepts_unicode_reminder_message_within_limit(
+    tool_mapper: ToolMapper,
+) -> None:
+    message = 'Quote " & 100% ಕನ್ನಡ ನಮಸ್ಕಾರ'
+    is_valid, status, err, validated = tool_mapper.map_and_validate(
+        "task.schedule_reminder",
+        {
+            "task_name": "Review",
+            "time_iso": "2026-10-16T09:00:00Z",
+            "message": message,
+        },
+    )
+
+    assert is_valid is True
+    assert status == "ok"
+    assert err is None
+    assert validated["message"] == message
 
 
 @pytest.mark.parametrize(

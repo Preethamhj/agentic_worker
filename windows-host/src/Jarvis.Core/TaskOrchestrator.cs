@@ -16,7 +16,7 @@ public sealed record TaskOrchestratorResult(
 /// 1. Every outcome ends in a terminal state (Completed, Failed, Cancelled, Timeout).
 /// 2. A crash, timeout, or cancel never leaves a task in a non-terminal state.
 /// 3. Completed is reachable only from Verifying with verification status VERIFIED.
-/// 4. With StubVerifier (returns ESCALATE), task transitions to Failed and never Completed.
+/// 4. ESCALATE may only request a fresh verification attempt or fail the task.
 /// </summary>
 public sealed class TaskOrchestrator
 {
@@ -26,6 +26,7 @@ public sealed class TaskOrchestrator
     private readonly ExecutionQueue _queue;
     private readonly IStepExecutor _stepExecutor;
     private readonly IVerifier _verifier;
+    private readonly IEscalationHandler? _escalationHandler;
     private readonly IAuditStore? _auditStore;
     private readonly IClock _clock;
 
@@ -37,7 +38,8 @@ public sealed class TaskOrchestrator
         IStepExecutor stepExecutor,
         IVerifier verifier,
         IAuditStore? auditStore = null,
-        IClock? clock = null)
+        IClock? clock = null,
+        IEscalationHandler? escalationHandler = null)
     {
         _planner = planner ?? throw new ArgumentNullException(nameof(planner));
         _safetyGate = safetyGate ?? throw new ArgumentNullException(nameof(safetyGate));
@@ -45,6 +47,7 @@ public sealed class TaskOrchestrator
         _queue = queue ?? throw new ArgumentNullException(nameof(queue));
         _stepExecutor = stepExecutor ?? throw new ArgumentNullException(nameof(stepExecutor));
         _verifier = verifier ?? throw new ArgumentNullException(nameof(verifier));
+        _escalationHandler = escalationHandler;
         _auditStore = auditStore;
         _clock = clock ?? SystemClock.Instance;
     }
@@ -104,21 +107,46 @@ public sealed class TaskOrchestrator
                 }
 
                 stateMachine.Transition(TaskState.Validated, $"Step '{step.StepId}' validated. Risk: {safetyEval.Risk}.");
+                var canonicalArgs = safetyEval.CanonicalArgs ?? step.ToolCall.Args;
 
                 // 3b. Approval
                 stateMachine.Transition(TaskState.AwaitingApproval, $"Step '{step.StepId}' awaiting approval.");
-                var approved = await _approvalHandler.RequestApprovalAsync(taskId, step.StepId, step.ToolCall.ToolId, step.ToolCall.Args, safetyEval.Risk, cancellationToken).ConfigureAwait(false);
-                if (!approved)
+                var approval = await _approvalHandler.RequestApprovalAsync(taskId, step.StepId, step.ToolCall.ToolId, canonicalArgs, safetyEval.Risk, cancellationToken).ConfigureAwait(false);
+                if (_auditStore is not null)
                 {
-                    stateMachine.Transition(TaskState.Cancelled, $"User rejected approval for step '{step.StepId}'.");
-                    return new TaskOrchestratorResult(taskId, stateMachine.CurrentState, receipts, verifications, "User rejected approval.");
+                    await _auditStore.RecordApprovalDecisionAsync(new ApprovalDecisionRecord(
+                        taskId,
+                        step.StepId,
+                        approval.Approved,
+                        approval.Approver,
+                        approval.Reason,
+                        _clock.UtcNow), cancellationToken).ConfigureAwait(false);
+                }
+                if (!approval.Approved)
+                {
+                    var terminalState = string.Equals(approval.Approver, "timeout", StringComparison.Ordinal)
+                        ? TaskState.Timeout
+                        : TaskState.Cancelled;
+                    stateMachine.Transition(terminalState, approval.Reason ?? $"Approval was not granted for step '{step.StepId}'.");
+                    return new TaskOrchestratorResult(taskId, stateMachine.CurrentState, receipts, verifications, approval.Reason ?? "Approval was not granted.");
                 }
 
                 stateMachine.Transition(TaskState.Approved, $"Step '{step.StepId}' approved.");
 
+                var authorization = _stepExecutor.PrepareAuthorization(
+                    taskId,
+                    step.StepId,
+                    step.ToolCall.ToolId,
+                    canonicalArgs,
+                    safetyEval.Risk,
+                    approval.Approver);
+                var stepToken = await _verifier.BeginStepAsync(authorization, cancellationToken).ConfigureAwait(false);
+
                 // 3c. Queue & Execute
                 stateMachine.Transition(TaskState.Queued, $"Step '{step.StepId}' enqueued.");
 
+                var executionStartedAt = default(DateTimeOffset);
+                var executionCompletedAt = default(DateTimeOffset);
                 var receipt = await _queue.EnqueueAsync(
                     taskId,
                     step.StepId,
@@ -126,24 +154,53 @@ public sealed class TaskOrchestrator
                     async ct =>
                     {
                         stateMachine.Transition(TaskState.Executing, $"Step '{step.StepId}' executing.");
-                        return await _stepExecutor.ExecuteStepAsync(taskId, step.StepId, step.ToolCall.ToolId, step.ToolCall.Args, safetyEval.Risk, ct).ConfigureAwait(false);
+                        executionStartedAt = _clock.UtcNow;
+                        try
+                        {
+                            return await _stepExecutor.ExecuteStepAsync(authorization, ct).ConfigureAwait(false);
+                        }
+                        finally
+                        {
+                            executionCompletedAt = _clock.UtcNow;
+                        }
                     },
                     cancellationToken: cancellationToken
                 ).ConfigureAwait(false);
 
                 receipts.Add(receipt);
 
-                if (!receipt.ReportedSuccess)
-                {
-                    stateMachine.Transition(TaskState.Verifying, $"Execution reported failure for step '{step.StepId}'.");
-                    stateMachine.Transition(TaskState.Failed, $"Execution failed: {receipt.Stderr}");
-                    return new TaskOrchestratorResult(taskId, stateMachine.CurrentState, receipts, verifications, $"Step execution failed: {receipt.Stderr}");
-                }
-
                 // 3d. Verification
                 stateMachine.Transition(TaskState.Verifying, $"Step '{step.StepId}' verifying.");
-                var verification = await _verifier.VerifyAsync(taskId, step.StepId, receipt, cancellationToken).ConfigureAwait(false);
+                var observation = new ExecutionObservation(executionStartedAt, executionCompletedAt);
+                var verification = await _verifier.VerifyAsync(receipt, observation, stepToken, cancellationToken).ConfigureAwait(false);
                 verifications.Add(verification);
+
+                while (string.Equals(verification.Status, "ESCALATE", StringComparison.OrdinalIgnoreCase)
+                    && _escalationHandler is not null)
+                {
+                    var escalation = await _escalationHandler
+                        .RequestDecisionAsync(verification, cancellationToken)
+                        .ConfigureAwait(false);
+                    if (escalation.Action != EscalationAction.RetryVerification)
+                    {
+                        var reason = escalation.Reason
+                            ?? (escalation.Action == EscalationAction.TimedOut
+                                ? "Verification escalation timed out."
+                                : "Verification escalation was aborted.");
+                        stateMachine.Transition(TaskState.Failed, reason);
+                        return new TaskOrchestratorResult(
+                            taskId,
+                            stateMachine.CurrentState,
+                            receipts,
+                            verifications,
+                            $"Verification returned ESCALATE: {reason} (not verified).");
+                    }
+
+                    verification = await _verifier
+                        .VerifyAsync(receipt, observation, stepToken, cancellationToken)
+                        .ConfigureAwait(false);
+                    verifications.Add(verification);
+                }
 
                 if (string.Equals(verification.Status, "VERIFIED", StringComparison.OrdinalIgnoreCase))
                 {
@@ -151,9 +208,10 @@ public sealed class TaskOrchestrator
                 }
                 else
                 {
-                    // If StubVerifier returned ESCALATE or status is not VERIFIED:
-                    stateMachine.Transition(TaskState.Failed, $"Verification status '{verification.Status}': not verified.");
-                    return new TaskOrchestratorResult(taskId, stateMachine.CurrentState, receipts, verifications, $"Verification returned {verification.Status}: not verified.");
+                    var reason = string.Join(" ", verification.Reasons);
+                    var detail = string.IsNullOrWhiteSpace(reason) ? "not verified." : reason;
+                    stateMachine.Transition(TaskState.Failed, $"Verification status '{verification.Status}': {detail} (not verified).");
+                    return new TaskOrchestratorResult(taskId, stateMachine.CurrentState, receipts, verifications, $"Verification returned {verification.Status}: {detail} (not verified).");
                 }
             }
 

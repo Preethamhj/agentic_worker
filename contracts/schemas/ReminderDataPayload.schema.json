@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ReminderDataPayload",
+  "type": "object",
+  "properties": {
+    "task_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    }
+  },
+  "required": ["task_name", "message"],
+  "additionalProperties": false
+}

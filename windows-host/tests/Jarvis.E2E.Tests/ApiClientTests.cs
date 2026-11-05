@@ -162,10 +162,12 @@ public class ApiClientTests
     public async Task ApiClient_SendReport_Includes_IdempotencyKey_Header()
     {
         string? receivedIdempotencyKey = null;
+        string? receivedBody = null;
 
-        var handler = new MockHttpMessageHandler((req, _) =>
+        var handler = new MockHttpMessageHandler(async (req, _) =>
         {
             receivedIdempotencyKey = req.Headers.GetValues("Idempotency-Key").FirstOrDefault();
+            receivedBody = await req.Content!.ReadAsStringAsync();
 
             var reportResponse = new ReportResponseDto(
                 SchemaVersion: 1,
@@ -173,10 +175,10 @@ public class ApiClientTests
                 MemoryUpdated: true
             );
 
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            return new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(JsonSerializer.Serialize(reportResponse))
-            });
+            };
         });
 
         using var client = new HttpClient(handler);
@@ -186,12 +188,18 @@ public class ApiClientTests
             SchemaVersion: 1,
             SessionId: "session-1",
             TaskId: "task-abc-123",
-            Steps: new List<ReportStepSummaryDto>()
+            Steps: new List<ReportStepSummaryDto>
+            {
+                new("step-1", "failed", "FAILED", "Verification failed.", "File evidence was missing.")
+            }
         );
 
         var result = await apiClient.SendReportAsync(report);
 
         receivedIdempotencyKey.Should().Be("task-abc-123", "Idempotency-Key must match task_id");
+        using var body = JsonDocument.Parse(receivedBody!);
+        body.RootElement.GetProperty("steps")[0].GetProperty("verification_status").GetString().Should().Be("FAILED");
+        body.RootElement.GetProperty("steps")[0].GetProperty("reason").GetString().Should().Be("File evidence was missing.");
         result.Message.Should().Be("report recorded");
     }
 }

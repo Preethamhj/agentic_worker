@@ -2,6 +2,8 @@ import os
 import sqlite3
 from typing import Any
 
+from jarvis_ai.schemas.models import ReportResponseModel
+
 
 class SessionStore:
 
@@ -55,6 +57,15 @@ class SessionStore:
                 );
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS report_idempotency (
+                    idempotency_key TEXT PRIMARY KEY,
+                    response_json TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+                """
+            )
             conn.commit()
         finally:
             conn.close()
@@ -90,6 +101,62 @@ class SessionStore:
                 (session_id, task_id, summary),
             )
             conn.commit()
+        finally:
+            conn.close()
+
+    def get_report_response(self, idempotency_key: str) -> ReportResponseModel | None:
+        conn = self._get_connection()
+        try:
+            row = conn.execute(
+                "SELECT response_json FROM report_idempotency WHERE idempotency_key = ?;",
+                (idempotency_key,),
+            ).fetchone()
+            if row is None:
+                return None
+            return ReportResponseModel.model_validate_json(row["response_json"])
+        finally:
+            conn.close()
+
+    def add_report_response_if_absent(
+        self,
+        idempotency_key: str,
+        session_id: str,
+        task_id: str,
+        summary: str,
+        response: ReportResponseModel,
+    ) -> ReportResponseModel:
+        conn = self._get_connection()
+        try:
+            conn.execute("BEGIN IMMEDIATE;")
+            row = conn.execute(
+                "SELECT response_json FROM report_idempotency WHERE idempotency_key = ?;",
+                (idempotency_key,),
+            ).fetchone()
+            if row is not None:
+                stored_response = ReportResponseModel.model_validate_json(row["response_json"])
+                conn.commit()
+                return stored_response
+
+            conn.execute(
+                "INSERT OR IGNORE INTO sessions (session_id) VALUES (?);",
+                (session_id,),
+            )
+            conn.execute(
+                "INSERT INTO task_summaries (session_id, task_id, summary) VALUES (?, ?, ?);",
+                (session_id, task_id, summary),
+            )
+            conn.execute(
+                """
+                INSERT INTO report_idempotency (idempotency_key, response_json)
+                VALUES (?, ?);
+                """,
+                (idempotency_key, response.model_dump_json()),
+            )
+            conn.commit()
+            return response
+        except Exception:
+            conn.rollback()
+            raise
         finally:
             conn.close()
 

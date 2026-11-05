@@ -13,7 +13,7 @@ class ResponseGenerator:
                 verified_steps.append(step.step_id)
             else:
                 all_verified = False
-                failed_steps.append(f"{step.step_id} ({step.verification_status})")
+                failed_steps.append(f"{step.step_id} ({step.verification_status}: {step.reason})")
 
         if all_verified and len(request.steps) > 0:
             msg = f"Task '{request.task_id}' completed and verified successfully across {len(verified_steps)} step(s)."

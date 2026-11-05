@@ -13,7 +13,7 @@
     "allowed_effects": { "type": "array", "items": { "type": "string" } },
     "watch_scopes": { "type": "array", "items": { "type": "string" } },
     "risk": { "type": "string", "enum": ["low", "medium", "high"] },
-    "approved_by": { "type": "string", "enum": ["auto", "user"] },
+    "approved_by": { "type": "string", "minLength": 1 },
     "issued_at": { "type": "string" },
     "expires_at": { "type": "string" },
     "execute_before": { "type": "string" },

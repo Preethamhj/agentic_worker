@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Runtime.InteropServices;
 using FluentAssertions;
 using Jarvis.Safety;
 using Xunit;
@@ -16,6 +17,31 @@ public class ToolPolicyTests
         var toolsRegistryPath = Path.Combine(ConfigDir, "tools.registry.json");
         var appsAllowlistPath = Path.Combine(ConfigDir, "apps.allowlist.json");
         _toolPolicy = ToolPolicy.FromFile(toolsRegistryPath, appsAllowlistPath);
+    }
+
+    [Fact]
+    public void ScheduleReminder_Missing_Title_Is_Canonicalized_From_Message()
+    {
+        var args = new JsonObject
+        {
+            ["time_iso"] = "2026-10-21T10:00:00Z",
+            ["message"] = "Review quarterly report"
+        };
+
+        var result = _toolPolicy.ValidateToolCall("task.schedule_reminder", args);
+
+        result.IsValid.Should().BeTrue();
+        args["task_name"]!.GetValue<string>().Should().Be("Review quarterly report");
+    }
+
+    [Fact]
+    public void Reminder_Title_Truncation_Preserves_Text_Element_Boundaries()
+    {
+        var message = new string('a', 62) + "😀" + "tail";
+        var title = ToolPolicy.TruncateReminderTitle(message);
+
+        title.Should().Be(new string('a', 62));
+        ToolPolicy.CountUtf16CodeUnits(title).Should().BeLessOrEqualTo(ToolPolicy.MaxReminderTaskNameLength);
     }
 
     [Fact]
@@ -129,6 +155,154 @@ public class ToolPolicyTests
         result.ErrorMessage.Should().Contain("allowlist");
     }
 
+    [Fact]
+    public void Packaged_Notepad_Resolution_Prefers_Process_Architecture_Then_Highest_Version()
+    {
+        using var fixture = new PackagedNotepadFixture();
+        var architecture = ArchitectureName(RuntimeInformation.ProcessArchitecture);
+        var otherArchitecture = architecture == "x64" ? "arm64" : "x64";
+        fixture.AddPackage("11.1.0.0", architecture);
+        fixture.AddPackage("12.0.0.0", architecture);
+        fixture.AddPackage("99.0.0.0", otherArchitecture);
+        var policy = fixture.CreatePolicy("notepad", "notepad.exe");
+
+        policy.TryResolveAllowedExecutablePath("notepad", out var path).Should().BeTrue();
+        path.Should().Be(fixture.ExecutablePath("12.0.0.0", architecture));
+    }
+
+    [Fact]
+    public void Packaged_Notepad_Resolution_Ignores_Other_Packages_And_Lookalike_Files()
+    {
+        using var fixture = new PackagedNotepadFixture();
+        fixture.AddPackage("99.0.0.0", "x64", "Microsoft.WindowsNotepad.Evil_99.0.0.0_x64__publisher");
+        fixture.AddFile(Path.Combine(fixture.Root, "Other", "Notepad.exe"));
+        var policy = fixture.CreatePolicy("notepad", "notepad.exe");
+
+        policy.TryResolveAllowedExecutablePath("notepad", out var path).Should().BeTrue();
+        path.Should().Be(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "notepad.exe"));
+    }
+
+    [Fact]
+    public void Registered_Notepad_Package_Root_Outside_WindowsApps_Is_Rejected()
+    {
+        using var fixture = new PackagedNotepadFixture();
+        var packageName = "Microsoft.WindowsNotepad_11.0.0.0_x64__8wekyb3d8bbwe";
+        var outsideRoot = Path.Combine(Path.GetTempPath(), $"jarvis-notepad-outside-{Guid.NewGuid():N}");
+        try
+        {
+            ToolPolicy.IsRegisteredNotepadPackageRootAllowed(fixture.Root, packageName, outsideRoot)
+                .Should().BeFalse();
+        }
+        finally
+        {
+            if (Directory.Exists(outsideRoot))
+                Directory.Delete(outsideRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Packaged_Notepad_Resolution_Rejects_A_Forged_Publisher_Id()
+    {
+        using var fixture = new PackagedNotepadFixture();
+        fixture.AddPackage("11.0.0.0", "x64", "Microsoft.WindowsNotepad_11.0.0.0_x64__untrusted");
+        var policy = fixture.CreatePolicy("notepad", "notepad.exe");
+
+        policy.TryResolveAllowedExecutablePath("notepad", out var path).Should().BeTrue();
+        path.Should().Be(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "notepad.exe"));
+    }
+
+    [Fact]
+    public void Packaged_Notepad_Resolution_Rejects_A_Package_Reparse_Point()
+    {
+        using var fixture = new PackagedNotepadFixture();
+        var packageName = "Microsoft.WindowsNotepad_11.0.0.0_x64__8wekyb3d8bbwe";
+        var outsidePackage = Path.Combine(Path.GetTempPath(), $"jarvis-notepad-package-{Guid.NewGuid():N}");
+        try
+        {
+            fixture.AddFile(Path.Combine(outsidePackage, "Notepad", "Notepad.exe"));
+            Directory.CreateSymbolicLink(Path.Combine(fixture.Root, packageName), outsidePackage);
+            var policy = fixture.CreatePolicy("notepad", "notepad.exe");
+
+            policy.TryResolveAllowedExecutablePath("notepad", out var path).Should().BeTrue();
+            path.Should().Be(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "notepad.exe"));
+        }
+        finally
+        {
+            if (Directory.Exists(Path.Combine(fixture.Root, packageName)))
+                Directory.Delete(Path.Combine(fixture.Root, packageName));
+            if (Directory.Exists(outsidePackage))
+                Directory.Delete(outsidePackage, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Packaged_Notepad_Resolution_Does_Not_Apply_To_Other_App_Id()
+    {
+        using var fixture = new PackagedNotepadFixture();
+        fixture.AddPackage("11.0.0.0", ArchitectureName(RuntimeInformation.ProcessArchitecture));
+        var policy = fixture.CreatePolicy("other", "notepad.exe");
+
+        policy.TryResolveAllowedExecutablePath("other", out var path).Should().BeTrue();
+        Path.GetFullPath(path!).StartsWith(fixture.Root, StringComparison.OrdinalIgnoreCase).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Packaged_Notepad_Resolution_Falls_Back_To_System32_When_Package_Is_Absent()
+    {
+        using var fixture = new PackagedNotepadFixture();
+        var policy = fixture.CreatePolicy("notepad", "notepad.exe");
+
+        policy.TryResolveAllowedExecutablePath("notepad", out var path).Should().BeTrue();
+        path.Should().Be(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "notepad.exe"));
+    }
+
+    [Theory]
+    [InlineData("line one\nline two")]
+    [InlineData("line one\rline two")]
+    [InlineData("column\tvalue")]
+    [InlineData("null\0byte")]
+    public void Reminder_Message_With_Control_Characters_Is_Rejected(string message)
+    {
+        var args = ReminderArgs(message);
+
+        var result = _toolPolicy.ValidateToolCall("task.schedule_reminder", args);
+
+        result.IsValid.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("schema");
+    }
+
+    [Fact]
+    public void Reminder_Message_Over_200_Characters_Is_Rejected()
+    {
+        var result = _toolPolicy.ValidateToolCall(
+            "task.schedule_reminder",
+            ReminderArgs(new string('x', ToolPolicy.MaxReminderMessageLength + 1)));
+
+        result.IsValid.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("schema");
+    }
+
+    [Fact]
+    public void Reminder_Message_Accepts_Punctuation_And_Kannada_Within_Limit()
+    {
+        var message = "Quote \" & 100% ಕನ್ನಡ ನಮಸ್ಕಾರ";
+
+        var result = _toolPolicy.ValidateToolCall("task.schedule_reminder", ReminderArgs(message));
+
+        result.IsValid.Should().BeTrue();
+        ToolPolicy.IsValidReminderMessage(message).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("0123456789abcdef0123456789abcdef", true)]
+    [InlineData("0123456789abcdef0123456789abcde", false)]
+    [InlineData("0123456789abcdef0123456789abcdef0", false)]
+    [InlineData("0123456789abcdef0123456789abcdeg", false)]
+    public void Reminder_Task_Id_Requires_Exactly_32_Hex_Characters(string taskId, bool expected)
+    {
+        ToolPolicy.IsValidReminderTaskId(taskId).Should().Be(expected);
+    }
+
     [Theory]
     [InlineData("fs.search_files", "low")]
     [InlineData("fs.create_folder", "medium")]
@@ -140,5 +314,55 @@ public class ToolPolicyTests
     {
         var risk = _toolPolicy.GetPolicyRisk(toolId);
         risk.Should().Be(expectedRisk);
+    }
+
+    private static JsonObject ReminderArgs(string message) =>
+        new()
+        {
+            ["task_name"] = "Review",
+            ["time_iso"] = "2026-10-16T09:00:00Z",
+            ["message"] = message
+        };
+
+    private static string ArchitectureName(Architecture architecture) => architecture switch
+    {
+        Architecture.X64 => "x64",
+        Architecture.X86 => "x86",
+        Architecture.Arm64 => "arm64",
+        Architecture.Arm => "arm",
+        _ => architecture.ToString().ToLowerInvariant()
+    };
+
+    private sealed class PackagedNotepadFixture : IDisposable
+    {
+        public string Root { get; } = Path.Combine(Path.GetTempPath(), $"jarvis-notepad-{Guid.NewGuid():N}");
+
+        public PackagedNotepadFixture() => Directory.CreateDirectory(Root);
+
+        public void AddPackage(
+            string version,
+            string architecture,
+            string packageName = null!)
+        {
+            packageName ??= $"Microsoft.WindowsNotepad_{version}_{architecture}__8wekyb3d8bbwe";
+            AddFile(Path.Combine(Root, packageName, "Notepad", "Notepad.exe"));
+        }
+
+        public string ExecutablePath(string version, string architecture) =>
+            Path.Combine(Root, $"Microsoft.WindowsNotepad_{version}_{architecture}__8wekyb3d8bbwe", "Notepad", "Notepad.exe");
+
+        public void AddFile(string path)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, "test executable placeholder");
+        }
+
+        public ToolPolicy CreatePolicy(string appId, string executable) =>
+            new(
+                [],
+                [new AllowedAppDefinition { AppId = appId, Executable = executable, DisplayName = appId }],
+                Root);
+
+        public void Dispose() => Directory.Delete(Root, recursive: true);
     }
 }

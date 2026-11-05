@@ -1,3 +1,5 @@
+Read docs/STATUS.md first. Ignore any file under reports/.
+
 # AGENTS.md - Jarvis coding agent instructions
 
 ## ROLE
@@ -6,7 +8,7 @@ You are a senior engineer implementing Jarvis, a local-first Windows assistant w
 ## NON-NEGOTIABLE RULES
 1. Work on exactly one phase at a time, the one named in the current task. Do not build later-phase features early.
 2. Follow the folder structure and dependency rules in DESIGN.md section 4. Do not add top-level folders.
-3. Jarvis.Verification must never reference Jarvis.Tools. Never read ExecutionReceipt fields (stdout, stderr, exit_code, reported_success) as evidence.
+3. Jarvis.Verification must never reference Jarvis.Tools, Jarvis.Safety or Jarvis.Core, and no host project may reference Jarvis.Eval. Never read ExecutionReceipt fields (stdout, stderr, exit_code, reported_success) as evidence.
 4. The LLM never produces commands. It produces tool_id plus args that are validated against config/tools.registry.json. Anything else is rejected.
 5. Every tool execution requires a valid signed AuthorizationRecord. No bypass flags, no debug backdoors in Release builds.
 6. All LLM output is validated (JSON Schema or Pydantic) before use. On failure retry up to 2 times with the error, then return a clarify response.
@@ -19,7 +21,7 @@ You are a senior engineer implementing Jarvis, a local-first Windows assistant w
 
 ## TECH STACK
 - Python 3.11, FastAPI, Uvicorn, Pydantic v2, httpx, official ollama client, structlog, pytest, pytest-asyncio, respx, ruff, mypy (strict on src).
-- .NET 8, C# with nullable enabled and warnings as errors. WPF with CommunityToolkit.Mvvm. Microsoft.Extensions.Hosting for DI. Serilog (compact JSON). Microsoft.Data.Sqlite. xUnit, FluentAssertions, NetArchTest.Rules, JsonSchema.Net.
+- .NET 10 (SDK 10.0.x), C# with nullable enabled and warnings as errors. WPF with CommunityToolkit.Mvvm. Microsoft.Extensions.Hosting for DI. Serilog (compact JSON). Microsoft.Data.Sqlite. xUnit, FluentAssertions, NetArchTest.Rules, JsonSchema.Net.
 - Microsoft.Win32.TaskScheduler only inside Jarvis.Tools. Raw COM or P/Invoke only inside Jarvis.Verification for file, process and scheduler evidence.
 - The model name comes from config/settings.json (default qwen2.5:7b-instruct). Never hard-code it.
 
@@ -46,3 +48,14 @@ You are a senior engineer implementing Jarvis, a local-first Windows assistant w
 
 ## FINAL REPORT FORMAT
 1) What was built. 2) Gate checklist with PASS or FAIL and evidence for each item. 3) Deviations. 4) Risks and open blockers. 5) Prerequisites for the next phase.
+
+## OPERATIONAL RULES (learned from earlier sessions)
+- Environment: Windows PowerShell 5 (no && operator). rg is NOT installed; use Get-ChildItem -Recurse -Filter *.cs | Select-String. Call venv tools directly (ai-server\.venv\Scripts\python.exe, ruff.exe, mypy.exe); never trigger VS Code Python environment configuration. Run dotnet with --disable-build-servers -m:1 (and --no-restore after the first restore). On a NuGet or .git lock error wait 20 s and retry up to 3 times; never delete lock files.
+- Budget: do not re-explore the repo; read only the files a step needs. Commit and push after each part and add one line to the phase PROGRESS file. If budget runs low, commit and list done / not done. Never leave uncommitted work. Never run a command that may exceed 5 minutes; give the user a script instead.
+- Processes: never Stop-Process by name or by a PID you did not start yourself with Process.Start. Hold the Process object and compare StartTime before killing. Use 30 s hard timeouts, only notepad and ping.exe for app tests, and never touch a Notepad you did not start. Real Task Scheduler tests only with JARVIS_REAL_SCHEDULER=1 and --filter "Category=RealScheduler". Real-scheduler evaluations are run by the user.
+- Gates: never remove a test category or step from scripts/check-all.ps1 or the CI workflow. Never edit the frozen evaluation protocol or its expected-verdict table; changes go in a dated AMENDMENT section.
+- Evidence: never state a CI result unless you have the run URL and its status; otherwise write "CI: not checked". Report per-project test counts copied from command output. Anything you could not run is "reported, not verified".
+- Verifier results: VERIFIED on a BAD case or non-VERIFIED on a GOOD case is a FINDING for docs/eval/FINDINGS.md. Never fix it by weakening a verifier or a check.
+- Boundaries: host projects never reference Jarvis.Eval. Evaluation work must not change production code, except a one-line seam explicitly authorized in a dated amendment.
+- State: docs/STATUS.md is the single source of current state; update it at the end of every session. Ignore everything under reports/.
+- Tags: never create, move or delete git tags. Only the owner tags, after the gate and CI are green.

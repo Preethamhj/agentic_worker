@@ -2,12 +2,15 @@ using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using System.Security.Principal;
+using System.Text;
 using System.Text.Json;
 using Jarvis.Contracts;
 using Jarvis.Core;
 using Jarvis.Infrastructure;
 using Jarvis.Safety;
 using Jarvis.Tools;
+using Jarvis.Verification;
+using System.Windows.Forms;
 
 namespace Jarvis.Cli;
 
@@ -15,6 +18,23 @@ public static class Program
 {
     public static async Task<int> Main(string[] args)
     {
+        Console.OutputEncoding = System.Text.Encoding.UTF8;
+        if (args.Length > 0 && args[0] == "--jarvis-reminder")
+        {
+            try
+            {
+                return DispatchReminder(args);
+            }
+            catch (Exception exception) when (
+                exception is IOException
+                or UnauthorizedAccessException
+                or System.Text.Json.JsonException)
+            {
+                Console.Error.WriteLine($"Reminder dispatch failed: {exception.Message}");
+                return 1;
+            }
+        }
+
         if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
         {
             PrintUsage();
@@ -41,9 +61,26 @@ public static class Program
         }
     }
 
+    public static int DispatchReminder(
+        string[] args,
+        ReminderDataFileStore? dataFileStore = null,
+        IReminderNotifier? notifier = null,
+        IReminderTaskScheduler? scheduler = null)
+    {
+        var reminderLocation = new DefaultReminderDataLocation();
+        var dispatcher = new ReminderDispatcher(
+            dataFileStore ?? new ReminderDataFileStore(reminderLocation),
+            notifier ?? new WindowsReminderNotifier(),
+            scheduler ?? new WindowsReminderTaskScheduler());
+        var exitCode = dispatcher.Dispatch(args);
+        if (dispatcher.FailureReason is not null)
+            Console.Error.WriteLine(dispatcher.FailureReason);
+        return exitCode;
+    }
+
     private static void PrintUsage()
     {
-        Console.WriteLine("Jarvis CLI - Windows Assistant (Phase 2b)");
+        Console.WriteLine("Jarvis CLI - Windows Assistant");
         Console.WriteLine("Usage: jarvis <command> [arguments]");
         Console.WriteLine();
         Console.WriteLine("Commands:");
@@ -88,7 +125,8 @@ public static class Program
         var dbPath = Path.Combine(repoRoot, "audit.db");
         using var auditStore = new SqliteAuditStore(dbPath);
         IDpapiKeyStore keyStore = OperatingSystem.IsWindows() ? new DpapiKeyStore() : new InMemoryDpapiKeyStore();
-        var authService = new AuthorizationService(keyStore, SystemClock.Instance, auditStore);
+        var reminderLocation = new DefaultReminderDataLocation();
+        var authService = new AuthorizationService(keyStore, SystemClock.Instance, auditStore, reminderDataLocation: reminderLocation);
 
         // 3. Setup Policies & Safety
         var pathPolicy = new PathPolicy();
@@ -101,17 +139,20 @@ public static class Program
             new CreateFileExecutor(pathPolicy, authService),
             new CreateFolderExecutor(pathPolicy, authService),
             new SearchFilesExecutor(pathPolicy, authService),
-            new AppLaunchExecutor(toolPolicy, authService)
+            new AppLaunchExecutor(toolPolicy, authService, new WindowsElevationChecker()),
+            new TaskScheduleReminderExecutor(authService, new WindowsReminderTaskScheduler(), dataFileStore: new ReminderDataFileStore(reminderLocation))
         };
 
-        var stepExecutor = new StepExecutor(authService, executors);
+        var stepExecutor = new StepExecutor(authService, executors, toolPolicy);
         var approvalHandler = new ConsoleApprovalHandler();
-        var stubVerifier = new StubVerifier();
+        var verifier = CreateVerifier(authService, auditStore);
+        var escalationHandler = new ConsoleEscalationHandler();
 
         // 5. Setup ApiClient and Planner
         using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(95) };
         var apiClient = new ApiClient(httpClient, serverProcess.BaseUrl, serverProcess.Token);
-        var planner = new ApiClientPlanner(apiClient);
+        var sessionId = $"session-{Guid.NewGuid():N}"[..12];
+        var planner = new ApiClientPlanner(apiClient, sessionId);
 
         // 6. Setup ExecutionQueue and TaskOrchestrator
         await using var queue = new ExecutionQueue();
@@ -121,48 +162,89 @@ public static class Program
             approvalHandler,
             queue,
             stepExecutor,
-            stubVerifier,
-            auditStore);
+            verifier,
+            auditStore,
+            escalationHandler: escalationHandler);
 
         // 7. Run Orchestrator
         var result = await orchestrator.RunTaskAsync(text);
+        await apiClient.SendReportAsync(CreateReport(sessionId, result)).ConfigureAwait(false);
 
-        Console.WriteLine();
-        Console.WriteLine("============================================================");
-        Console.WriteLine("                     TASK SUMMARY");
-        Console.WriteLine("============================================================");
-        Console.WriteLine($"Task ID:     {result.TaskId}");
-        Console.WriteLine($"Final State: {result.FinalState} (Terminal)");
-        Console.WriteLine($"Status:      {result.StatusMessage}");
+        Console.Write(RenderTaskSummary(result));
+
+        if (result.FinalState != TaskState.Completed)
+        {
+            return 1;
+        }
+
+        return 0;
+    }
+
+    /// <summary>Formats the final task state and independent evidence reasons for CLI output.</summary>
+    public static string RenderTaskSummary(TaskOrchestratorResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        var output = new StringBuilder();
+        output.AppendLine();
+        output.AppendLine("============================================================");
+        output.AppendLine("                     TASK SUMMARY");
+        output.AppendLine("============================================================");
+        output.AppendLine($"Task ID:     {result.TaskId}");
+        output.AppendLine($"Final State: {result.FinalState} (Terminal)");
+        output.AppendLine($"[STATUS] {result.FinalState.ToString().ToUpperInvariant()} - {result.StatusMessage}");
 
         foreach (var receipt in result.Receipts)
         {
-            Console.WriteLine($"[Receipt] Step: {receipt.StepId}, ExitCode: {receipt.ExitCode}, Success: {receipt.ReportedSuccess}");
-            if (!string.IsNullOrEmpty(receipt.Stdout)) Console.WriteLine($"  Stdout: {receipt.Stdout}");
-            if (!string.IsNullOrEmpty(receipt.Stderr)) Console.WriteLine($"  Stderr: {receipt.Stderr}");
+            output.AppendLine($"[Receipt] Step: {receipt.StepId}, ExitCode: {receipt.ExitCode}, Success: {receipt.ReportedSuccess}");
+            if (!string.IsNullOrEmpty(receipt.Stdout)) output.AppendLine($"  Stdout: {receipt.Stdout}");
+            if (!string.IsNullOrEmpty(receipt.Stderr)) output.AppendLine($"  Stderr: {receipt.Stderr}");
         }
 
         foreach (var verification in result.VerificationResults)
         {
-            Console.WriteLine($"[Verification] Step: {verification.StepId}, Status: {verification.Status}");
+            output.AppendLine($"[Verification] Step: {verification.StepId}, Status: {verification.Status}");
+            foreach (var stage in verification.Stages)
+                output.AppendLine($"[Check] {stage.Name}: {stage.Outcome} - {stage.Detail}");
+            foreach (var reason in verification.Reasons)
+                output.AppendLine($"[Reason] {reason}");
         }
 
-        Console.WriteLine("============================================================");
+        output.AppendLine("============================================================");
+        return output.ToString();
+    }
 
-        // Invariant: StubVerifier always returns ESCALATE, so print "not verified" and never "completed"
-        if (result.FinalState == TaskState.Completed)
-        {
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine("[INVARIANT VIOLATION] Task completed without independent verification!");
-            Console.ResetColor();
-            return 1;
-        }
+    /// <summary>Creates the host's independent verifier from its authorization and audit services.</summary>
+    public static IVerifier CreateVerifier(IAuthorizationVerifier authorizationVerifier, IAuditStore auditStore) =>
+        new VerificationEngine(authorizationVerifier, auditStore);
 
-        Console.ForegroundColor = ConsoleColor.Yellow;
-        Console.WriteLine("[STATUS] Result: not verified (Phase 2b StubVerifier requires escalation)");
-        Console.ResetColor();
+    /// <summary>Builds the server report from the orchestrator's independent verification results.</summary>
+    public static ReportRequestDto CreateReport(string sessionId, TaskOrchestratorResult result)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+        ArgumentNullException.ThrowIfNull(result);
 
-        return 0;
+        var steps = result.VerificationResults
+            .GroupBy(verification => verification.StepId, StringComparer.Ordinal)
+            .Select(group =>
+            {
+                var verification = group.Last();
+                var verified = string.Equals(verification.Status, "VERIFIED", StringComparison.OrdinalIgnoreCase);
+                var reason = string.Join(" ", verification.Reasons).Trim();
+                if (string.IsNullOrWhiteSpace(reason))
+                    reason = $"Independent verification returned {verification.Status}.";
+                if (reason.Length > 240)
+                    reason = reason[..240];
+
+                return new ReportStepSummaryDto(
+                    verification.StepId,
+                    verified ? "completed" : "failed",
+                    verification.Status,
+                    verified ? "Step independently verified." : "Step did not pass independent verification.",
+                    reason);
+            })
+            .ToList();
+
+        return new ReportRequestDto(1, sessionId, result.TaskId, steps);
     }
 
     public static Task<int> HistoryCommandAsync()
@@ -178,13 +260,19 @@ public static class Program
 
         using var auditStore = new SqliteAuditStore(dbPath);
         var transitions = auditStore.GetStateTransitions();
-        var safetyDecisions = auditStore.GetSafetyDecisions();
+        var policyValidations = auditStore.GetPolicyValidations();
+        var approvalDecisions = auditStore.GetApprovalDecisions();
+        var legacySafetyDecisions = auditStore.GetSafetyDecisions();
+        var verifications = auditStore.GetVerifications();
 
         Console.WriteLine("============================================================");
         Console.WriteLine("                   TASK AUDIT HISTORY");
         Console.WriteLine("============================================================");
         Console.WriteLine($"Total State Transitions Recorded: {transitions.Count}");
-        Console.WriteLine($"Total Safety Decisions Recorded:   {safetyDecisions.Count}");
+        Console.WriteLine($"Total Policy Validations Recorded: {policyValidations.Count}");
+        Console.WriteLine($"Total Approval Decisions Recorded: {approvalDecisions.Count}");
+        Console.WriteLine($"Total Verification Events Recorded: {verifications.Count}");
+        Console.WriteLine($"Legacy Combined Safety Decisions:   {legacySafetyDecisions.Count}");
         Console.WriteLine();
 
         Console.WriteLine("Recent State Transitions:");
@@ -194,14 +282,54 @@ public static class Program
         }
 
         Console.WriteLine();
-        Console.WriteLine("Recent Safety Decisions:");
-        foreach (var s in safetyDecisions.TakeLast(10))
+        Console.WriteLine("Recent Policy Validations:");
+        foreach (var validation in policyValidations.TakeLast(10))
         {
-            Console.WriteLine($"  [{s.Timestamp:yyyy-MM-dd HH:mm:ss}] {s.TaskId,-14} Step: {s.StepId} Tool: {s.ToolId} Risk: {s.FinalRisk} Approved: {s.Approved} ({s.ApprovedBy})");
+            Console.WriteLine($"  [{validation.Timestamp:yyyy-MM-dd HH:mm:ss}] {validation.TaskId,-14} Step: {validation.StepId} Tool: {validation.ToolId} Risk: {validation.FinalRisk} Valid: {validation.IsValid} ({validation.Reason ?? "none"})");
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("Recent Approval Decisions:");
+        foreach (var approval in approvalDecisions.TakeLast(10))
+        {
+            Console.WriteLine($"  [{approval.Timestamp:yyyy-MM-dd HH:mm:ss}] {approval.TaskId,-14} Step: {approval.StepId} Approved: {approval.Approved} Approver: {approval.Approver} ({approval.Reason ?? "none"})");
+        }
+
+        Console.Write(RenderVerificationHistory(verifications, approvalDecisions));
+
+        if (legacySafetyDecisions.Count > 0)
+        {
+            Console.WriteLine();
+            Console.WriteLine("Legacy Combined Safety Decisions (historical rows):");
+            foreach (var legacy in legacySafetyDecisions.TakeLast(10))
+                Console.WriteLine($"  [{legacy.Timestamp:yyyy-MM-dd HH:mm:ss}] {legacy.TaskId,-14} Step: {legacy.StepId} Approved: {legacy.Approved} RecordedBy: {legacy.ApprovedBy}");
         }
         Console.WriteLine("============================================================");
 
         return Task.FromResult(0);
+    }
+
+    /// <summary>Formats verification events with their matching Phase 3b approval identity.</summary>
+    public static string RenderVerificationHistory(
+        IReadOnlyList<VerificationAuditRecord> verifications,
+        IReadOnlyList<ApprovalDecisionRecord> approvals)
+    {
+        ArgumentNullException.ThrowIfNull(verifications);
+        ArgumentNullException.ThrowIfNull(approvals);
+        var output = new StringBuilder();
+        output.AppendLine();
+        output.AppendLine("Recent Verification Events:");
+        foreach (var verification in verifications.TakeLast(10))
+        {
+            var approval = verification.TaskId is null
+                ? null
+                : approvals.LastOrDefault(candidate =>
+                    string.Equals(candidate.TaskId, verification.TaskId, StringComparison.Ordinal)
+                    && string.Equals(candidate.StepId, verification.StepId, StringComparison.Ordinal));
+            output.AppendLine(
+                $"  [{verification.VerifiedAt:yyyy-MM-dd HH:mm:ss}] {verification.TaskId ?? "legacy"} Step: {verification.StepId} Verification {verification.OverallStatus} Approver: {approval?.Approver ?? "unknown"} ({verification.Summary ?? "none"})");
+        }
+        return output.ToString();
     }
 
     public static async Task<int> DoctorCommandAsync()
@@ -292,7 +420,11 @@ public static class Program
         foreach (var r in pathPolicy.AllowedRoots)
         {
             var exists = Directory.Exists(r);
-            Console.WriteLine($"       - {r} (Exists: {exists})");
+            var inOneDrive = r.Contains($"{Path.DirectorySeparatorChar}OneDrive{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase);
+            var status = !exists || inOneDrive ? "WARN" : "PASS";
+            Console.WriteLine($"[{status}] Root: {r} (Exists: {exists}, OneDrive: {inOneDrive})");
+            if (!exists || inOneDrive)
+                Console.WriteLine("       Use a local, non-synced JARVIS_ALLOWED_ROOT for tests and evaluation.");
         }
 
         // 7. SQLite Audit Store

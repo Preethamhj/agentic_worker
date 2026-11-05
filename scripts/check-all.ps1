@@ -17,11 +17,28 @@ if (-not (Test-Path $venvPython)) {
 Write-Host "=== Step 1: C# Build & Tests ===" -ForegroundColor Cyan
 Push-Location $windowsHostDir
 try {
-    dotnet build Jarvis.sln --configuration Release --no-incremental
+    $sdkVersion = dotnet --version
+    Write-Host "Using .NET SDK: $sdkVersion"
+    if (-not $sdkVersion.StartsWith("10.")) { throw "Expected .NET 10 SDK, got $sdkVersion" }
+    dotnet restore Jarvis.sln --disable-build-servers -m:1
+    if ($LASTEXITCODE -ne 0) { throw "dotnet restore failed" }
+    dotnet build Jarvis.sln --configuration Release --no-incremental --no-restore --disable-build-servers -m:1
     if ($LASTEXITCODE -ne 0) { throw "dotnet build failed" }
 
-    dotnet test Jarvis.sln --configuration Release --no-build
-    if ($LASTEXITCODE -ne 0) { throw "dotnet test failed" }
+    $originalRealSchedulerSetting = $env:JARVIS_REAL_SCHEDULER
+    try {
+        Remove-Item Env:\JARVIS_REAL_SCHEDULER -ErrorAction SilentlyContinue
+        dotnet test Jarvis.sln --configuration Release --no-build --no-restore --disable-build-servers -m:1 --filter "Category!=RealScheduler"
+        if ($LASTEXITCODE -ne 0) { throw "dotnet test failed for non-real-scheduler tests" }
+
+        # RealScheduler tests require the normal user/admin desktop session used by CI.
+        $env:JARVIS_REAL_SCHEDULER = "1"
+        dotnet test Jarvis.sln --configuration Release --no-build --no-restore --disable-build-servers -m:1 --filter "Category=RealScheduler"
+        if ($LASTEXITCODE -ne 0) { throw "dotnet test failed for real-scheduler tests" }
+
+    } finally {
+        if ($null -eq $originalRealSchedulerSetting) { Remove-Item Env:\JARVIS_REAL_SCHEDULER -ErrorAction SilentlyContinue } else { $env:JARVIS_REAL_SCHEDULER = $originalRealSchedulerSetting }
+    }
 } finally {
     Pop-Location
 }
@@ -53,10 +70,23 @@ try {
     Pop-Location
 }
 
+Write-Host "`n=== Step 2b: Evaluation Python Tests & Linting ===" -ForegroundColor Cyan
+Push-Location $repoRoot
+try {
+    & $venvPython -m pytest eval/tests
+    if ($LASTEXITCODE -ne 0) { throw "eval pytest failed" }
+    & "$aiServerDir\.venv\Scripts\ruff.exe" check eval
+    if ($LASTEXITCODE -ne 0) { throw "eval ruff check failed" }
+    & "$aiServerDir\.venv\Scripts\mypy.exe" --strict --explicit-package-bases eval
+    if ($LASTEXITCODE -ne 0) { throw "eval mypy check failed" }
+} finally {
+    Pop-Location
+}
+
 Write-Host "`n=== Step 3: C# Formatting Verification ===" -ForegroundColor Cyan
 Push-Location $windowsHostDir
 try {
-    dotnet format Jarvis.sln --verify-no-changes
+    dotnet format Jarvis.sln --verify-no-changes --no-restore
     if ($LASTEXITCODE -ne 0) { throw "dotnet format check failed" }
 } finally {
     Pop-Location

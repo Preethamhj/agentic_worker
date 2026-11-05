@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Jarvis Phase 5 evaluation task catalogue",
+  "type": "array",
+  "minItems": 50,
+  "maxItems": 50,
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["task_id", "tool_id", "args", "applicable_faults"],
+    "properties": {
+      "task_id": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{32}$"
+      },
+      "tool_id": {
+        "enum": ["fs.create_file", "fs.create_folder", "fs.search_files", "app.launch", "task.schedule_reminder"]
+      },
+      "args": {
+        "type": "object"
+      },
+      "applicable_faults": {
+        "type": "array",
+        "uniqueItems": true,
+        "minItems": 3,
+        "items": {
+          "enum": ["F0", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12", "F13", "F14", "F15", "F16", "F17a", "F17b", "F18"]
+        }
+      }
+    },
+    "allOf": [
+      {
+        "if": { "properties": { "tool_id": { "const": "fs.create_file" } } },
+        "then": {
+          "properties": {
+            "args": {
+              "type": "object",
+              "required": ["path", "content"],
+              "properties": {
+                "path": { "type": "string" },
+                "content": { "type": "string", "maxLength": 65536 }
+              }
+            }
+          }
+        }
+      },
+      {
+        "if": { "properties": { "tool_id": { "const": "fs.create_folder" } } },
+        "then": {
+          "properties": {
+            "args": {
+              "type": "object",
+              "required": ["path"],
+              "properties": { "path": { "type": "string" } }
+            }
+          }
+        }
+      },
+      {
+        "if": { "properties": { "tool_id": { "const": "fs.search_files" } } },
+        "then": {
+          "properties": {
+            "args": {
+              "type": "object",
+              "required": ["root_path", "pattern", "max_depth", "max_results", "expected_matches"],
+              "properties": {
+                "root_path": { "type": "string" },
+                "pattern": { "type": "string" },
+                "max_depth": { "type": "integer", "minimum": 1 },
+                "max_results": { "type": "integer", "minimum": 1 },
+                "expected_matches": { "type": "array", "items": { "type": "string" } }
+              }
+            }
+          }
+        }
+      },
+      {
+        "if": { "properties": { "tool_id": { "const": "app.launch" } } },
+        "then": {
+          "properties": {
+            "args": {
+              "type": "object",
+              "required": ["app_id"],
+              "properties": { "app_id": { "const": "notepad" } }
+            }
+          }
+        }
+      },
+      {
+        "if": { "properties": { "tool_id": { "const": "task.schedule_reminder" } } },
+        "then": {
+          "properties": {
+            "args": {
+              "type": "object",
+              "required": ["task_name", "time_iso", "message"],
+              "properties": {
+                "task_name": { "type": "string" },
+                "time_iso": { "type": "string", "format": "date-time" },
+                "message": { "type": "string", "maxLength": 200 }
+              }
+            }
+          }
+        }
+      }
+    ]
+  }
+}

@@ -14,7 +14,8 @@
           "stage": { "type": "integer" },
           "name": { "type": "string" },
           "passed": { "type": "boolean" },
-          "detail": { "type": "string" }
+          "detail": { "type": "string" },
+          "outcome": { "type": "string", "enum": ["PASSED", "FAILED", "ESCALATE", "NOT_RUN"] }
         },
         "required": ["stage", "name", "passed", "detail"],
         "additionalProperties": false

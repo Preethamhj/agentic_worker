@@ -118,6 +118,31 @@ public class PathPolicyTests
     }
 
     [Fact]
+    public void Nfd_Input_Is_Normalized_To_Nfc_Inside_Allowed_Root()
+    {
+        var nfc = "café";
+        var nfd = nfc.Normalize(System.Text.NormalizationForm.FormD);
+        var result = _policy.ValidatePath(Path.Combine(TempRoot, nfd, "note.txt"));
+
+        result.IsValid.Should().BeTrue();
+        result.NormalizedPath.Should().Contain(nfc);
+        result.NormalizedPath.Should().NotContain(nfd);
+    }
+
+    [Fact]
+    public void Configured_Root_Rejects_Broad_And_System_Locations()
+    {
+        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        Action profileRoot = () => PathPolicy.ValidateConfiguredAllowedRoot(profile);
+        Action windows = () => PathPolicy.ValidateConfiguredAllowedRoot(Environment.GetFolderPath(Environment.SpecialFolder.Windows));
+        Action programFiles = () => PathPolicy.ValidateConfiguredAllowedRoot(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles));
+
+        profileRoot.Should().Throw<ArgumentException>();
+        windows.Should().Throw<ArgumentException>();
+        programFiles.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
     public void ReparsePoint_Junction_Or_Symlink_Is_Blocked()
     {
         var testDir = Path.Combine(TempRoot, "normal_dir_test");

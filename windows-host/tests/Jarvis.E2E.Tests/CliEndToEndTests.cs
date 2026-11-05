@@ -51,16 +51,32 @@ public class CliEndToEndTests : IDisposable
             new CreateFileExecutor(_pathPolicy, _authService),
             new CreateFolderExecutor(_pathPolicy, _authService),
             new SearchFilesExecutor(_pathPolicy, _authService),
-            new AppLaunchExecutor(_toolPolicy, _authService)
+            new AppLaunchExecutor(_toolPolicy, _authService, new WindowsElevationChecker()),
+            new TaskScheduleReminderExecutor(_authService, new WindowsReminderTaskScheduler())
         };
 
-        _stepExecutor = new StepExecutor(_authService, executors);
+        _stepExecutor = new StepExecutor(_authService, executors, _toolPolicy);
         _stubVerifier = new StubVerifier();
         _queue = new ExecutionQueue();
     }
 
     [Fact]
-    public async Task Cli_Runs_FsCreateFile_EndToEnd_UpTo_StubVerifier()
+    public void StepExecutor_Signs_Resolved_Allowlisted_Image_Path_For_AppLaunch()
+    {
+        _toolPolicy.TryResolveAllowedExecutablePath("notepad", out var executable).Should().BeTrue();
+
+        var authorization = _stepExecutor.PrepareAuthorization(
+            "task-app-path",
+            "step-app-path",
+            "app.launch",
+            new Dictionary<string, object?> { ["app_id"] = "notepad" },
+            "medium");
+
+        authorization.Expected["image_path"].Should().Be(Path.GetFullPath(executable!));
+    }
+
+    [Fact]
+    public async Task Cli_Runs_FsCreateFile_EndToEnd_WithStubVerifier_Escalates_AndFails()
     {
         var targetFile = Path.Combine(_tempRoot, "notes.txt");
         var planner = new StaticPlanner(new PlanStepDto(
@@ -74,7 +90,7 @@ public class CliEndToEndTests : IDisposable
             AdvisoryRisk: "medium"
         ));
 
-        var approval = new ConsoleApprovalHandler(autoApprove: true);
+        var approval = new TestApprovalHandler();
         var orchestrator = new TaskOrchestrator(planner, _safetyGate, approval, _queue, _stepExecutor, _stubVerifier, _auditStore);
 
         var result = await orchestrator.RunTaskAsync("create notes file");
@@ -93,9 +109,11 @@ public class CliEndToEndTests : IDisposable
         result.VerificationResults[0].Status.Should().Be("ESCALATE");
 
         // 4. Invariant: Task must NEVER be Completed without VERIFIED
+        result.VerificationResults.Should().OnlyContain(verification => verification.Status != "VERIFIED");
         result.FinalState.Should().NotBe(TaskState.Completed);
         result.FinalState.Should().Be(TaskState.Failed);
         result.StatusMessage.Should().Contain("not verified");
+        AssertFailedOnlyForNotVerified(result);
     }
 
     [Fact]
@@ -113,7 +131,7 @@ public class CliEndToEndTests : IDisposable
             AdvisoryRisk: "medium"
         ));
 
-        var approval = new ConsoleApprovalHandler(autoApprove: true);
+        var approval = new TestApprovalHandler();
         var orchestrator = new TaskOrchestrator(planner, _safetyGate, approval, _queue, _stepExecutor, _stubVerifier, _auditStore);
 
         var result = await orchestrator.RunTaskAsync("create projects folder");
@@ -123,6 +141,7 @@ public class CliEndToEndTests : IDisposable
         result.VerificationResults[0].Status.Should().Be("ESCALATE");
         result.FinalState.Should().Be(TaskState.Failed);
         result.StatusMessage.Should().Contain("not verified");
+        AssertFailedOnlyForNotVerified(result);
     }
 
     [Fact]
@@ -142,7 +161,7 @@ public class CliEndToEndTests : IDisposable
             AdvisoryRisk: "low"
         ));
 
-        var approval = new ConsoleApprovalHandler(autoApprove: true);
+        var approval = new TestApprovalHandler();
         var orchestrator = new TaskOrchestrator(planner, _safetyGate, approval, _queue, _stepExecutor, _stubVerifier, _auditStore);
 
         var result = await orchestrator.RunTaskAsync("search text files");
@@ -153,11 +172,13 @@ public class CliEndToEndTests : IDisposable
         result.VerificationResults[0].Status.Should().Be("ESCALATE");
         result.FinalState.Should().Be(TaskState.Failed);
         result.StatusMessage.Should().Contain("not verified");
+        AssertFailedOnlyForNotVerified(result);
     }
 
     [Fact]
     public async Task Cli_Runs_AppLaunch_EndToEnd_UpTo_StubVerifier()
     {
+        var calculatorProcessesBefore = CaptureCalculatorProcessIds();
         var planner = new StaticPlanner(new PlanStepDto(
             SchemaVersion: 1,
             StepId: "step-1",
@@ -169,25 +190,33 @@ public class CliEndToEndTests : IDisposable
             AdvisoryRisk: "medium"
         ));
 
-        var approval = new ConsoleApprovalHandler(autoApprove: true);
+        var approval = new TestApprovalHandler();
         var orchestrator = new TaskOrchestrator(planner, _safetyGate, approval, _queue, _stepExecutor, _stubVerifier, _auditStore);
 
-        var result = await orchestrator.RunTaskAsync("launch calculator");
-
-        var isElevated = OperatingSystem.IsWindows() && new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator);
-        if (isElevated)
+        try
         {
-            result.Receipts[0].ReportedSuccess.Should().BeFalse();
-            result.Receipts[0].Stderr.Should().Contain("elevated");
-        }
-        else
-        {
-            result.Receipts[0].ReportedSuccess.Should().BeTrue();
-        }
+            var result = await orchestrator.RunTaskAsync("launch calculator");
 
-        result.VerificationResults[0].Status.Should().Be("ESCALATE");
-        result.FinalState.Should().Be(TaskState.Failed);
-        result.StatusMessage.Should().Contain("not verified");
+            var isElevated = OperatingSystem.IsWindows() && new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator);
+            if (isElevated)
+            {
+                result.Receipts[0].ReportedSuccess.Should().BeFalse();
+                result.Receipts[0].Stderr.Should().Contain("elevated");
+            }
+            else
+            {
+                result.Receipts[0].ReportedSuccess.Should().BeTrue();
+            }
+
+            result.VerificationResults[0].Status.Should().Be("ESCALATE");
+            result.FinalState.Should().Be(TaskState.Failed);
+            result.StatusMessage.Should().Contain("not verified");
+            AssertFailedOnlyForNotVerified(result);
+        }
+        finally
+        {
+            KillCalculatorProcessesStartedByTest(calculatorProcessesBefore);
+        }
     }
 
     [Fact]
@@ -208,17 +237,59 @@ public class CliEndToEndTests : IDisposable
     {
         _auditStore.Dispose();
         _queue.DisposeAsync().AsTask().GetAwaiter().GetResult();
-        try
+        if (Directory.Exists(_tempRoot))
+            Directory.Delete(_tempRoot, recursive: true);
+    }
+
+    private static HashSet<int> CaptureCalculatorProcessIds()
+    {
+        var processIds = new HashSet<int>();
+        foreach (var name in new[] { "calc", "CalculatorApp" })
         {
-            if (Directory.Exists(_tempRoot))
+            foreach (var process in Process.GetProcessesByName(name))
             {
-                Directory.Delete(_tempRoot, recursive: true);
+                using (process)
+                    processIds.Add(process.Id);
             }
         }
-        catch
+        return processIds;
+    }
+
+    private static void KillCalculatorProcessesStartedByTest(IReadOnlySet<int> processIdsBefore)
+    {
+        foreach (var name in new[] { "calc", "CalculatorApp" })
         {
-            // Best effort cleanup
+            foreach (var process in Process.GetProcessesByName(name))
+            {
+                using (process)
+                {
+                    if (processIdsBefore.Contains(process.Id))
+                        continue;
+
+                    if (process.HasExited)
+                        continue;
+                    try
+                    {
+                        process.Kill();
+                        if (!process.WaitForExit(5_000))
+                            throw new TimeoutException($"Test-launched calculator process {process.Id} did not exit.");
+                    }
+                    catch (InvalidOperationException) when (process.HasExited)
+                    {
+                        // The test-launched process exited between enumeration and termination.
+                    }
+                }
+            }
         }
+    }
+
+    private void AssertFailedOnlyForNotVerified(TaskOrchestratorResult result)
+    {
+        var terminalTransition = _auditStore.GetStateTransitions(result.TaskId)
+            .Last(transition => string.Equals(transition.ToState, "failed", StringComparison.OrdinalIgnoreCase));
+        terminalTransition.Reason.Should().NotBeNull();
+        terminalTransition.Reason.Should().Contain("not verified");
+        terminalTransition.Reason.Should().NotContain("execution error");
     }
 
     private class StaticPlanner : IPlanner
@@ -242,5 +313,11 @@ public class CliEndToEndTests : IDisposable
             );
             return Task.FromResult(plan);
         }
+    }
+
+    private sealed class TestApprovalHandler : IApprovalHandler
+    {
+        public Task<ApprovalDecision> RequestApprovalAsync(ApprovalRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new ApprovalDecision(true, Environment.UserName));
     }
 }

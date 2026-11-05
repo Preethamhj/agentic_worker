@@ -26,6 +26,67 @@ public class AuthorizationTests
     }
 
     [Fact]
+    public void Reminder_Authorization_Uses_Injected_Data_Location()
+    {
+        var location = new FixedReminderDataLocation(Path.Combine(Path.GetTempPath(), "jarvis-reminder-test", Guid.NewGuid().ToString("N")));
+        var service = new AuthorizationService(_keyStore, _clock, hostPathProvider: new FixedHostPathProvider(@"C:\Jarvis\Jarvis.Cli.exe"), reminderDataLocation: location);
+        var record = service.IssueAuthorization("task", "step", "task.schedule_reminder", new Dictionary<string, object?>
+        {
+            ["time_iso"] = "2026-10-09T10:05:00.0000000+00:00",
+            ["message"] = "message"
+        });
+
+        record.Expected["reminder_data_path"].Should().Be(ReminderDataPaths.GetFilePath(record.Expected["task_id"]!.ToString()!, location.DirectoryPath));
+    }
+
+    [Fact]
+    public void Default_Reminder_Data_Location_Uses_LocalAppData_Convention()
+    {
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var expected = Path.GetFullPath(Path.Combine(localAppData, "Jarvis", "reminders"));
+
+        new DefaultReminderDataLocation().DirectoryPath.Should().Be(expected);
+    }
+
+    private sealed class FixedReminderDataLocation(string directoryPath) : IReminderDataLocation
+    {
+        public string DirectoryPath => directoryPath;
+    }
+
+    [Fact]
+    public void ScheduleReminder_Refuses_Dotnet_Host_And_Signs_Injected_Published_Host()
+    {
+        var dotnetService = new AuthorizationService(
+            _keyStore,
+            _clock,
+            hostPathProvider: new FixedHostPathProvider(@"C:\\Program Files\\dotnet\\dotnet.exe"));
+        Action refusal = () => dotnetService.IssueAuthorization(
+            "task-reminder", "step-reminder", "task.schedule_reminder",
+            new Dictionary<string, object?>
+            {
+                ["task_name"] = "Reminder",
+                ["time_iso"] = "2026-10-09T10:05:00.0000000+00:00",
+                ["message"] = "message"
+            });
+        refusal.Should().Throw<InvalidOperationException>()
+            .WithMessage("*published Jarvis.Cli.exe*");
+
+        var publishedService = new AuthorizationService(
+            _keyStore,
+            _clock,
+            hostPathProvider: new FixedHostPathProvider(@"C:\\Jarvis\\Jarvis.Cli.exe"));
+        var record = publishedService.IssueAuthorization(
+            "task-reminder", "step-reminder", "task.schedule_reminder",
+            new Dictionary<string, object?>
+            {
+                ["task_name"] = "Reminder",
+                ["time_iso"] = "2026-10-09T10:05:00.0000000+00:00",
+                ["message"] = "message"
+            });
+        record.Expected["action_path"].Should().Be(@"C:\Jarvis\Jarvis.Cli.exe");
+    }
+
+    [Fact]
     public void Full_Happy_Path_Issue_Consume_Verify_Succeeds()
     {
         var record = _authService.IssueAuthorization(
@@ -145,6 +206,18 @@ public class AuthorizationTests
     }
 
     [Fact]
+    public void Verified_Authorization_Cannot_Be_Replayed()
+    {
+        var record = CreateSampleRecord();
+        _authService.Consume(record, "step-001");
+        _authService.Verify(record).Should().BeTrue();
+
+        Action replay = () => _authService.Verify(record);
+        replay.Should().Throw<AuthorizationSecurityException>()
+            .WithMessage("*already verified*");
+    }
+
+    [Fact]
     public void Tampered_Canonical_Args_Fails()
     {
         var record = CreateSampleRecord();
@@ -255,6 +328,55 @@ public class AuthorizationTests
             .WithMessage("*HMAC*");
     }
 
+    [Fact]
+    public void Restart_Test_Consuming_Persisted_Nonce_On_New_Service_Fails()
+    {
+        var tempDb = Path.Combine(Path.GetTempPath(), $"jarvis_audit_restart_{Guid.NewGuid():N}.db");
+        try
+        {
+            var keyStore = new InMemoryDpapiKeyStore();
+            AuthorizationRecordDto record;
+
+            // 1. Initial service instance issues and consumes the nonce
+            using (var store1 = new SqliteAuditStore(tempDb))
+            {
+                var authService1 = new AuthorizationService(keyStore, SystemClock.Instance, store1);
+                record = authService1.IssueAuthorization(
+                    taskId: "task-restart-01",
+                    stepId: "step-01",
+                    toolId: "fs.create_file",
+                    rawArgs: new Dictionary<string, object?> { ["path"] = @"C:\allowed\doc.txt", ["content"] = "hello" },
+                    risk: "medium"
+                );
+
+                var verified = authService1.Consume(record, "step-01");
+                verified.Should().NotBeNull();
+            }
+
+            // 2. Restart: Create a completely new SqliteAuditStore and AuthorizationService on the same SQLite file
+            using (var store2 = new SqliteAuditStore(tempDb))
+            {
+                var authService2 = new AuthorizationService(keyStore, SystemClock.Instance, store2);
+
+                // Consuming the same record again on the new service instance must fail
+                Action act = () => authService2.Consume(record, "step-01");
+                act.Should().Throw<AuthorizationSecurityException>()
+                    .WithMessage("*already consumed*");
+            }
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(tempDb))
+                {
+                    File.Delete(tempDb);
+                }
+            }
+            catch { }
+        }
+    }
+
     private AuthorizationRecordDto CreateSampleRecord()
     {
         return _authService.IssueAuthorization(
@@ -267,5 +389,10 @@ public class AuthorizationTests
             watchScopes: new List<string> { @"C:\test.txt" },
             risk: "medium",
             approvedBy: "user");
+    }
+
+    private sealed class FixedHostPathProvider(string path) : IHostPathProvider
+    {
+        public string GetHostPath() => path;
     }
 }
