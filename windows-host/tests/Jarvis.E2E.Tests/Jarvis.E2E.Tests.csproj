@@ -17,5 +17,13 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Jarvis.Cli\Jarvis.Cli.csproj" />
     <ProjectReference Include="..\..\src\Jarvis.Eval\Jarvis.Eval.csproj" />
+    <ProjectReference Include="..\Jarvis.TestSupport\Jarvis.TestSupport.csproj" />
+    <ProjectReference Include="..\..\src\Jarvis.TestApp\Jarvis.TestApp.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
+  <Target Name="CopyTestApp" AfterTargets="Build">
+    <ItemGroup>
+      <TestAppOutput Include="..\..\src\Jarvis.TestApp\bin\$(Configuration)\net10.0-windows\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(TestAppOutput)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
+  </Target>
 </Project>
