@@ -14,3 +14,12 @@ Run Jarvis from a normal, non-elevated Windows desktop session. For file tasks, 
 10. **Low-risk behavior:** In a Debug build, test a low-risk request with the same low-risk auto-approval setting used by the console and confirm it follows that existing policy. Confirm medium/high-risk approvals still require a human decision. Repeat in Release and confirm there is no auto-approval.
 
 Record pass/fail and any observed issue for each step. Do not mark the Phase 4 manual validation complete until all steps have been exercised by the owner.
+
+## Live Notepad outcome classes
+
+The owner may run `scripts\live-app-check.ps1` for one real Notepad launch through the normal Jarvis executor and independent verifier. It prints the CLI's per-stage outcomes and reasons, plus Notepad process snapshots before and after. It deliberately does not stop any Notepad process; on Windows 11 the launcher may hand off to an existing packaged-app process and opened tabs can persist.
+
+- **VERIFIED:** independent evidence matched the authorized Notepad image during the verification window.
+- **FAILED:** the executor or an independent check failed; use the printed stage detail and reasons to diagnose it.
+- **ESCALATE or another non-VERIFIED outcome:** Jarvis did not establish the authorized postcondition. Treat it as not verified.
+- A changed process list is diagnostic only and is not itself a verification verdict. A hand-off may leave the existing process set unchanged.
