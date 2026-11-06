@@ -168,6 +168,34 @@ public class DependencyRulesTests
     }
 
     [Fact]
+    public void Host_Projects_Must_Not_Reference_Test_App()
+    {
+        var hostAssemblies = new[]
+        {
+            typeof(Jarvis.Cli.ConsoleApprovalHandler).Assembly,
+            typeof(Jarvis.Core.StateMachine).Assembly,
+            typeof(Jarvis.Safety.PathPolicy).Assembly,
+            typeof(Jarvis.Tools.IToolExecutor).Assembly,
+            typeof(Jarvis.Verification.VerificationPlaceholder).Assembly,
+            typeof(Jarvis.Infrastructure.SqliteAuditStore).Assembly,
+            typeof(Jarvis.Contracts.PlanRequestDto).Assembly,
+            typeof(Jarvis.Composition.JarvisSessionFactory).Assembly,
+            typeof(Jarvis.UI.MainWindow).Assembly
+        };
+
+        foreach (var assembly in hostAssemblies)
+        {
+            assembly.GetReferencedAssemblies()
+                .Should()
+                .NotContain(reference => string.Equals(
+                    reference.Name,
+                    "Jarvis.TestApp",
+                    StringComparison.OrdinalIgnoreCase),
+                    $"{assembly.GetName().Name} must not reference Jarvis.TestApp");
+        }
+    }
+
+    [Fact]
     public void Ui_Must_Reference_Only_Approved_Host_Projects()
     {
         var uiAssembly = typeof(Jarvis.UI.MainWindow).Assembly;
