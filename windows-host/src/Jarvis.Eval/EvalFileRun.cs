@@ -6,6 +6,7 @@ using Jarvis.Contracts;
 using Jarvis.Infrastructure;
 using Jarvis.Safety;
 using Jarvis.Tools;
+using Jarvis.TestSupport;
 using Jarvis.Verification;
 
 namespace Jarvis.Eval;
@@ -41,7 +42,7 @@ public sealed class EvalFileRunner
                 processes.Select(process =>
                     $"{process.ProcessName} PID={process.ProcessId} StartTime={process.StartTime:o} WindowTitle={process.WindowTitle}"));
             throw new InvalidOperationException(
-                $"App evaluation aborted because pre-existing Notepad/ping processes were found: {details}. " +
+                $"App evaluation aborted because pre-existing Jarvis.TestApp/ping processes were found: {details}. " +
                 "Close only processes you own, or pass --allow-preexisting-processes to record them explicitly.");
         }
         return processes;
@@ -50,7 +51,7 @@ public sealed class EvalFileRunner
     public static IReadOnlyList<EvalPreexistingProcess> EnumeratePreexistingProcesses()
     {
         var result = new List<EvalPreexistingProcess>();
-        foreach (var processName in new[] { "notepad", "ping" })
+        foreach (var processName in new[] { "Jarvis.TestApp", "ping" })
         {
             foreach (var process in Process.GetProcessesByName(processName))
             {
@@ -280,11 +281,15 @@ public sealed class EvalFileRunner
             _ => throw new ArgumentException($"Unsupported W1-W3 tool '{evalCase.ToolId}'.", nameof(evalCase))
         };
         IToolExecutor executor = evalCase.ToolId == "task.schedule_reminder"
-            || (evalCase.ToolId == "app.launch" && evalCase.FaultId != "F18") || (evalCase.FaultId == "F0" || evalCase.FaultId == "F18")
-            ? inner
-            : new EvalFaultInjectingExecutor(inner, evalCase.FaultId, Path.Combine(root, "unauthorized-extra.txt"), TrackStartedProcess);
-        if (evalCase.ToolId == "app.launch" && evalCase.FaultId != "F18")
-            executor = new EvalFaultInjectingExecutor(inner, evalCase.FaultId, Path.Combine(root, "unused"), TrackStartedProcess);
+            || (evalCase.ToolId != "app.launch" && (evalCase.FaultId is "F0" or "F18"))
+                ? inner
+                : new EvalFaultInjectingExecutor(
+                    inner,
+                    evalCase.FaultId,
+                    evalCase.ToolId == "app.launch"
+                        ? Path.Combine(root, "unused")
+                        : Path.Combine(root, "unauthorized-extra.txt"),
+                    TrackStartedProcess);
         var stepExecutor = new StepExecutor(authService, [executor], policy);
         var args = evalCase.ToolId switch
         {
@@ -297,7 +302,7 @@ public sealed class EvalFileRunner
                 ["max_depth"] = 5,
                 ["max_results"] = 100
             },
-            "app.launch" => new Dictionary<string, object?> { ["app_id"] = "notepad" },
+            "app.launch" => new Dictionary<string, object?> { ["app_id"] = "testapp" },
             "task.schedule_reminder" => new Dictionary<string, object?> { ["task_name"] = $"Evaluation reminder {evalCase.TaskId}", ["time_iso"] = ReminderTime().ToString("O"), ["message"] = $"Evaluation reminder {evalCase.TaskId}" },
             _ => throw new ArgumentException($"Unsupported W1-W3 tool '{evalCase.ToolId}'.", nameof(evalCase))
         };
@@ -349,9 +354,21 @@ public sealed class EvalFileRunner
             directory = directory.Parent;
         if (directory is null)
             throw new DirectoryNotFoundException("Cannot locate the repository tool registry.");
-        return ToolPolicy.FromFile(
-            Path.Combine(directory.FullName, "config", "tools.registry.json"),
-            Path.Combine(directory.FullName, "config", "apps.allowlist.json"));
+        return ToolPolicy.FromJson(
+            File.ReadAllText(Path.Combine(directory.FullName, "config", "tools.registry.json")),
+            JsonSerializer.Serialize(new
+            {
+                schema_version = 1,
+                allowed_apps = new[]
+                {
+                    new
+                    {
+                        app_id = "testapp",
+                        executable = TestApps.Locate(),
+                        display_name = "Jarvis Test Helper"
+                    }
+                }
+            }));
     }
 
     private static DateTimeOffset ReminderTime()

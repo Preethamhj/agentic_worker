@@ -78,7 +78,7 @@ public sealed class EvalTaskCatalogTests
         fileByteSizes.Should().OnlyContain(size => size <= 65_536);
         catalog.Where(task => task.ToolId == "app.launch")
             .Select(task => task.Args["app_id"])
-            .Should().OnlyContain(appId => appId!.GetValue<string>() == "notepad");
+            .Should().OnlyContain(appId => appId!.GetValue<string>() == "testapp");
         catalog.Where(task => task.ToolId == "task.schedule_reminder")
             .Select(task => DateTimeOffset.Parse(task.Args["time_iso"]!.GetValue<string>()))
             .Should().OnlyContain(trigger => trigger > DateTimeOffset.UtcNow);

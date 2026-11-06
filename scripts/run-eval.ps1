@@ -34,7 +34,7 @@ if (-not $DryRun) {
 
 $preexisting = @()
 if (-not $DryRun) {
-    $preexisting = @(Get-Process -Name notepad,ping -ErrorAction SilentlyContinue |
+    $preexisting = @(Get-Process -Name Jarvis.TestApp,ping -ErrorAction SilentlyContinue |
         ForEach-Object {
             try {
                 [PSCustomObject]@{
@@ -44,18 +44,18 @@ if (-not $DryRun) {
                     WindowTitle = $_.MainWindowTitle
                 }
             } catch {
-                throw "Could not safely inspect a pre-existing Notepad/ping process: $($_.Exception.Message)"
+                throw "Could not safely inspect a pre-existing Jarvis.TestApp/ping process: $($_.Exception.Message)"
             }
         })
     if ($preexisting.Count -gt 0) {
         $details = ($preexisting | ForEach-Object {
             "$($_.ProcessName) PID=$($_.Id) StartTime=$($_.StartTime.ToUniversalTime().ToString('o')) WindowTitle=$($_.WindowTitle)"
         }) -join '; '
-        throw "App evaluation aborted because Notepad/ping processes already exist: $details. Close only processes you own, then rerun."
+        throw "App evaluation aborted because Jarvis.TestApp/ping processes already exist: $details. Close only processes you own, then rerun."
     }
 } else {
     Write-Host 'DRY RUN: no directories or files will be created.'
-    Write-Host 'DRY RUN: would preflight notepad.exe and ping.exe and stop if either exists.'
+    Write-Host 'DRY RUN: would preflight Jarvis.TestApp.exe and ping.exe and stop if either exists.'
 }
 
 $tools = @(

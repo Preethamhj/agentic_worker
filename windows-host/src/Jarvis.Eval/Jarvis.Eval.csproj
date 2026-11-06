@@ -5,6 +5,7 @@
     <TargetFramework>net10.0-windows</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\tests\Jarvis.TestSupport\Jarvis.TestSupport.csproj" />
     <ProjectReference Include="..\Jarvis.TestApp\Jarvis.TestApp.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\Jarvis.Contracts\Jarvis.Contracts.csproj" />
     <ProjectReference Include="..\Jarvis.Core\Jarvis.Core.csproj" />

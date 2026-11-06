@@ -140,7 +140,7 @@ public sealed class EvalFaultInjectingExecutor(
             "F2" or "F3" => toolId == "fs.create_file",
             "F5" or "F6" => toolId is "fs.create_file" or "fs.create_folder",
             "F9" or "F10" or "F11" => toolId == "app.launch",
-            "F18" => toolId == "fs.create_file",
+            "F18" => toolId is "fs.create_file" or "app.launch",
             "F4" => toolId is "fs.create_file" or "fs.create_folder",
             "F7" or "F8" => toolId == "fs.search_files",
             _ => false
@@ -151,6 +151,10 @@ public sealed class EvalFaultInjectingExecutor(
         var expectedStart = process.StartTime;
         using var current = Process.GetProcessById(process.Id);
         if (current.StartTime == expectedStart && !current.HasExited)
+        {
             current.Kill();
+            if (!current.WaitForExit(5_000))
+                throw new TimeoutException($"Evaluation process {current.Id} did not exit within five seconds.");
+        }
     }
 }

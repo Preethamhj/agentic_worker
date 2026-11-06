@@ -124,7 +124,7 @@ public static class EvalTaskCatalog
             "app",
             index,
             "app.launch",
-            new JsonObject { ["app_id"] = "notepad" });
+            new JsonObject { ["app_id"] = "testapp" });
 
     private static EvalTask CreateReminderTask(int seed, int index) =>
         Task(

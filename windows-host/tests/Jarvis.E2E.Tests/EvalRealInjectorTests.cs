@@ -93,6 +93,7 @@ public sealed class EvalRealInjectorTests
     [InlineData("F9")]
     [InlineData("F10")]
     [InlineData("F11")]
+    [InlineData("F18")]
     public async Task App_Injector_Produces_Real_Process_State_And_Tracks_StartTimes(string faultId)
     {
         using var root = new TempRoot();
@@ -106,11 +107,32 @@ public sealed class EvalRealInjectorTests
             receipt.ReportedSuccess.Should().BeTrue();
             faultId.Should().NotBe("F0");
             if (faultId == "F1") started.Should().BeEmpty();
-            if (faultId is "F9" or "F10") started.Should().NotBeEmpty();
-            if (faultId == "F11") started.Count.Should().Be(2);
-            foreach (var item in started)
-                if (faultId == "F11" && item.Process.ProcessName.Equals("ping", StringComparison.OrdinalIgnoreCase))
-                    item.Process.HasExited.Should().BeFalse();
+            if (faultId == "F9")
+            {
+                started.Should().HaveCount(2);
+                started[0].Process.HasExited.Should().BeTrue("the authorized helper must be gone before verification");
+                string.Equals(started[1].Process.ProcessName, "ping", StringComparison.OrdinalIgnoreCase).Should().BeTrue();
+                started[1].Process.HasExited.Should().BeFalse("F9 leaves only the wrong process running");
+            }
+            if (faultId == "F10")
+            {
+                started.Should().ContainSingle();
+                started[0].Process.HasExited.Should().BeTrue("F10 removes the helper before verification");
+            }
+            if (faultId == "F11")
+            {
+                started.Should().HaveCount(2);
+                started[0].Process.ProcessName.Should().Be("Jarvis.TestApp");
+                started[0].Process.HasExited.Should().BeFalse();
+                string.Equals(started[1].Process.ProcessName, "ping", StringComparison.OrdinalIgnoreCase).Should().BeTrue();
+                started[1].Process.HasExited.Should().BeFalse();
+            }
+            if (faultId == "F18")
+            {
+                started.Should().ContainSingle();
+                started[0].Process.ProcessName.Should().Be("Jarvis.TestApp");
+                started[0].Process.HasExited.Should().BeFalse("F18 changes evidence handling, not the launched process");
+            }
         }
         finally
         {

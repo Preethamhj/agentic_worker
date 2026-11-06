@@ -604,7 +604,7 @@
     "task_id": "88a00a74260c8aa8ba7209e8520881d1",
     "tool_id": "app.launch",
     "args": {
-      "app_id": "notepad"
+      "app_id": "testapp"
     },
     "applicable_faults": [
       "F0",
@@ -619,7 +619,7 @@
     "task_id": "ae64c52cc76fb48a9994d9a6f64c31e4",
     "tool_id": "app.launch",
     "args": {
-      "app_id": "notepad"
+      "app_id": "testapp"
     },
     "applicable_faults": [
       "F0",
@@ -634,7 +634,7 @@
     "task_id": "b4232f28a9461238c8f76e20e22a1801",
     "tool_id": "app.launch",
     "args": {
-      "app_id": "notepad"
+      "app_id": "testapp"
     },
     "applicable_faults": [
       "F0",
@@ -649,7 +649,7 @@
     "task_id": "bcf1ba4a598c33933277f4bd5c1b064f",
     "tool_id": "app.launch",
     "args": {
-      "app_id": "notepad"
+      "app_id": "testapp"
     },
     "applicable_faults": [
       "F0",
@@ -664,7 +664,7 @@
     "task_id": "ffc5c4b41472ba899804c333a7663168",
     "tool_id": "app.launch",
     "args": {
-      "app_id": "notepad"
+      "app_id": "testapp"
     },
     "applicable_faults": [
       "F0",
@@ -679,7 +679,7 @@
     "task_id": "643986e5f970f17c57045d3b0a8895f1",
     "tool_id": "app.launch",
     "args": {
-      "app_id": "notepad"
+      "app_id": "testapp"
     },
     "applicable_faults": [
       "F0",

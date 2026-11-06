@@ -160,3 +160,13 @@ The unit of analysis is a distinct `(task, fault)` case for each verifier. Repea
 Report results in this order: (1) control verdicts, (2) faults inside C's predicate scope, (3) faults outside C's predicate scope, and (4) deviations from pre-registration. Keep F18 separate as specified above.
 
 Amendment 6 intentionally lowered C's F15 detection: extra-task detection is outside C's frozen predicate definition, which covers only reminder task existence, enabled state, trigger time, and action arguments. Therefore C's F15 result is reported as an outside-scope baseline limitation, not tuned to resemble D.
+
+## AMENDMENT 8 (2026-11-07, Windows 11 app-process fixture)
+
+The owner observed that Windows 11 Notepad is a packaged, single-instance tabbed app with session restore: launching `notepad.exe` can hand off to a system-started process, retain tabs, and make PID-to-launch attribution unreliable. The owner's `Microsoft.WindowsNotepad_11.2607.14.0_x64__8wekyb3d8bbwe` package name matches the resolver's current version, architecture, and publisher pattern, so this is not a resolver-pattern defect.
+
+The six seeded `app.launch` tasks now use the repository's no-window `Jarvis.TestApp` helper. The catalogue still has 50 tasks, including exactly six app tasks, with the same seed-derived task IDs and fault counts. F9 leaves only `ping.exe` in place of the authorized helper, F10 terminates the helper before verification, F11 runs the helper plus an extra `ping.exe`, and app preflight checks only `Jarvis.TestApp` and `ping.exe`. The frozen expected-verdict table above is unchanged.
+
+Earlier paper-run outputs produced with Notepad are development data only and must not be presented as the amended paper run. After the updated branch passes its gate and CI, the owner—not this implementation—must retag `eval-paper-v1` to the approved amended evaluation commit before running a new paper evaluation. No paper run is performed by this amendment.
+
+The protocol already contained an AMENDMENT 7 for the paper-run freeze, so this distinct dated change is numbered AMENDMENT 8 rather than duplicating or overwriting that record.

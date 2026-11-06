@@ -81,7 +81,7 @@
             "args": {
               "type": "object",
               "required": ["app_id"],
-              "properties": { "app_id": { "const": "notepad" } }
+              "properties": { "app_id": { "const": "testapp" } }
             }
           }
         }
