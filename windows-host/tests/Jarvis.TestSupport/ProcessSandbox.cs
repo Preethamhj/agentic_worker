@@ -29,6 +29,38 @@ public sealed class ProcessSandbox : IDisposable
         return process;
     }
 
+    /// <summary>Tracks a process started by an executor if its image is the helper app.</summary>
+    public void Track(Process process)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(process);
+        process.Refresh();
+
+        var imagePath = process.MainModule?.FileName;
+        var helperPath = Path.GetFullPath(TestApps.Locate());
+        var expectedProcessName = Path.GetFileNameWithoutExtension(helperPath);
+        if (!string.Equals(process.ProcessName, expectedProcessName, StringComparison.OrdinalIgnoreCase)
+            || (!string.IsNullOrWhiteSpace(imagePath)
+                && !string.Equals(Path.GetFullPath(imagePath), helperPath, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException("ProcessSandbox can track only Jarvis.TestApp processes.");
+        }
+
+        if (_processes.Any(tracked => tracked.Id == process.Id))
+            throw new InvalidOperationException($"Process {process.Id} is already tracked.");
+
+        _processes.Add(new TrackedProcess(process, process.Id, process.StartTime.ToUniversalTime()));
+    }
+
+    /// <summary>Stops a tracked process only when its PID and start time still match.</summary>
+    public void Stop(Process process)
+    {
+        ArgumentNullException.ThrowIfNull(process);
+        var tracked = _processes.SingleOrDefault(item => ReferenceEquals(item.Process, process))
+            ?? throw new InvalidOperationException("ProcessSandbox can stop only a tracked process.");
+        KillIfIdentityMatches(tracked);
+    }
+
     /// <inheritdoc />
     public void Dispose()
     {

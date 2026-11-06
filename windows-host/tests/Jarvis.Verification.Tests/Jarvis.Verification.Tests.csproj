@@ -21,5 +21,13 @@
     <ProjectReference Include="..\..\src\Jarvis.Safety\Jarvis.Safety.csproj" />
     <ProjectReference Include="..\..\src\Jarvis.Infrastructure\Jarvis.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Jarvis.Tools\Jarvis.Tools.csproj" />
+    <ProjectReference Include="..\Jarvis.TestSupport\Jarvis.TestSupport.csproj" />
+    <ProjectReference Include="..\..\src\Jarvis.TestApp\Jarvis.TestApp.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
+  <Target Name="CopyTestApp" AfterTargets="Build">
+    <ItemGroup>
+      <TestAppOutput Include="..\..\src\Jarvis.TestApp\bin\$(Configuration)\net10.0-windows\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(TestAppOutput)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
+  </Target>
 </Project>

@@ -6,6 +6,7 @@ using FluentAssertions;
 using Jarvis.Contracts;
 using Jarvis.Infrastructure;
 using Jarvis.Safety;
+using Jarvis.TestSupport;
 using Jarvis.Tools;
 using Microsoft.Win32.TaskScheduler;
 using System.Security.Principal;
@@ -329,37 +330,23 @@ public sealed class Phase3bVerificationTests : IDisposable
     [Trait("Category", "AppLaunchRepeat")]
     public async AsyncTask AppLaunch_Exact_Clean_Processes_Verify_In_50_Consecutive_Runs()
     {
-        var notepadLauncher = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "notepad.exe");
-        File.Exists(notepadLauncher).Should().BeTrue();
-        var probeDocument = Path.Combine(_root, "notepad-probe.txt");
-        await File.WriteAllTextAsync(probeDocument, "Resolve the real Notepad image.");
-        using var probe = StartNotepadChild(notepadLauncher, probeDocument);
-        string imagePath;
-        try
-        {
-            imagePath = probe.MainModule?.FileName
-                ?? throw new InvalidOperationException("Could not resolve the launched Notepad image path.");
-        }
-        finally
-        {
-            StopChild(probe);
-        }
+        var imagePath = Path.GetFullPath(TestApps.Locate());
 
         for (var run = 0; run < 50; run++)
         {
             var runRoot = Path.Combine(_root, $"app-clean-run-{run}");
             Directory.CreateDirectory(runRoot);
             _clock.UtcNow = DateTimeOffset.UtcNow;
-            var authorization = IssueAppAuthorization($"clean-run-{run}", imagePath);
+            var authorization = IssueAppAuthorization($"clean-run-{run}", imagePath, "testapp");
             var token = await _engine.BeginStepAsync(authorization);
             _authorizationService.Consume(authorization, authorization.StepId);
             var filePath = Path.Combine(runRoot, "reminder-repeat.txt");
             await File.WriteAllTextAsync(filePath, $"App launch evidence run {run}.");
-            using var child = StartNotepadChild(imagePath, filePath);
             var observation = new ExecutionObservation(_clock.UtcNow, _clock.UtcNow);
 
-            try
+            using (var sandbox = new ProcessSandbox())
             {
+                sandbox.Start();
                 var result = await _engine.VerifyAsync(
                     LyingReceipt(authorization),
                     observation,
@@ -369,10 +356,6 @@ public sealed class Phase3bVerificationTests : IDisposable
                     "VERIFIED",
                     $"clean app.launch run {run + 1} should not fail; reasons: {string.Join(" | ", result.Reasons)}; evidence: {JsonSerializer.Serialize(result.Evidence.Select(item => item.Observed))}");
                 result.Evidence.Should().ContainSingle(item => item.Match);
-            }
-            finally
-            {
-                StopChild(child);
             }
         }
     }
@@ -965,19 +948,22 @@ public sealed class Phase3bVerificationTests : IDisposable
             approvedBy: "auto");
     }
 
-    private AuthorizationRecordDto IssueAppAuthorization(string suffix, string imagePath) =>
+    private AuthorizationRecordDto IssueAppAuthorization(
+        string suffix,
+        string imagePath,
+        string appId = "ping-fixture") =>
         _authorizationService.IssueAuthorization(
             $"task-app-{suffix}",
             $"step-app-{suffix}",
             "app.launch",
-            new Dictionary<string, object?> { ["app_id"] = "ping-fixture" },
+            new Dictionary<string, object?> { ["app_id"] = appId },
             expected: new Dictionary<string, object?>
             {
-                ["app_id"] = "ping-fixture",
+                ["app_id"] = appId,
                 ["image_path"] = imagePath,
                 ["running"] = true
             },
-            allowedEffects: ["launch:ping-fixture"],
+            allowedEffects: [$"launch:{appId}"],
             risk: "medium");
 
     private Process StartPingChild(string imagePath)
@@ -1002,59 +988,6 @@ public sealed class Phase3bVerificationTests : IDisposable
         }
         _output.WriteLine($"Started test-owned ping PID {child.Id}.");
         return child;
-    }
-
-    private Process StartNotepadChild(string imagePath, string documentPath)
-    {
-        var priorProcessIds = Process.GetProcessesByName("Notepad")
-            .Select(process =>
-            {
-                var id = process.Id;
-                process.Dispose();
-                return id;
-            })
-            .ToHashSet();
-        using var launcher = new Process
-        {
-            StartInfo = new ProcessStartInfo(imagePath)
-            {
-                UseShellExecute = false,
-                CreateNoWindow = false
-            }
-        };
-        launcher.StartInfo.ArgumentList.Add(documentPath);
-        if (!launcher.Start())
-        {
-            throw new InvalidOperationException("Could not start the notepad child process.");
-        }
-        _output.WriteLine($"Started test-owned Notepad launcher PID {launcher.Id}.");
-        try
-        {
-            Process? launchedProcess = null;
-            foreach (var process in Process.GetProcessesByName("Notepad"))
-            {
-                if (!priorProcessIds.Contains(process.Id) && launchedProcess is null)
-                    launchedProcess = process;
-                else
-                    process.Dispose();
-            }
-
-            if (launchedProcess is null)
-                throw new InvalidOperationException("Notepad did not create a new process for the test launch.");
-            _output.WriteLine($"Tracked test-launched Notepad PID {launchedProcess.Id}.");
-            return launchedProcess;
-        }
-        catch
-        {
-            if (!launcher.HasExited)
-            {
-                launcher.Kill();
-                if (!launcher.WaitForExit(5_000))
-                    throw new TimeoutException($"Test-owned Notepad launcher PID {launcher.Id} did not exit.");
-                _output.WriteLine($"Stopped test-owned Notepad launcher PID {launcher.Id}.");
-            }
-            throw;
-        }
     }
 
     private void CleanupReminder(

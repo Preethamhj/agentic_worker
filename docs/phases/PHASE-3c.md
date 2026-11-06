@@ -19,7 +19,7 @@ Parts:
 | Search executor receipt lists a missing file | FAILED | `SearchFiles_Real_Executor_Verifies_And_Faulted_Search_Output_Fails` |
 | Created folder is removed before evidence collection | FAILED | `CreateFolder_Real_Executor_Verifies_And_Removed_Folder_Fails` |
 | Created file is removed before evidence collection | FAILED | `CreateFile_Real_Executor_Verifies_And_Removed_File_Fails` |
-| Notepad process is stopped before evidence collection | FAILED | `AppLaunch_Notepad_Nonmatching_Process_Fails_Within_Timeout` |
+| Helper process is stopped before evidence collection | FAILED | `AppLaunch_Helper_Nonmatching_Process_Fails_Within_Timeout` |
 | Reminder XML changes signed `StartWhenAvailable` | FAILED | `ScheduleReminder_Fake_Scheduler_Real_Engine_Verifies_And_Tampered_Task_Fails` |
 | Debug executor reports success without creating the signed file | FAILED | `Debug_Executor_Lie_Reports_Success_But_Real_Verifier_Fails` |
 

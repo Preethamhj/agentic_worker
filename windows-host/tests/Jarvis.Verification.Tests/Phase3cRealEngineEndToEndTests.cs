@@ -7,19 +7,15 @@ using Jarvis.Contracts;
 using Jarvis.Core;
 using Jarvis.Infrastructure;
 using Jarvis.Safety;
+using Jarvis.TestSupport;
 using Jarvis.Tools;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace Jarvis.Verification.Tests;
 
 [Collection("Windows OS resources")]
 public sealed class Phase3cRealEngineEndToEndTests
 {
-    private readonly ITestOutputHelper _output;
-
-    public Phase3cRealEngineEndToEndTests(ITestOutputHelper output) => _output = output;
-
     [Fact]
     public async Task SearchFiles_Real_Executor_Verifies_And_Faulted_Search_Output_Fails()
     {
@@ -88,7 +84,7 @@ public sealed class Phase3cRealEngineEndToEndTests
 #endif
 
     [NonElevatedFact]
-    public async Task AppLaunch_Notepad_Nonmatching_Process_Fails_Within_Timeout()
+    public async Task AppLaunch_Helper_Nonmatching_Process_Fails_Within_Timeout()
     {
         var control = await RunScenarioAsync("app.launch", injectFault: false);
         var timer = Stopwatch.StartNew();
@@ -156,10 +152,22 @@ public sealed class Phase3cRealEngineEndToEndTests
             reminderLocation);
         var pathPolicy = new PathPolicy([root]);
         var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", ".."));
-        var toolPolicy = ToolPolicy.FromFile(
-            Path.Combine(repositoryRoot, "config", "tools.registry.json"),
-            Path.Combine(repositoryRoot, "config", "apps.allowlist.json"));
-        var processIds = new List<int>();
+        var toolPolicy = ToolPolicy.FromJson(
+            File.ReadAllText(Path.Combine(repositoryRoot, "config", "tools.registry.json")),
+            JsonSerializer.Serialize(new
+            {
+                schema_version = 1,
+                allowed_apps = new[]
+                {
+                    new
+                    {
+                        app_id = "testapp",
+                        executable = TestApps.Locate(),
+                        display_name = "Jarvis Test Helper"
+                    }
+                }
+            }));
+        using var processSandbox = new ProcessSandbox();
         var reminderTaskId = (string?)null;
         var createFileExecutor = new CreateFileExecutor(pathPolicy, authorizationService);
 #if DEBUG
@@ -197,9 +205,10 @@ public sealed class Phase3cRealEngineEndToEndTests
                 if (markerIndex < 0
                     || !int.TryParse(receipt.Stdout[(markerIndex + marker.Length)..], out var processId))
                     throw new InvalidOperationException("The real app.launch executor did not report its launched PID.");
-                processIds.Add(processId);
+                var launchedProcess = Process.GetProcessById(processId);
+                processSandbox.Track(launchedProcess);
                 if (injectFault)
-                    StopNotepadProcess(processId);
+                    processSandbox.Stop(launchedProcess);
             }
 
             if (toolId == "task.schedule_reminder")
@@ -262,12 +271,6 @@ public sealed class Phase3cRealEngineEndToEndTests
         }
         finally
         {
-            foreach (var processId in processIds)
-            {
-                StopNotepadProcess(processId);
-                _output.WriteLine($"Stopped test-launched Notepad PID {processId}.");
-            }
-
             if (recordingScheduler.LastRegistration is { } registration)
                 recordingScheduler.Delete(registration.TaskPath);
             if (reminderTaskId is not null && File.Exists(reminderDataStore.GetFilePath(reminderTaskId)))
@@ -295,7 +298,7 @@ public sealed class Phase3cRealEngineEndToEndTests
                 ["path"] = Path.Combine(root, "created-file.txt"),
                 ["content"] = "independent file evidence"
             },
-            "app.launch" => new Dictionary<string, object?> { ["app_id"] = "notepad" },
+            "app.launch" => new Dictionary<string, object?> { ["app_id"] = "testapp" },
             "task.schedule_reminder" => new Dictionary<string, object?>
             {
                 ["time_iso"] = DateTimeOffset.FromUnixTimeSeconds(DateTimeOffset.UtcNow.AddMinutes(10).ToUnixTimeSeconds())
@@ -308,22 +311,6 @@ public sealed class Phase3cRealEngineEndToEndTests
 
     private static string Describe(TaskOrchestratorResult result) =>
         $"{result.StatusMessage}{Environment.NewLine}{string.Join(Environment.NewLine, result.VerificationResults.SelectMany(verification => verification.Reasons.Concat(verification.Stages.Select(stage => $"{stage.Name}: {stage.Outcome} - {stage.Detail}")).Concat(verification.Evidence.Select(evidence => JsonSerializer.Serialize(evidence.Observed)))))}{Environment.NewLine}{string.Join(Environment.NewLine, result.Receipts.Select(receipt => receipt.Stdout))}";
-
-    private static void StopNotepadProcess(int processId)
-    {
-        try
-        {
-            using var process = Process.GetProcessById(processId);
-            if (!string.Equals(process.ProcessName, "notepad", StringComparison.OrdinalIgnoreCase))
-                return;
-            process.Kill();
-            if (!process.WaitForExit(5_000))
-                throw new TimeoutException($"Test-launched Notepad PID {processId} did not exit within five seconds.");
-        }
-        catch (ArgumentException)
-        {
-        }
-    }
 
     private sealed class ExecutorDecorator(
         IToolExecutor inner,

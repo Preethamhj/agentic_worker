@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Security.Principal;
+using System.Text.Json;
 using FluentAssertions;
 using Jarvis.Cli;
 using Jarvis.Contracts;
@@ -7,6 +8,7 @@ using Jarvis.Core;
 using Jarvis.Infrastructure;
 using Jarvis.Safety;
 using Jarvis.Tools;
+using Jarvis.TestSupport;
 using Xunit;
 
 namespace Jarvis.E2E.Tests;
@@ -38,8 +40,21 @@ public class CliEndToEndTests : IDisposable
         var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", ".."));
         var configDir = Path.Combine(repoRoot, "config");
         var toolsRegistryPath = Path.Combine(configDir, "tools.registry.json");
-        var appsAllowlistPath = Path.Combine(configDir, "apps.allowlist.json");
-        _toolPolicy = ToolPolicy.FromFile(toolsRegistryPath, appsAllowlistPath);
+        _toolPolicy = ToolPolicy.FromJson(
+            File.ReadAllText(toolsRegistryPath),
+            JsonSerializer.Serialize(new
+            {
+                schema_version = 1,
+                allowed_apps = new[]
+                {
+                    new
+                    {
+                        app_id = "testapp",
+                        executable = TestApps.Locate(),
+                        display_name = "Jarvis Test Helper"
+                    }
+                }
+            }));
 
         _keyStore = OperatingSystem.IsWindows() ? new DpapiKeyStore() : new InMemoryDpapiKeyStore();
         _authService = new AuthorizationService(_keyStore, SystemClock.Instance, _auditStore);
@@ -63,13 +78,13 @@ public class CliEndToEndTests : IDisposable
     [Fact]
     public void StepExecutor_Signs_Resolved_Allowlisted_Image_Path_For_AppLaunch()
     {
-        _toolPolicy.TryResolveAllowedExecutablePath("notepad", out var executable).Should().BeTrue();
+        _toolPolicy.TryResolveAllowedExecutablePath("testapp", out var executable).Should().BeTrue();
 
         var authorization = _stepExecutor.PrepareAuthorization(
             "task-app-path",
             "step-app-path",
             "app.launch",
-            new Dictionary<string, object?> { ["app_id"] = "notepad" },
+            new Dictionary<string, object?> { ["app_id"] = "testapp" },
             "medium");
 
         authorization.Expected["image_path"].Should().Be(Path.GetFullPath(executable!));

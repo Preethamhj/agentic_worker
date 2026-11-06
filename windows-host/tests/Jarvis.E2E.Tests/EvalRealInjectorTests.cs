@@ -8,6 +8,7 @@ using Jarvis.Eval;
 using Jarvis.Infrastructure;
 using Jarvis.Safety;
 using Jarvis.Tools;
+using Jarvis.TestSupport;
 using Xunit;
 
 namespace Jarvis.E2E.Tests;
@@ -95,7 +96,7 @@ public sealed class EvalRealInjectorTests
     public async Task App_Injector_Produces_Real_Process_State_And_Tracks_StartTimes(string faultId)
     {
         using var root = new TempRoot();
-        var issued = IssueAuthorization("app.launch", "notepad", root.Path);
+        var issued = IssueAuthorization("app.launch", "testapp", root.Path);
         var started = new List<(Process Process, DateTime StartTime)>();
         var injector = new EvalFaultInjectingExecutor(
             new RealAppExecutor(), faultId, Path.Combine(root.Path, "unused"), process => started.Add((process, process.StartTime)));
@@ -199,7 +200,7 @@ public sealed class EvalRealInjectorTests
             "fs.create_file" => new Dictionary<string, object?> { ["path"] = value, ["content"] = "evaluation" },
             "fs.create_folder" => new Dictionary<string, object?> { ["path"] = value },
             "fs.search_files" => new Dictionary<string, object?> { ["root_path"] = value, ["pattern"] = "*.txt", ["max_depth"] = 5, ["max_results"] = 100 },
-            "app.launch" => new Dictionary<string, object?> { ["app_id"] = "notepad" },
+            "app.launch" => new Dictionary<string, object?> { ["app_id"] = "testapp" },
             _ => throw new ArgumentException(toolId)
         };
         return (auth, step.PrepareAuthorization("task-1234567890abcdef1234567890abcdef", "step-1", toolId, args, "low"));
@@ -208,7 +209,21 @@ public sealed class EvalRealInjectorTests
     private static ToolPolicy LoadPolicy()
     {
         var repo = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", ".."));
-        return ToolPolicy.FromFile(Path.Combine(repo, "config", "tools.registry.json"), Path.Combine(repo, "config", "apps.allowlist.json"));
+        return ToolPolicy.FromJson(
+            File.ReadAllText(Path.Combine(repo, "config", "tools.registry.json")),
+            JsonSerializer.Serialize(new
+            {
+                schema_version = 1,
+                allowed_apps = new[]
+                {
+                    new
+                    {
+                        app_id = "testapp",
+                        executable = TestApps.Locate(),
+                        display_name = "Jarvis Test Helper"
+                    }
+                }
+            }));
     }
 
     private sealed class TempRoot : IDisposable
@@ -235,8 +250,13 @@ public sealed class EvalRealInjectorTests
         public string ToolId => "app.launch";
         public Task<ExecutionReceiptDto> ExecuteAsync(VerifiedAuthorization auth, CancellationToken cancellationToken = default)
         {
-            var process = Process.Start(new ProcessStartInfo { FileName = "notepad.exe", UseShellExecute = true });
-            if (process is null) throw new InvalidOperationException("Could not start Notepad.");
+            var process = Process.Start(new ProcessStartInfo
+            {
+                FileName = TestApps.Locate(),
+                UseShellExecute = false,
+                CreateNoWindow = true
+            });
+            if (process is null) throw new InvalidOperationException("Could not start Jarvis.TestApp.");
             return Task.FromResult(new ExecutionReceiptDto(1, auth.StepId, auth.AuthId, "start", "end", 0, true, $"PID {process.Id}", string.Empty));
         }
     }
