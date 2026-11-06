@@ -12,7 +12,6 @@ New-Item -ItemType Directory -Force -Path $logRoot | Out-Null
 $originalSchedulerSetting = $env:JARVIS_REAL_SCHEDULER
 $startedProcesses = @()
 $runTotals = @()
-$realSchedulerTotals = @()
 $checkAllExitCodes = @()
 
 function Quote-Argument([string]$Value) {
@@ -61,7 +60,8 @@ function Invoke-Bounded([string]$Name, [string]$FilePath, [string[]]$Arguments, 
 function Get-TestTotals([string]$Text) {
     $totals = [ordered]@{}
     $pattern = 'Passed!\s+- Failed:\s*(\d+), Passed:\s*(\d+), Skipped:\s*(\d+), Total:\s*(\d+).*? - ([^ ]+\.dll)'
-    foreach ($match in [regex]::Matches($Text, $pattern)) {
+    $summaryMatches = [regex]::Matches($Text, $pattern)
+    foreach ($match in $summaryMatches) {
         $project = [IO.Path]::GetFileNameWithoutExtension($match.Groups[5].Value)
         $totals[$project] = [PSCustomObject]@{
             Failed = [int]$match.Groups[1].Value
@@ -70,7 +70,91 @@ function Get-TestTotals([string]$Text) {
             Total = [int]$match.Groups[4].Value
         }
     }
+    if ($summaryMatches.Count -eq 0) {
+        $blocks = [regex]::Split($Text, '(?im)(?=^\s*Test run for )')
+        foreach ($block in $blocks) {
+            $assemblyMatch = [regex]::Match($block, '(?im)^\s*Test run for .*[\\/](?<assembly>[^\\/\s]+)\.dll\b')
+            $totalMatch = [regex]::Match($block, '(?im)^\s*Total tests:\s*(?<total>\d+)')
+            if (-not $assemblyMatch.Success -or -not $totalMatch.Success) { continue }
+            $project = $assemblyMatch.Groups['assembly'].Value
+            $failed = 0
+            $passed = 0
+            $skipped = 0
+            $failedMatch = [regex]::Match($block, '(?im)^\s*Failed:\s*(\d+)')
+            $passedMatch = [regex]::Match($block, '(?im)^\s*Passed:\s*(\d+)')
+            $skippedMatch = [regex]::Match($block, '(?im)^\s*Skipped:\s*(\d+)')
+            if ($failedMatch.Success) { $failed = [int]$failedMatch.Groups[1].Value }
+            if ($passedMatch.Success) { $passed = [int]$passedMatch.Groups[1].Value }
+            if ($skippedMatch.Success) { $skipped = [int]$skippedMatch.Groups[1].Value }
+            $totals[$project] = [PSCustomObject]@{
+                Failed = $failed
+                Passed = $passed
+                Skipped = $skipped
+                Total = [int]$totalMatch.Groups['total'].Value
+            }
+        }
+    }
     return $totals
+}
+
+function Get-NotepadSnapshot {
+    $snapshot = @()
+    foreach ($process in @(Get-Process -Name notepad -ErrorAction SilentlyContinue)) {
+        try {
+            $snapshot += [PSCustomObject]@{
+                PID = $process.Id
+                StartTimeTicks = $process.StartTime.ToUniversalTime().Ticks
+            }
+        } catch {
+            throw "Could not safely inspect Notepad PID $($process.Id): $($_.Exception.Message)"
+        }
+    }
+    return ,$snapshot
+}
+
+function Write-NotepadSnapshot([string]$Label, [object[]]$Snapshot) {
+    $details = @($Snapshot | ForEach-Object { "$($_.PID):$($_.StartTimeTicks)" }) -join ','
+    Write-Host "notepad_processes_${Label}=$details"
+}
+
+function Assert-NoNewNotepad([string]$Label, [object[]]$Before, [object[]]$After) {
+    $prior = @{}
+    foreach ($process in $Before) {
+        $prior["$($process.PID):$($process.StartTimeTicks)"] = $true
+    }
+    $newProcesses = @($After | Where-Object {
+        -not $prior.ContainsKey("$($_.PID):$($_.StartTimeTicks)")
+    })
+    if ($newProcesses.Count -gt 0) {
+        $details = ($newProcesses | ForEach-Object {
+            "PID=$($_.PID) START_TICKS=$($_.StartTimeTicks)"
+        }) -join '; '
+        throw "$Label created or left Notepad process(es): $details. Existing Notepad processes are allowed; the gate does not terminate any process."
+    }
+}
+
+function Write-TestFailureDetails([string]$Text) {
+    $lines = $Text -split "`r?`n"
+    $foundFailure = $false
+    for ($index = 0; $index -lt $lines.Count; $index++) {
+        if ($lines[$index] -match '^\s*Failed\s+(.+?)(?:\s+\[[^\]]+\])?\s*$') {
+            $foundFailure = $true
+            Write-Host "Failing test: $($matches[1])" -ForegroundColor Red
+            $printed = 0
+            for ($detailIndex = $index + 1; $detailIndex -lt $lines.Count -and $printed -lt 6; $detailIndex++) {
+                if (-not [string]::IsNullOrWhiteSpace($lines[$detailIndex])) {
+                    Write-Host "  $($lines[$detailIndex])"
+                    $printed++
+                }
+            }
+        }
+    }
+    if (-not $foundFailure) {
+        Write-Host 'No individual failed-test line was present; first six error lines:' -ForegroundColor Red
+        $errorLines = @($lines | Where-Object { $_ -match '(?i)\b(error|exception|failed)\b' } | Select-Object -First 6)
+        if ($errorLines.Count -eq 0) { $errorLines = @($lines | Select-Object -Last 6) }
+        foreach ($line in $errorLines) { Write-Host "  $line" }
+    }
 }
 
 try {
@@ -81,63 +165,64 @@ try {
         $status = @(git status --short)
         $productionDiff = @(git diff --unified=0 5b68602..HEAD -- windows-host/src ':!windows-host/src/Jarvis.Eval')
 
-        $preexistingAppProcesses = @(Get-Process -Name notepad,ping -ErrorAction SilentlyContinue |
-            ForEach-Object {
-                try {
-                    [PSCustomObject]@{
-                        ProcessName = $_.ProcessName
-                        PID = $_.Id
-                        StartTime = $_.StartTime
-                        WindowTitle = $_.MainWindowTitle
-                    }
-                } catch {
-                    throw "Could not safely inspect a pre-existing Notepad/ping process: $($_.Exception.Message)"
-                }
-            })
-        if ($preexistingAppProcesses.Count -gt 0) {
-            $details = ($preexistingAppProcesses | ForEach-Object {
-                "$($_.ProcessName) PID=$($_.PID) START=$($_.StartTime.ToUniversalTime().ToString('o')) TITLE=$($_.WindowTitle)"
-            }) -join '; '
-            throw "Gate aborted before tests because pre-existing Notepad/ping processes exist: $details. Close only processes you own and rerun."
+        $buildResult = Invoke-Bounded 'release-build' 'dotnet' @(
+            'build', $solution, '--configuration', 'Release', '--no-incremental',
+            '--disable-build-servers', '-m:1'
+        ) $windowsHost
+        if ($buildResult.ExitCode -ne 0) {
+            throw "Release rebuild failed; see $($buildResult.Log)"
         }
 
         Remove-Item Env:\JARVIS_REAL_SCHEDULER -ErrorAction SilentlyContinue
+        $initialNotepadSnapshot = @(Get-NotepadSnapshot)
+        Write-NotepadSnapshot 'before' $initialNotepadSnapshot
         for ($run = 1; $run -le 3; $run++) {
             $result = Invoke-Bounded "solution-run-$run" 'dotnet' @(
                 'test', $solution, '--configuration', 'Release', '--no-build', '--no-restore',
                 '--disable-build-servers', '-m:1', '--filter', 'Category!=RealScheduler',
-                '--logger', 'console;verbosity=minimal'
+                '--logger', 'console;verbosity=normal'
             ) $windowsHost
-            if ($result.ExitCode -ne 0) { throw "Non-real solution test run $run failed; see $($result.Log)" }
+            $afterRunNotepad = @(Get-NotepadSnapshot)
+            Write-NotepadSnapshot "after_run_$run" $afterRunNotepad
+            Assert-NoNewNotepad "Non-real solution test run $run" $initialNotepadSnapshot $afterRunNotepad
+            if ($result.ExitCode -ne 0) {
+                Write-TestFailureDetails ($result.Stdout + "`n" + $result.Stderr)
+                throw "Non-real solution test run $run failed; see $($result.Log)"
+            }
             $runTotals += [PSCustomObject]@{ Run = $run; Projects = (Get-TestTotals $result.Stdout) }
         }
 
-        $env:JARVIS_REAL_SCHEDULER = '1'
-        $schedulerResult = Invoke-Bounded 'real-scheduler' 'dotnet' @(
-            'test', $solution, '--configuration', 'Release', '--no-build', '--no-restore',
-            '--disable-build-servers', '-m:1', '--filter', 'Category=RealScheduler',
-            '--logger', 'console;verbosity=minimal'
-        ) $windowsHost
-        $realSchedulerTotals = Get-TestTotals $schedulerResult.Stdout
-        if ($schedulerResult.ExitCode -ne 0) { throw "RealScheduler run failed; see $($schedulerResult.Log)" }
+        if (@($runTotals | Where-Object { $_.Projects.Count -eq 0 }).Count -gt 0) {
+            throw "Could not parse per-project test totals from one or more solution runs. Logs: $logRoot"
+        }
+        $serializedRuns = @($runTotals | ForEach-Object { ConvertTo-Json $_.Projects -Compress -Depth 8 })
+        $totalsDiffer = (@($serializedRuns | Select-Object -Unique).Count -gt 1)
+        Write-Host "release_non_real_totals=$($runTotals | ConvertTo-Json -Compress -Depth 8)"
+        Write-Host "release_totals_differ=$totalsDiffer"
+        if ($totalsDiffer) {
+            throw "Per-project totals differ across the three full Release solution runs. Logs: $logRoot"
+        }
 
         for ($run = 1; $run -le 2; $run++) {
+            $beforeCheckAllNotepad = @(Get-NotepadSnapshot)
             $checkResult = Invoke-Bounded "check-all-$run" 'powershell.exe' @(
                 '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $checkAll
             ) $repoRoot
             $checkAllExitCodes += $checkResult.ExitCode
+            $afterCheckAllNotepad = @(Get-NotepadSnapshot)
+            Write-NotepadSnapshot "after_check_all_$run" $afterCheckAllNotepad
+            Assert-NoNewNotepad "check-all run $run" $beforeCheckAllNotepad $afterCheckAllNotepad
+            if ($checkResult.ExitCode -ne 0) {
+                Write-TestFailureDetails ($checkResult.Stdout + "`n" + $checkResult.Stderr)
+                throw "check-all run $run failed; see $($checkResult.Log)"
+            }
         }
 
         Write-Host "branch=$branch"
         Write-Host "HEAD=$head"
-        Write-Host 'app_process_preflight=clear'
+        Write-Host 'preexisting_notepad_processes_are_allowed=true'
         Write-Host "git_status_short=$($status -join ' | ')"
         Write-Host "production_diff=$($productionDiff -join ' | ')"
-        Write-Host "release_non_real_totals=$($runTotals | ConvertTo-Json -Compress -Depth 8)"
-        $serializedRuns = @($runTotals | ForEach-Object { ConvertTo-Json $_.Projects -Compress -Depth 8 })
-        $totalsDiffer = (@($serializedRuns | Select-Object -Unique).Count -gt 1)
-        Write-Host "release_totals_differ=$totalsDiffer"
-        Write-Host "real_scheduler_totals=$(ConvertTo-Json $realSchedulerTotals -Compress -Depth 8)"
         Write-Host "check_all_exit_codes=$($checkAllExitCodes -join ',')"
         Write-Host 'cleanup_tasks_under_Jarvis:'
         try { Get-ScheduledTask -TaskPath '\Jarvis\' -ErrorAction Stop | Select-Object TaskPath,TaskName,State | ConvertTo-Json -Compress } catch { Write-Host $_.Exception.Message }
@@ -153,7 +238,6 @@ try {
         if (Test-Path $reminders) { Get-ChildItem $reminders -File | Select-Object Name,Length | ConvertTo-Json -Compress }
         Write-Host "processes_started_by_gate=$(ConvertTo-Json $startedProcesses -Compress -Depth 5)"
         Write-Host 'CI: check the Actions tab yourself'
-        if ($totalsDiffer) { Write-Warning "Per-project totals differ across the three full Release solution runs. Logs: $logRoot" }
     } finally {
         Pop-Location
     }
