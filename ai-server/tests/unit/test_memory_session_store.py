@@ -1,5 +1,8 @@
 import os
 import tempfile
+from pathlib import Path
+
+import pytest
 
 from jarvis_ai.memory.session_store import SessionStore
 
@@ -26,3 +29,22 @@ def test_session_isolation() -> None:
         # Assert zero leakage
         assert not any("Session B" in m["content"] for m in messages_a)
         assert not any("Session A" in m["content"] for m in messages_b)
+
+
+def test_session_store_uses_absolute_configured_database_path(
+    monkeypatch, tmp_path: Path
+) -> None:
+    db_path = tmp_path / "session_memory.db"
+    monkeypatch.setenv("JARVIS_SESSION_DB_PATH", str(db_path))
+
+    store = SessionStore()
+
+    assert store.db_path == str(db_path)
+    assert db_path.is_file()
+
+
+def test_session_store_rejects_relative_configured_database_path(monkeypatch) -> None:
+    monkeypatch.setenv("JARVIS_SESSION_DB_PATH", "session_memory.db")
+
+    with pytest.raises(ValueError, match="must be an absolute path"):
+        SessionStore()

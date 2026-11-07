@@ -9,11 +9,17 @@ class SessionStore:
 
     def __init__(self, db_path: str | None = None) -> None:
         if db_path is None:
-            db_dir = os.path.abspath(
-                os.path.join(os.path.dirname(__file__), "../../../../logs")
-            )
-            os.makedirs(db_dir, exist_ok=True)
-            db_path = os.path.join(db_dir, "session_memory.db")
+            configured_path = os.environ.get("JARVIS_SESSION_DB_PATH")
+            if configured_path:
+                if not os.path.isabs(configured_path):
+                    raise ValueError("JARVIS_SESSION_DB_PATH must be an absolute path")
+                db_path = configured_path
+            else:
+                db_dir = os.path.abspath(
+                    os.path.join(os.path.dirname(__file__), "../../../../logs")
+                )
+                os.makedirs(db_dir, exist_ok=True)
+                db_path = os.path.join(db_dir, "session_memory.db")
         self.db_path = db_path
         self._init_db()
 
