@@ -28,6 +28,6 @@ Ignore everything under `reports/`.
 
 ## Live Ops
 
-Part B0 implementation is in progress on `live-ops`. `scripts/live-check.ps1` checks only loopback services, reports whether the configured Ollama model is present without installing it, runs doctor, checks the DPAPI/workspace state, probes Task Scheduler with a future no-op `reminder-live-*` task that is removed in cleanup, and confirms the current Windows notification balloon mechanism exists. Its PowerShell 5.1 syntax check passed; the Release build, focused C# tests, and owner live check are pending.
+Part B0 is committed and pushed on `live-ops` as `7c15fa2`. `scripts/live-check.ps1` checks only loopback services, reports whether the configured Ollama model is present without installing it, runs doctor, checks the DPAPI/workspace state, probes Task Scheduler with a future no-op `reminder-live-*` task that is removed in cleanup, and confirms the current Windows notification balloon mechanism exists. Its PowerShell 5.1 syntax check passed; the Release build, focused C# tests, and owner live check are pending.
 
 The current planner is **rule-based fast path first**, with the configured Ollama model used as fallback for requests not handled by rules. CLI and UI now display that strategy and configured model. B1–B9 have not started.
