@@ -80,7 +80,7 @@ public class CliEndToEndTests : IDisposable
     {
         var information = Program.RenderPlannerInfo("model-from-config");
 
-        information.Should().Contain("rule-based fast path");
+        information.Should().Contain("Rule-based fast path");
         information.Should().Contain("Ollama model from config is the fallback");
         information.Should().Contain("model-from-config");
     }

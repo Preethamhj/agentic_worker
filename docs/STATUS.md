@@ -28,6 +28,8 @@ Ignore everything under `reports/`.
 
 ## Live Ops
 
-Part B0 is committed and pushed on `live-ops` as `7c15fa2`. `scripts/live-check.ps1` checks only loopback services, reports whether the configured Ollama model is present without installing it, runs doctor, checks the DPAPI/workspace state, probes Task Scheduler with a future no-op `reminder-live-*` task that is removed in cleanup, and confirms the current Windows notification balloon mechanism exists. Its PowerShell 5.1 syntax check passed; the Release build, focused C# tests, and owner live check are pending.
+Part B0 implementation is committed and pushed as `7c15fa2`; a follow-up fix is pending. The owner Release solution build passed with 0 warnings and 0 errors. The two new CLI/UI planner tests were corrected for display-string capitalization and now pass individually (1/1 each). The owner live check passed Ollama/model, doctor, workspace, DPAPI, scheduler create/delete, and notifier checks, but failed Python AI-server health. `scripts/live-check.ps1` now waits up to 30 seconds for health and prints bounded server log tails before cleanup. PowerShell 5.1 parsing and `git diff --check` pass. Owner rerun of the live check is pending; B0 is not yet complete.
+
+A separate owner-submitted gate excerpt reports `Jarvis.E2E.Tests.EvalTaskCatalogTests.Checked_In_Catalog_Is_Deterministic_And_Valid_Against_Its_Schema` failing on a generated-versus-checked-in catalog mismatch in solution test run 3. It is not caused by the B0 files changed here and remains uninvestigated.
 
 The current planner is **rule-based fast path first**, with the configured Ollama model used as fallback for requests not handled by rules. CLI and UI now display that strategy and configured model. B1–B9 have not started.

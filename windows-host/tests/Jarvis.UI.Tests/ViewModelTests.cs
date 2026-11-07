@@ -182,7 +182,7 @@ public sealed class ViewModelTests
 
         viewModel.AllowedRoots.Should().Equal(roots);
         viewModel.ModelName.Should().Be("model-from-config");
-        viewModel.PlannerDescription.Should().Contain("rule-based fast path");
+        viewModel.PlannerDescription.Should().Contain("Rule-based fast path");
         viewModel.PlannerDescription.Should().Contain("Ollama model from config is the fallback");
         viewModel.DoctorResults.Should().Equal(doctor);
         ((IList<string>)viewModel.AllowedRoots).IsReadOnly.Should().BeTrue();

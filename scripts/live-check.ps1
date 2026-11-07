@@ -16,6 +16,7 @@ $registeredTask = $false
 $taskName = "reminder-live-$runId"
 $taskSchedulerFolder = $null
 $checkFailures = 0
+$healthCheckError = ''
 
 function Write-Check([string]$Name, [bool]$Passed, [string]$Details, [string]$Remedy) {
     if ($Passed) {
@@ -35,10 +36,36 @@ function Test-LoopbackUrl([string]$Url) {
 
 function Get-HealthResponse([string]$Url) {
     try {
-        return Invoke-RestMethod -Uri $Url -Method Get -TimeoutSec 4 -ErrorAction Stop
+        $response = Invoke-RestMethod -Uri $Url -Method Get -TimeoutSec 4 -ErrorAction Stop
+        if ($null -eq $response -or $response.status -ne 'ok') {
+            $script:healthCheckError = "Health endpoint returned status '$($response.status)'."
+        }
+        return $response
     } catch {
+        $script:healthCheckError = $_.Exception.Message
         return $null
     }
+}
+
+function Wait-HealthResponse([string]$Url, [int]$TimeoutSeconds) {
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    do {
+        $health = Get-HealthResponse $Url
+        if ($null -ne $health -and $health.status -eq 'ok') {
+            return $health
+        }
+        Start-Sleep -Milliseconds 500
+    } while ([DateTime]::UtcNow -lt $deadline)
+    return $null
+}
+
+function Write-ServerLogTail([string]$Name, [string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return
+    }
+
+    Write-Host "$Name (last 30 lines):"
+    Get-Content -LiteralPath $Path -Tail 30 | ForEach-Object { Write-Host "       $_" }
 }
 
 function Stop-OwnedProcess {
@@ -172,8 +199,7 @@ try {
             }
             if ($null -ne $pythonServer) {
                 $pythonStartTime = $pythonServer.StartTime.ToUniversalTime()
-                [void]$pythonServer.WaitForExit(1000)
-                $health = Get-HealthResponse $healthUrl
+                $health = Wait-HealthResponse $healthUrl 30
             }
         }
         $healthy = $null -ne $health -and $health.status -eq 'ok'
@@ -182,9 +208,13 @@ try {
         } elseif ($null -ne $serverStartError) {
             "Could not start Python server: $serverStartError"
         } else {
-            "Health endpoint did not return status 'ok'. Logs: $liveRoot"
+            "Health endpoint did not return status 'ok' within 30 seconds. Last error: $healthCheckError"
         }
-        Write-Check 'Python AI server starts and answers health' $healthy $details "Check port $port and the log files under $liveRoot; then run: `"$pythonPath`" -m uvicorn jarvis_ai.api.main:app --host 127.0.0.1 --port $port"
+        if (-not $healthy -and $null -ne $pythonServer) {
+            Write-ServerLogTail 'Python AI server stdout' $stdoutPath
+            Write-ServerLogTail 'Python AI server stderr' $stderrPath
+        }
+        Write-Check 'Python AI server starts and answers health' $healthy $details "Check port $port and the emitted server log tail; then run: `"$pythonPath`" -m uvicorn jarvis_ai.api.main:app --host 127.0.0.1 --port $port"
     } else {
         Write-Check 'Python AI server starts and answers health' $false "Python venv not found at '$pythonPath'." "Run scripts\setup-windows.ps1 and retry."
     }
