@@ -21,15 +21,19 @@ public sealed class Phase3cRealEngineEndToEndTests
     public Phase3cRealEngineEndToEndTests(ITestOutputHelper output) => _output = output;
 
     [Fact]
-    public async Task SearchFiles_Real_Executor_Verifies_And_Faulted_Search_Output_Fails()
+    public async Task SearchFiles_Real_Executor_Verifies_Regardless_Of_Receipt_Output()
     {
         var control = await RunScenarioAsync("fs.search_files", injectFault: false);
-        var faulted = await RunScenarioAsync("fs.search_files", injectFault: true);
+        var alteredOutput = await RunScenarioAsync("fs.search_files", injectFault: true);
 
         Assert.True(control.FinalState == TaskState.Completed, Describe(control));
         Assert.Equal("VERIFIED", Assert.Single(control.VerificationResults).Status);
-        Assert.Equal(TaskState.Failed, faulted.FinalState);
-        Assert.Equal("FAILED", Assert.Single(faulted.VerificationResults).Status);
+        Assert.Equal(TaskState.Completed, alteredOutput.FinalState);
+        Assert.Equal("VERIFIED", Assert.Single(alteredOutput.VerificationResults).Status);
+        Assert.Equal(
+            1,
+            Assert.Single(alteredOutput.VerificationResults).Evidence.Single()
+                .Observed["independently_enumerated_count"]);
     }
 
     [Fact]

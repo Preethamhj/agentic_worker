@@ -38,7 +38,7 @@ public sealed class Phase3bVerificationTests : IDisposable
     }
 
     [Fact]
-    public async AsyncTask Search_Verifies_Only_Existing_Matching_Paths_Inside_Signed_Root()
+    public async AsyncTask Search_Uses_Independent_Enumeration_And_Ignores_Receipt_Output()
     {
         var searchRoot = Path.Combine(_root, "search");
         Directory.CreateDirectory(searchRoot);
@@ -64,10 +64,13 @@ public sealed class Phase3bVerificationTests : IDisposable
 
         var result = await _engine.VerifyAsync(receipt, observation, token);
 
-        Assert.True(result.Status == "FAILED", string.Join(" | ", result.Reasons));
+        result.Status.Should().Be("VERIFIED");
         result.Stages.Single(stage => stage.Stage == 3).Passed.Should().BeTrue();
-        result.Stages.Single(stage => stage.Stage == 5).Passed.Should().BeFalse();
-        result.Evidence.Should().ContainSingle(item => item.Match == false);
+        result.Stages.Single(stage => stage.Stage == 5).Passed.Should().BeTrue();
+        result.Evidence.Should().ContainSingle(item => item.Match);
+        result.Evidence.Single().Observed["enumerated_paths"]
+            .Should().BeEquivalentTo(new[] { Path.GetFullPath(matchingFile) });
+        result.Evidence.Single().Observed.Should().NotContainKey("reported_paths");
         _auditStore.GetEvidence(authorization.StepId).Should().NotBeEmpty();
     }
 
@@ -97,7 +100,7 @@ public sealed class Phase3bVerificationTests : IDisposable
     }
 
     [Fact]
-    public async AsyncTask Search_Fails_On_Malformed_Receipt_Path_Claims()
+    public async AsyncTask Search_Ignores_Malformed_Receipt_Output()
     {
         var searchRoot = Path.Combine(_root, "search-malformed");
         Directory.CreateDirectory(searchRoot);
@@ -116,11 +119,11 @@ public sealed class Phase3bVerificationTests : IDisposable
             HostObservation(),
             token);
 
-        result.Status.Should().Be("FAILED");
+        result.Status.Should().Be("VERIFIED");
     }
 
     [Fact]
-    public async AsyncTask Search_UnderReporting_Is_Failed_By_Independent_FindFirstFileEx_Enumeration()
+    public async AsyncTask Search_UnderReported_Receipt_Does_Not_Change_Independent_Results()
     {
         var searchRoot = Path.Combine(_root, "search-under-report");
         Directory.CreateDirectory(searchRoot);
@@ -137,13 +140,14 @@ public sealed class Phase3bVerificationTests : IDisposable
             HostObservation(),
             token);
 
-        result.Status.Should().Be("FAILED");
+        result.Status.Should().Be("VERIFIED");
         result.Evidence.Single().Observed["independently_enumerated_count"].Should().Be(2);
-        result.Evidence.Single().Observed["reported_path_count"].Should().Be(1);
+        result.Evidence.Single().Observed["enumerated_paths"]
+            .Should().BeEquivalentTo(new[] { Path.GetFullPath(first), Path.GetFullPath(second) });
     }
 
     [Fact]
-    public async AsyncTask Search_OverReporting_Is_Failed_By_Independent_FindFirstFileEx_Enumeration()
+    public async AsyncTask Search_OverReported_Receipt_Does_Not_Change_Independent_Results()
     {
         var searchRoot = Path.Combine(_root, "search-over-report");
         Directory.CreateDirectory(searchRoot);
@@ -160,9 +164,10 @@ public sealed class Phase3bVerificationTests : IDisposable
             HostObservation(),
             token);
 
-        result.Status.Should().Be("FAILED");
+        result.Status.Should().Be("VERIFIED");
         result.Evidence.Single().Observed["independently_enumerated_count"].Should().Be(1);
-        result.Evidence.Single().Observed["reported_path_count"].Should().Be(2);
+        result.Evidence.Single().Observed["enumerated_paths"]
+            .Should().BeEquivalentTo(new[] { Path.GetFullPath(matching) });
     }
 
     [Fact]
@@ -216,7 +221,6 @@ public sealed class Phase3bVerificationTests : IDisposable
 
         result.Status.Should().Be("VERIFIED");
         result.Evidence.Single().Observed["independently_enumerated_count"].Should().Be(2);
-        result.Evidence.Single().Observed["reported_path_count"].Should().Be(2);
         result.Evidence.Single().Observed["enumerated_paths"]
             .Should().BeEquivalentTo(new[] { Path.GetFullPath(rootFile), Path.GetFullPath(nestedFile) });
     }

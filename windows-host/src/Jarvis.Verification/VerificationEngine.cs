@@ -65,7 +65,7 @@ public sealed class VerificationEngine : IVerifier
         _clock = clock ?? SystemClock.Instance;
         _snapshots = new SnapshotService(maxSnapshotEntries, noiseExclusions);
         _fileCollector = new FileEvidenceCollector();
-        _searchCollector = new SearchEvidenceCollector(_fileCollector);
+        _searchCollector = new SearchEvidenceCollector();
         _processCollector = new ProcessEvidenceCollector();
         _evidenceWindow = evidenceWindow ?? TimeSpan.FromSeconds(30);
         if (_evidenceWindow <= TimeSpan.Zero)
@@ -150,7 +150,6 @@ public sealed class VerificationEngine : IVerifier
             {
                 var collected = CollectIndependentEvidence(
                     authorization,
-                    receipt,
                     observation,
                     token,
                     cancellationToken);
@@ -393,7 +392,6 @@ public sealed class VerificationEngine : IVerifier
 
     private IndependentEvidenceObservation CollectIndependentEvidence(
         AuthorizationRecordDto authorization,
-        ExecutionReceiptDto receipt,
         ExecutionObservation observation,
         StepToken token,
         CancellationToken cancellationToken)
@@ -427,7 +425,7 @@ public sealed class VerificationEngine : IVerifier
 
         return authorization.ToolId switch
         {
-            "fs.search_files" => _searchCollector.Collect(authorization, receipt.Stdout, cancellationToken),
+            "fs.search_files" => _searchCollector.Collect(authorization, cancellationToken),
             "app.launch" => _processCollector.Collect(authorization, observation, cancellationToken),
             "task.schedule_reminder" => _scheduledTaskCollector.Collect(
                 authorization,

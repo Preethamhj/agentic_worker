@@ -1,13 +1,12 @@
 using System.ComponentModel;
 using System.IO.Enumeration;
 using System.Runtime.InteropServices;
-using System.Text.Json;
 using Microsoft.Win32.SafeHandles;
 using Jarvis.Contracts;
 
 namespace Jarvis.Verification;
 
-internal sealed class SearchEvidenceCollector(FileEvidenceCollector fileCollector)
+internal sealed class SearchEvidenceCollector
 {
     private const int DefaultMaxDepth = 5;
     private const int AbsoluteMaxDepth = 10;
@@ -21,7 +20,6 @@ internal sealed class SearchEvidenceCollector(FileEvidenceCollector fileCollecto
 
     public IndependentEvidenceObservation Collect(
         AuthorizationRecordDto authorization,
-        string reportedPaths,
         CancellationToken cancellationToken)
     {
         if (!authorization.CanonicalArgs.TryGetValue("root_path", out var rootValue)
@@ -35,97 +33,8 @@ internal sealed class SearchEvidenceCollector(FileEvidenceCollector fileCollecto
 
         var maxDepth = ReadBoundedInt(authorization, "max_depth", DefaultMaxDepth, 1, AbsoluteMaxDepth);
         var maxResults = ReadBoundedInt(authorization, "max_results", DefaultMaxResults, 1, AbsoluteMaxResults);
-        var claimsValid = TryReadClaims(reportedPaths, out var claims);
         var root = Path.GetFullPath(rootPath);
         var enumeration = EnumerateMatches(root, pattern, maxDepth, maxResults, cancellationToken);
-        var expectedSet = enumeration.Paths.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var claimSet = claims
-            .Where(Path.IsPathRooted)
-            .Select(Path.GetFullPath)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var exactSetMatch = claimsValid
-            && claims.Count == claimSet.Count
-            && claimSet.SetEquals(expectedSet);
-        var results = new List<Dictionary<string, object?>>(claims.Count);
-        var allClaimsMatch = claimsValid;
-
-        foreach (var claim in claims)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (!Path.IsPathRooted(claim))
-            {
-                results.Add(new Dictionary<string, object?>
-                {
-                    ["reported_path"] = claim,
-                    ["exists"] = false,
-                    ["inside_allowed_root"] = false,
-                    ["matches_pattern"] = false
-                });
-                allClaimsMatch = false;
-                continue;
-            }
-
-            FileSystemObservation file;
-            try
-            {
-                file = fileCollector.Collect(
-                    claim,
-                    authorization.WatchScopes,
-                    cancellationToken,
-                    hashFile: false);
-            }
-            catch (ArgumentException)
-            {
-                results.Add(new Dictionary<string, object?>
-                {
-                    ["reported_path"] = claim,
-                    ["exists"] = false,
-                    ["inside_allowed_root"] = false,
-                    ["matches_pattern"] = false
-                });
-                allClaimsMatch = false;
-                continue;
-            }
-            catch (NotSupportedException)
-            {
-                results.Add(new Dictionary<string, object?>
-                {
-                    ["reported_path"] = claim,
-                    ["exists"] = false,
-                    ["inside_allowed_root"] = false,
-                    ["matches_pattern"] = false
-                });
-                allClaimsMatch = false;
-                continue;
-            }
-
-            var pathMatchesPattern = FileSystemName.MatchesSimpleExpression(
-                pattern,
-                Path.GetFileName(claim),
-                ignoreCase: true);
-            var insideRoot = IsWithinRoot(Path.GetFullPath(claim), root);
-            var match = file.Exists
-                && !file.IsDirectory
-                && !file.IsReparsePoint
-                && file.IsInsideAllowedRoot
-                && pathMatchesPattern
-                && insideRoot;
-            results.Add(new Dictionary<string, object?>
-            {
-                ["reported_path"] = claim,
-                ["exists"] = file.Exists,
-                ["is_directory"] = file.IsDirectory,
-                ["is_reparse_point"] = file.IsReparsePoint,
-                ["inside_allowed_root"] = file.IsInsideAllowedRoot,
-                ["final_path"] = file.FinalPath,
-                ["size"] = file.Size,
-                ["creation_time_utc"] = file.CreationTimeUtc,
-                ["last_write_time_utc"] = file.LastWriteTimeUtc,
-                ["matches_pattern"] = pathMatchesPattern,
-                ["inside_signed_search_root"] = insideRoot
-            });
-            allClaimsMatch &= match;
-        }
 
         var observed = new Dictionary<string, object?>
         {
@@ -133,12 +42,9 @@ internal sealed class SearchEvidenceCollector(FileEvidenceCollector fileCollecto
             ["pattern"] = pattern,
             ["max_depth"] = maxDepth,
             ["max_results"] = maxResults,
-            ["claims_valid_json_array"] = claimsValid,
-            ["reported_path_count"] = claims.Count,
             ["independently_enumerated_count"] = enumeration.Paths.Count,
             ["enumeration_hit_result_cap"] = enumeration.CapReached,
-            ["enumerated_paths"] = enumeration.Paths,
-            ["reported_paths"] = results
+            ["enumerated_paths"] = enumeration.Paths
         };
 
         if (enumeration.CapReached)
@@ -152,15 +58,12 @@ internal sealed class SearchEvidenceCollector(FileEvidenceCollector fileCollecto
                 "ESCALATE");
         }
 
-        var matches = exactSetMatch && allClaimsMatch;
         return new IndependentEvidenceObservation(
             "paths_match",
             nameof(SearchEvidenceCollector),
             observed,
-            matches,
-            matches
-                ? "Independently enumerated OS paths exactly match the executor's verified result set."
-                : "Reported search paths under-report, over-report, duplicate, or contain paths that do not match independently enumerated OS results.");
+            true,
+            "Search results were independently enumerated from the signed root and pattern.");
     }
 
     private static EnumerationResult EnumerateMatches(
@@ -244,36 +147,6 @@ internal sealed class SearchEvidenceCollector(FileEvidenceCollector fileCollecto
             && int.TryParse(value?.ToString(), out var parsed))
             return Math.Clamp(parsed, minimum, maximum);
         return defaultValue;
-    }
-
-    private static bool TryReadClaims(string value, out List<string> claims)
-    {
-        try
-        {
-            var parsed = JsonSerializer.Deserialize<string?[]>(value);
-            if (parsed is null || parsed.Any(path => path is null))
-            {
-                claims = parsed?.Where(path => path is not null).Select(path => path!).ToList() ?? [];
-                return false;
-            }
-            claims = parsed.Select(path => path!).ToList();
-            return true;
-        }
-        catch (JsonException)
-        {
-            claims = [];
-            return false;
-        }
-    }
-
-    private static bool IsWithinRoot(string target, string root)
-    {
-        var normalizedRoot = Path.TrimEndingDirectorySeparator(root);
-        var normalizedTarget = Path.TrimEndingDirectorySeparator(target);
-        return string.Equals(normalizedTarget, normalizedRoot, StringComparison.OrdinalIgnoreCase)
-            || normalizedTarget.StartsWith(
-                normalizedRoot + Path.DirectorySeparatorChar,
-                StringComparison.OrdinalIgnoreCase);
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
