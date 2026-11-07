@@ -1,3 +1,5 @@
+using Jarvis.Composition;
+
 namespace Jarvis.UI.ViewModels;
 
 /// <summary>Read-only settings and diagnostic information for the settings tab.</summary>
@@ -19,6 +21,9 @@ public sealed class SettingsViewModel
 
     /// <summary>Configured model name; the settings UI cannot change it.</summary>
     public string ModelName { get; }
+
+    /// <summary>Configured planner order; rule parsing is first and Ollama handles unmatched requests.</summary>
+    public string PlannerDescription => JarvisSettingsSnapshot.PlannerDescription;
 
     /// <summary>Doctor diagnostics captured by the host composition.</summary>
     public IReadOnlyList<string> DoctorResults { get; }

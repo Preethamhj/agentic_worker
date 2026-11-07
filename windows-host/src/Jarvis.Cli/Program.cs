@@ -114,6 +114,8 @@ public static class Program
 
         Console.WriteLine("[JARVIS] Launching AI server (127.0.0.1 loopback)...");
         var composition = new JarvisSessionFactory(JarvisSessionFactory.FindRepositoryRoot(AppContext.BaseDirectory));
+        var settings = composition.ReadSettings();
+        Console.Write(RenderPlannerInfo(settings.ModelName));
         await using var session = await composition.StartAsync(
             new ConsoleApprovalHandler(),
             new ConsoleEscalationHandler()).ConfigureAwait(false);
@@ -129,6 +131,14 @@ public static class Program
         }
 
         return 0;
+    }
+
+    /// <summary>Formats the configured planner strategy and model for host diagnostics.</summary>
+    public static string RenderPlannerInfo(string modelName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(modelName);
+        return $"[JARVIS] Planner: {JarvisSettingsSnapshot.PlannerDescription}{Environment.NewLine}" +
+            $"[JARVIS] Configured Ollama model: {modelName}{Environment.NewLine}";
     }
 
     /// <summary>Formats the final task state and independent evidence reasons for CLI output.</summary>

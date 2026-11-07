@@ -8,7 +8,12 @@ namespace Jarvis.Composition;
 public sealed record JarvisSettingsSnapshot(
     IReadOnlyList<string> AllowedRoots,
     string ModelName,
-    IReadOnlyList<string> DoctorResults);
+    IReadOnlyList<string> DoctorResults)
+{
+    /// <summary>Describes the configured rule-first planner and its local LLM fallback.</summary>
+    public const string PlannerDescription =
+        "Rule-based fast path is first; Ollama model from config is the fallback for unmatched requests.";
+}
 
 /// <summary>Task-scoped audit values presented by the UI history view.</summary>
 public sealed record JarvisHistorySnapshot(

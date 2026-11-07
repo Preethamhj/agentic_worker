@@ -76,6 +76,16 @@ public class CliEndToEndTests : IDisposable
     }
 
     [Fact]
+    public void Runtime_Information_Reports_Rule_First_Planner_And_Configured_Model()
+    {
+        var information = Program.RenderPlannerInfo("model-from-config");
+
+        information.Should().Contain("rule-based fast path");
+        information.Should().Contain("Ollama model from config is the fallback");
+        information.Should().Contain("model-from-config");
+    }
+
+    [Fact]
     public async Task Cli_Runs_FsCreateFile_EndToEnd_WithStubVerifier_Escalates_AndFails()
     {
         var targetFile = Path.Combine(_tempRoot, "notes.txt");

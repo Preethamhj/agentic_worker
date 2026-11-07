@@ -1,6 +1,6 @@
 # Jarvis status
 
-Updated 2026-11-05 from the full Release-prep gate. Default branch: `master`; current branch: `release-prep`, based on Phase 4 head `d5b50551ff037353a194bb3324e4014276f1d8f1`. The full gate was run on `77c6f6500db30f61fa143afa83d0644c9753c8cc`; this status update is a documentation-only follow-up.
+Updated 2026-11-07. Default branch: `master`; active branch: `live-ops`, based on `release-prep` head `c79a78678688fdb4afd45d248c8f689c9fa4d4f3`, the latest successful CI head checked for this work (run 126). The newer `test-hardening` head `bb741ae9add66be30637def14197e509c096eb9f` has failed CI run 134; its failing CLI app-launch test is documented in `docs/PROGRESS-live-ops.md`.
 The `eval-paper-v1` tag remains frozen at `7b5b7e88de868e22c1e8f04d4f5de178bb807c66`. No tags were created, moved, or deleted.
 
 ## Latest verified gate
@@ -10,7 +10,7 @@ Release build: 0 warnings, 0 errors.
 Non-RealScheduler Release solution tests: Architecture 10, Contracts 47, Core 61, E2E 134, Safety 118, Tools 11, Verification 85, UI 23; **489 passed, 0 failed, 0 skipped**.
 RealScheduler category: Verification **13 passed, 0 failed, 0 skipped**. Combined C# total: **502 passed, 0 failed, 0 skipped**.
 AI-server Python: **121 passed**, 4 dependency deprecation warnings. Evaluation Python: **12 passed**. Ruff and mypy passed for both areas; .NET format verification passed.
-Full gate log: `%TEMP%\jarvis-release-prep-check-all.log`. CI: not checked.
+Full gate log: `%TEMP%\jarvis-release-prep-check-all.log`. CI run 126 passed for commit `c79a78678688fdb4afd45d248c8f689c9fa4d4f3`: https://github.com/Preethamhj/agentic_worker/actions/runs/42085040711.
 
 ## Release preparation completed
 
@@ -25,3 +25,9 @@ The owner’s Phase 4 interactive checklist remains pending in `docs/phases/PHAS
 `master` at `b83d305` is not an ancestor of `release-prep`; merge requires a merge commit and is not fast-forwardable. No merge, pull request, or completion tag was created. The owner-managed requested tags are `phase-4-done` and `phase-5-done`; see `docs/RELEASE-PREP.md` for proposed targets and merge commands.
 
 Ignore everything under `reports/`.
+
+## Live Ops
+
+Part B0 implementation is in progress on `live-ops`. `scripts/live-check.ps1` checks only loopback services, reports whether the configured Ollama model is present without installing it, runs doctor, checks the DPAPI/workspace state, probes Task Scheduler with a future no-op `reminder-live-*` task that is removed in cleanup, and confirms the current Windows notification balloon mechanism exists. Its PowerShell 5.1 syntax check passed; the Release build, focused C# tests, and owner live check are pending.
+
+The current planner is **rule-based fast path first**, with the configured Ollama model used as fallback for requests not handled by rules. CLI and UI now display that strategy and configured model. B1–B9 have not started.
