@@ -13,6 +13,7 @@ using Xunit;
 
 namespace Jarvis.E2E.Tests;
 
+[Collection("E2E process isolation")]
 public sealed class EvalRealInjectorTests
 {
     [Fact]

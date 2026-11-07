@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <RootNamespace>Jarvis.Tools.Tests</RootNamespace>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
@@ -15,5 +16,13 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Jarvis.Tools\Jarvis.Tools.csproj" />
+    <ProjectReference Include="..\Jarvis.TestSupport\Jarvis.TestSupport.csproj" />
+    <ProjectReference Include="..\..\src\Jarvis.TestApp\Jarvis.TestApp.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
+  <Target Name="CopyTestApp" AfterTargets="Build">
+    <ItemGroup>
+      <TestAppOutput Include="..\..\src\Jarvis.TestApp\bin\$(Configuration)\net10.0-windows\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(TestAppOutput)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
+  </Target>
 </Project>

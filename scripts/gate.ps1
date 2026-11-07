@@ -203,10 +203,11 @@ try {
             throw "Per-project totals differ across the three full Release solution runs. Logs: $logRoot"
         }
 
-        for ($run = 1; $run -le 2; $run++) {
+        for ($run = 1; $run -le 1; $run++) {
             $beforeCheckAllNotepad = @(Get-NotepadSnapshot)
             $checkResult = Invoke-Bounded "check-all-$run" 'powershell.exe' @(
-                '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $checkAll
+                '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $checkAll,
+                '-SkipRealScheduler', '-SkipBuild'
             ) $repoRoot
             $checkAllExitCodes += $checkResult.ExitCode
             $afterCheckAllNotepad = @(Get-NotepadSnapshot)

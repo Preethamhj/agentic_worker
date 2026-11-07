@@ -7,11 +7,16 @@ using Jarvis.Contracts;
 using Jarvis.Core;
 using Jarvis.Infrastructure;
 using Jarvis.Safety;
+using Jarvis.TestSupport;
 using Jarvis.Tools;
 using Xunit;
 
 namespace Jarvis.Tools.Tests;
 
+[CollectionDefinition("Tool app process isolation", DisableParallelization = true)]
+public sealed class ToolAppProcessIsolationCollection { }
+
+[Collection("Tool app process isolation")]
 public class ExecutorTests
 {
     private static readonly string TempRoot = Path.Combine(Path.GetTempPath(), "Jarvis_Executor_Tests_" + Guid.NewGuid().ToString("N"));
@@ -27,8 +32,21 @@ public class ExecutorTests
 
         var configDir = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "config"));
         var toolsRegistryPath = Path.Combine(configDir, "tools.registry.json");
-        var appsAllowlistPath = Path.Combine(configDir, "apps.allowlist.json");
-        _toolPolicy = ToolPolicy.FromFile(toolsRegistryPath, appsAllowlistPath);
+        _toolPolicy = ToolPolicy.FromJson(
+            File.ReadAllText(toolsRegistryPath),
+            JsonSerializer.Serialize(new
+            {
+                schema_version = 1,
+                allowed_apps = new[]
+                {
+                    new
+                    {
+                        app_id = "testapp",
+                        executable = TestApps.Locate(),
+                        display_name = "Jarvis Test Helper"
+                    }
+                }
+            }));
 
         var keyStore = new InMemoryDpapiKeyStore();
         _auditStore = new InMemoryAuditStore();
@@ -132,14 +150,15 @@ public class ExecutorTests
     [Fact]
     public async Task AppLaunchExecutor_Maps_AppId_And_Refuses_FreeForm_Args_Or_Elevation()
     {
-        var calculatorProcessesBefore = CaptureCalculatorProcessIds();
+        var helperProcessesBefore = CaptureTestAppProcessIdentities();
+        using var processSandbox = new ProcessSandbox();
         var executor = new AppLaunchExecutor(_toolPolicy, _authService, new WindowsElevationChecker());
 
         var record = _authService.IssueAuthorization(
             taskId: "task-4",
             stepId: "step-1",
             toolId: "app.launch",
-            rawArgs: new Dictionary<string, object?> { ["app_id"] = "calc" },
+            rawArgs: new Dictionary<string, object?> { ["app_id"] = "testapp" },
             risk: "medium",
             approvedBy: "user");
 
@@ -148,24 +167,28 @@ public class ExecutorTests
         // If the current process is elevated (e.g. admin shell in CI), executor must refuse
         var isElevated = OperatingSystem.IsWindows() && new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator);
 
+        ExecutionReceiptDto receipt;
+        var startedHelperCount = 0;
         try
         {
-            var receipt = await executor.ExecuteAsync(auth);
-
-            if (isElevated)
-            {
-                receipt.ReportedSuccess.Should().BeFalse();
-                receipt.Stderr.Should().Contain("elevated");
-            }
-            else
-            {
-                receipt.ReportedSuccess.Should().BeTrue();
-                receipt.Stdout.Should().Contain("calc");
-            }
+            receipt = await executor.ExecuteAsync(auth);
         }
         finally
         {
-            KillCalculatorProcessesStartedByTest(calculatorProcessesBefore);
+            startedHelperCount = TrackNewTestAppProcesses(processSandbox, helperProcessesBefore);
+        }
+
+        if (isElevated)
+        {
+            receipt.ReportedSuccess.Should().BeFalse();
+            receipt.Stderr.Should().Contain("elevated");
+            startedHelperCount.Should().Be(0);
+        }
+        else
+        {
+            receipt.ReportedSuccess.Should().BeTrue();
+            receipt.Stdout.Should().Contain("testapp");
+            startedHelperCount.Should().Be(1);
         }
     }
 
@@ -209,7 +232,7 @@ public class ExecutorTests
             taskId: "task-elevation-check",
             stepId: "step-elevation-check",
             toolId: "app.launch",
-            rawArgs: new Dictionary<string, object?> { ["app_id"] = "calc" });
+            rawArgs: new Dictionary<string, object?> { ["app_id"] = "testapp" });
         var authorization = _authService.Consume(record, record.StepId);
 
         var receipt = await executor.ExecuteAsync(authorization);
@@ -313,45 +336,36 @@ public class ExecutorTests
         }
     }
 
-    private static HashSet<int> CaptureCalculatorProcessIds()
+    private static HashSet<(int ProcessId, long StartTimeTicks)> CaptureTestAppProcessIdentities()
     {
-        var processIds = new HashSet<int>();
-        foreach (var name in new[] { "calc", "CalculatorApp" })
+        var identities = new HashSet<(int ProcessId, long StartTimeTicks)>();
+        var processName = Path.GetFileNameWithoutExtension(TestApps.Locate());
+        foreach (var process in Process.GetProcessesByName(processName))
         {
-            foreach (var process in Process.GetProcessesByName(name))
-            {
-                using (process)
-                    processIds.Add(process.Id);
-            }
+            using (process)
+                identities.Add((process.Id, process.StartTime.ToUniversalTime().Ticks));
         }
-        return processIds;
+        return identities;
     }
 
-    private static void KillCalculatorProcessesStartedByTest(IReadOnlySet<int> processIdsBefore)
+    private static int TrackNewTestAppProcesses(
+        ProcessSandbox processSandbox,
+        IReadOnlySet<(int ProcessId, long StartTimeTicks)> identitiesBefore)
     {
-        foreach (var name in new[] { "calc", "CalculatorApp" })
+        var processName = Path.GetFileNameWithoutExtension(TestApps.Locate());
+        var startedCount = 0;
+        foreach (var process in Process.GetProcessesByName(processName))
         {
-            foreach (var process in Process.GetProcessesByName(name))
+            var identity = (process.Id, process.StartTime.ToUniversalTime().Ticks);
+            if (identitiesBefore.Contains(identity))
             {
-                using (process)
-                {
-                    if (processIdsBefore.Contains(process.Id))
-                        continue;
-
-                    if (process.HasExited)
-                        continue;
-                    try
-                    {
-                        process.Kill();
-                        if (!process.WaitForExit(5_000))
-                            throw new TimeoutException($"Test-launched calculator process {process.Id} did not exit.");
-                    }
-                    catch (InvalidOperationException) when (process.HasExited)
-                    {
-                        // The test-launched process exited between enumeration and termination.
-                    }
-                }
+                process.Dispose();
+                continue;
             }
+
+            processSandbox.Track(process);
+            startedCount++;
         }
+        return startedCount;
     }
 }

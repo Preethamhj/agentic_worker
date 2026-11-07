@@ -1,6 +1,9 @@
 # check-all.ps1 - CI verification script
 [CmdletBinding()]
-param()
+param(
+    [switch]$SkipRealScheduler,
+    [switch]$SkipBuild
+)
 
 $ErrorActionPreference = "Stop"
 
@@ -20,10 +23,14 @@ try {
     $sdkVersion = dotnet --version
     Write-Host "Using .NET SDK: $sdkVersion"
     if (-not $sdkVersion.StartsWith("10.")) { throw "Expected .NET 10 SDK, got $sdkVersion" }
-    dotnet restore Jarvis.sln --disable-build-servers -m:1
-    if ($LASTEXITCODE -ne 0) { throw "dotnet restore failed" }
-    dotnet build Jarvis.sln --configuration Release --no-incremental --no-restore --disable-build-servers -m:1
-    if ($LASTEXITCODE -ne 0) { throw "dotnet build failed" }
+    if ($SkipBuild) {
+        Write-Host "Skipping restore/build by request."
+    } else {
+        dotnet restore Jarvis.sln --disable-build-servers -m:1
+        if ($LASTEXITCODE -ne 0) { throw "dotnet restore failed" }
+        dotnet build Jarvis.sln --configuration Release --no-incremental --no-restore --disable-build-servers -m:1
+        if ($LASTEXITCODE -ne 0) { throw "dotnet build failed" }
+    }
 
     $originalRealSchedulerSetting = $env:JARVIS_REAL_SCHEDULER
     try {
@@ -31,10 +38,14 @@ try {
         dotnet test Jarvis.sln --configuration Release --no-build --no-restore --disable-build-servers -m:1 --filter "Category!=RealScheduler"
         if ($LASTEXITCODE -ne 0) { throw "dotnet test failed for non-real-scheduler tests" }
 
-        # RealScheduler tests require the normal user/admin desktop session used by CI.
-        $env:JARVIS_REAL_SCHEDULER = "1"
-        dotnet test Jarvis.sln --configuration Release --no-build --no-restore --disable-build-servers -m:1 --filter "Category=RealScheduler"
-        if ($LASTEXITCODE -ne 0) { throw "dotnet test failed for real-scheduler tests" }
+        if ($SkipRealScheduler) {
+            Write-Host "Skipping RealScheduler tests by request."
+        } else {
+            # RealScheduler tests require the normal user/admin desktop session used by CI.
+            $env:JARVIS_REAL_SCHEDULER = "1"
+            dotnet test Jarvis.sln --configuration Release --no-build --no-restore --disable-build-servers -m:1 --filter "Category=RealScheduler"
+            if ($LASTEXITCODE -ne 0) { throw "dotnet test failed for real-scheduler tests" }
+        }
 
     } finally {
         if ($null -eq $originalRealSchedulerSetting) { Remove-Item Env:\JARVIS_REAL_SCHEDULER -ErrorAction SilentlyContinue } else { $env:JARVIS_REAL_SCHEDULER = $originalRealSchedulerSetting }

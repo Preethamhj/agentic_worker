@@ -13,6 +13,10 @@ using Xunit;
 
 namespace Jarvis.E2E.Tests;
 
+[CollectionDefinition("E2E process isolation", DisableParallelization = true)]
+public sealed class E2EProcessIsolationCollection { }
+
+[Collection("E2E process isolation")]
 public class CliEndToEndTests : IDisposable
 {
     private readonly string _tempRoot;
@@ -193,14 +197,15 @@ public class CliEndToEndTests : IDisposable
     [Fact]
     public async Task Cli_Runs_AppLaunch_EndToEnd_UpTo_StubVerifier()
     {
-        var calculatorProcessesBefore = CaptureCalculatorProcessIds();
+        var helperProcessesBefore = CaptureTestAppProcessIdentities();
+        using var processSandbox = new ProcessSandbox();
         var planner = new StaticPlanner(new PlanStepDto(
             SchemaVersion: 1,
             StepId: "step-1",
             Order: 1,
-            Description: "Launch calculator",
+            Description: "Launch test helper",
             DependsOn: new List<string>(),
-            ToolCall: new ToolCallDto(1, "app.launch", new Dictionary<string, object?> { ["app_id"] = "calc" }),
+            ToolCall: new ToolCallDto(1, "app.launch", new Dictionary<string, object?> { ["app_id"] = "testapp" }),
             VerificationPlan: new VerificationPlanDto(1, new List<CheckDto>(), new List<string>()),
             AdvisoryRisk: "medium"
         ));
@@ -208,30 +213,34 @@ public class CliEndToEndTests : IDisposable
         var approval = new TestApprovalHandler();
         var orchestrator = new TaskOrchestrator(planner, _safetyGate, approval, _queue, _stepExecutor, _stubVerifier, _auditStore);
 
+        TaskOrchestratorResult result;
+        var startedHelperCount = 0;
         try
         {
-            var result = await orchestrator.RunTaskAsync("launch calculator");
-
-            var isElevated = OperatingSystem.IsWindows() && new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator);
-            if (isElevated)
-            {
-                result.Receipts[0].ReportedSuccess.Should().BeFalse();
-                result.Receipts[0].Stderr.Should().Contain("elevated");
-            }
-            else
-            {
-                result.Receipts[0].ReportedSuccess.Should().BeTrue();
-            }
-
-            result.VerificationResults[0].Status.Should().Be("ESCALATE");
-            result.FinalState.Should().Be(TaskState.Failed);
-            result.StatusMessage.Should().Contain("not verified");
-            AssertFailedOnlyForNotVerified(result);
+            result = await orchestrator.RunTaskAsync("launch test helper");
         }
         finally
         {
-            KillCalculatorProcessesStartedByTest(calculatorProcessesBefore);
+            startedHelperCount = TrackNewTestAppProcesses(processSandbox, helperProcessesBefore);
         }
+
+        startedHelperCount.Should().Be(1);
+        result.Receipts.Should().ContainSingle();
+        var isElevated = OperatingSystem.IsWindows() && new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator);
+        if (isElevated)
+        {
+            result.Receipts[0].ReportedSuccess.Should().BeFalse();
+            result.Receipts[0].Stderr.Should().Contain("elevated");
+        }
+        else
+        {
+            result.Receipts[0].ReportedSuccess.Should().BeTrue();
+        }
+
+        result.VerificationResults[0].Status.Should().Be("ESCALATE");
+        result.FinalState.Should().Be(TaskState.Failed);
+        result.StatusMessage.Should().Contain("not verified");
+        AssertFailedOnlyForNotVerified(result);
     }
 
     [Fact]
@@ -256,46 +265,37 @@ public class CliEndToEndTests : IDisposable
             Directory.Delete(_tempRoot, recursive: true);
     }
 
-    private static HashSet<int> CaptureCalculatorProcessIds()
+    private static HashSet<(int ProcessId, long StartTimeTicks)> CaptureTestAppProcessIdentities()
     {
-        var processIds = new HashSet<int>();
-        foreach (var name in new[] { "calc", "CalculatorApp" })
+        var identities = new HashSet<(int ProcessId, long StartTimeTicks)>();
+        var processName = Path.GetFileNameWithoutExtension(TestApps.Locate());
+        foreach (var process in Process.GetProcessesByName(processName))
         {
-            foreach (var process in Process.GetProcessesByName(name))
-            {
-                using (process)
-                    processIds.Add(process.Id);
-            }
+            using (process)
+                identities.Add((process.Id, process.StartTime.ToUniversalTime().Ticks));
         }
-        return processIds;
+        return identities;
     }
 
-    private static void KillCalculatorProcessesStartedByTest(IReadOnlySet<int> processIdsBefore)
+    private static int TrackNewTestAppProcesses(
+        ProcessSandbox processSandbox,
+        IReadOnlySet<(int ProcessId, long StartTimeTicks)> identitiesBefore)
     {
-        foreach (var name in new[] { "calc", "CalculatorApp" })
+        var processName = Path.GetFileNameWithoutExtension(TestApps.Locate());
+        var startedCount = 0;
+        foreach (var process in Process.GetProcessesByName(processName))
         {
-            foreach (var process in Process.GetProcessesByName(name))
+            var identity = (process.Id, process.StartTime.ToUniversalTime().Ticks);
+            if (identitiesBefore.Contains(identity))
             {
-                using (process)
-                {
-                    if (processIdsBefore.Contains(process.Id))
-                        continue;
-
-                    if (process.HasExited)
-                        continue;
-                    try
-                    {
-                        process.Kill();
-                        if (!process.WaitForExit(5_000))
-                            throw new TimeoutException($"Test-launched calculator process {process.Id} did not exit.");
-                    }
-                    catch (InvalidOperationException) when (process.HasExited)
-                    {
-                        // The test-launched process exited between enumeration and termination.
-                    }
-                }
+                process.Dispose();
+                continue;
             }
+
+            processSandbox.Track(process);
+            startedCount++;
         }
+        return startedCount;
     }
 
     private void AssertFailedOnlyForNotVerified(TaskOrchestratorResult result)
