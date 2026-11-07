@@ -279,8 +279,7 @@ try {
     $notifierPresent = Test-Path -LiteralPath $notifierPath
     if ($notifierPresent) {
         $notifierSource = Get-Content -LiteralPath $notifierPath -Raw
-        $notifierPresent = $notifierSource.Contains('class WindowsReminderNotifier')
-            -and $notifierSource.Contains('ShowBalloonTip')
+        $notifierPresent = $notifierSource.Contains('class WindowsReminderNotifier') -and $notifierSource.Contains('ShowBalloonTip')
     }
     Write-Check 'Reminder notifier mechanism' $notifierPresent 'WindowsReminderNotifier uses a Windows notification icon balloon.' 'Restore the WindowsReminderNotifier implementation and its visible notification mechanism.'
 

@@ -28,7 +28,7 @@ Ignore everything under `reports/`.
 
 ## Live Ops
 
-Part B0 implementation is committed and pushed as `7c15fa2`; a follow-up fix is pending. The owner Release solution build passed with 0 warnings and 0 errors. The two new CLI/UI planner tests were corrected for display-string capitalization and now pass individually (1/1 each). The owner live check passed Ollama/model, doctor, workspace, DPAPI, scheduler create/delete, and notifier checks, but failed Python AI-server health. `scripts/live-check.ps1` now waits up to 30 seconds for health and prints bounded server log tails before cleanup. PowerShell 5.1 parsing and `git diff --check` pass. Owner rerun of the live check is pending; B0 is not yet complete.
+Part B0 implementation is committed and pushed as `7c15fa2`; fixes were pushed as `4594046`, with a notifier-expression fix now prepared. The owner Release solution build passed with 0 warnings and 0 errors. The two new CLI/UI planner tests were corrected for display-string capitalization and pass individually (1/1 each). In the latest owner live-check run, Ollama/model, Python AI-server health, doctor, workspace, DPAPI, and scheduler create/delete passed. The script then stopped because Windows PowerShell 5 treated the newline before `-and` in the notifier-source check as a new command. The expression is now on one line; the complete live-check result is pending an owner rerun. B0 is not yet complete.
 
 A separate owner-submitted gate excerpt reports `Jarvis.E2E.Tests.EvalTaskCatalogTests.Checked_In_Catalog_Is_Deterministic_And_Valid_Against_Its_Schema` failing on a generated-versus-checked-in catalog mismatch in solution test run 3. It is not caused by the B0 files changed here and remains uninvestigated.
 
