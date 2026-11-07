@@ -32,4 +32,4 @@ Part B0 implementation is committed and pushed as `7c15fa2`, with fixes `4594046
 
 A separate owner-submitted gate excerpt reported `Jarvis.E2E.Tests.EvalTaskCatalogTests.Checked_In_Catalog_Is_Deterministic_And_Valid_Against_Its_Schema` failing on a generated-versus-checked-in catalog mismatch in solution test run 3. A focused Release rerun with a build passed on the current branch (1 passed, 0 failed, 0 skipped); the full gate has not been rerun.
 
-The current planner is **rule-based fast path first**, with the configured Ollama model used as fallback for requests not handled by rules. CLI and UI now display that strategy and configured model. B1–B9 have not started.
+The current planner is **rule-based fast path first**, with the configured Ollama model used as fallback for requests not handled by rules. CLI and UI now display that strategy and configured model. B1's 30-case opt-in live planner suite is implemented on `live-ops`; its default run passes the prompt matrix check and skips 30 model tests. Model-backed outcomes remain unverified pending owner execution. B2–B9 have not started.
