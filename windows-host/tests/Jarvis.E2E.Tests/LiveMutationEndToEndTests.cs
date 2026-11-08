@@ -93,6 +93,7 @@ public sealed class LiveMutationEndToEndTests
             $"Please create a file at the exact location '{approvedFile}' containing exactly '{exactContent}'.",
             _ => new ApprovalDecision(true, "live-test-approval"));
         AssertPlannedTool(fileOutcome, "fs.create_file");
+        AssertVerifiedCompletion(fileOutcome);
         File.ReadAllText(approvedFile).Should().Be(exactContent);
         AssertAuditEvents(auditStore, fileOutcome.Result.TaskId, valid: true, approved: true, approver: "live-test-approval");
 
@@ -101,6 +102,7 @@ public sealed class LiveMutationEndToEndTests
             $"Please create a directory at the exact location '{approvedFolder}'.",
             _ => new ApprovalDecision(true, "live-test-approval"));
         AssertPlannedTool(folderOutcome, "fs.create_folder");
+        AssertVerifiedCompletion(folderOutcome);
         Directory.Exists(approvedFolder).Should().BeTrue();
         AssertAuditEvents(auditStore, folderOutcome.Result.TaskId, valid: true, approved: true, approver: "live-test-approval");
 
@@ -128,6 +130,7 @@ public sealed class LiveMutationEndToEndTests
             $"Please write a file at the exact location '{kannadaFile}' containing exactly '{kannadaContent}'.",
             _ => new ApprovalDecision(true, "live-test-approval"));
         AssertPlannedTool(kannadaOutcome, "fs.create_file");
+        AssertVerifiedCompletion(kannadaOutcome);
         File.ReadAllText(kannadaFile).Should().Be(kannadaContent);
         AssertAuditEvents(auditStore, kannadaOutcome.Result.TaskId, valid: true, approved: true, approver: "live-test-approval");
 
@@ -175,6 +178,14 @@ public sealed class LiveMutationEndToEndTests
         outcome.Plan.Should().NotBeNull();
         outcome.Plan!.Intent.Source.Should().Be("llm");
         outcome.Plan.Steps.Should().ContainSingle(step => step.ToolCall.ToolId == toolId);
+    }
+
+    private static void AssertVerifiedCompletion(ScenarioOutcome outcome)
+    {
+        outcome.Result.FinalState.Should().Be(TaskState.Completed, outcome.Result.StatusMessage);
+        outcome.Result.VerificationResults.Should().ContainSingle(result => result.Status == "VERIFIED");
+        outcome.Report.Steps.Should().ContainSingle(step =>
+            step.Status == "completed" && step.VerificationStatus == "VERIFIED");
     }
 
     private static void AssertAuditEvents(
