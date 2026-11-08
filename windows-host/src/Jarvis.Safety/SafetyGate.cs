@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Jarvis.Contracts;
 using Jarvis.Core;
@@ -56,7 +57,8 @@ public sealed class SafetyGate : ISafetyGate
         var jsonArgs = new JsonObject();
         foreach (var kv in rawArgs)
         {
-            if (kv.Value is string s) jsonArgs[kv.Key] = s;
+            if (kv.Value is JsonElement element) jsonArgs[kv.Key] = JsonNode.Parse(element.GetRawText());
+            else if (kv.Value is string s) jsonArgs[kv.Key] = s;
             else if (kv.Value is bool b) jsonArgs[kv.Key] = b;
             else if (kv.Value is int i) jsonArgs[kv.Key] = i;
             else if (kv.Value is long l) jsonArgs[kv.Key] = l;
@@ -73,7 +75,8 @@ public sealed class SafetyGate : ISafetyGate
 
         if (_pathPolicy != null)
         {
-            if (rawArgs.TryGetValue("path", out var pObj) && pObj is string p)
+            if (jsonArgs.TryGetPropertyValue("path", out var pNode) && pNode is JsonValue pValue
+                && pValue.TryGetValue<string>(out var p))
             {
                 var pathVal = _pathPolicy.ValidatePath(p);
                 if (!pathVal.IsValid)
@@ -82,7 +85,8 @@ public sealed class SafetyGate : ISafetyGate
                     return new SafetyEvaluation(false, "high", pathVal.ErrorMessage);
                 }
             }
-            else if (rawArgs.TryGetValue("root_path", out var rpObj) && rpObj is string rp)
+            else if (jsonArgs.TryGetPropertyValue("root_path", out var rpNode) && rpNode is JsonValue rpValue
+                && rpValue.TryGetValue<string>(out var rp))
             {
                 var pathVal = _pathPolicy.ValidatePath(rp);
                 if (!pathVal.IsValid)

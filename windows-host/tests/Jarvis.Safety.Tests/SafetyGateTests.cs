@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using FluentAssertions;
 using Jarvis.Contracts;
@@ -10,6 +11,60 @@ namespace Jarvis.Safety.Tests;
 
 public class SafetyGateTests
 {
+    [Theory]
+    [InlineData("fs.create_file", "path", true)]
+    [InlineData("fs.create_file", "path", false)]
+    [InlineData("fs.create_folder", "path", true)]
+    [InlineData("fs.search_files", "root_path", true)]
+    public async Task EvaluateStep_Rejects_Outside_Root_Regardless_Of_Argument_Representation(
+        string toolId, string pathKey, bool useJsonValues)
+    {
+        var root = AppContext.BaseDirectory;
+        var outside = Path.Combine(Path.GetPathRoot(root)!, "JarvisOutsideTest", "blocked");
+        var args = new Dictionary<string, object?> { [pathKey] = outside };
+        if (toolId == "fs.create_file")
+            args["content"] = "test";
+        if (toolId == "fs.search_files")
+            args["pattern"] = "*.txt";
+        if (useJsonValues)
+            args = JsonSerializer.Deserialize<Dictionary<string, object?>>(JsonSerializer.Serialize(args))!;
+        var gate = new SafetyGate(_toolPolicy, _authService, auditStore: _auditStore, pathPolicy: new PathPolicy([root]));
+
+        var result = await gate.EvaluateStepAsync("task-path", "step-path", toolId, args);
+
+        result.IsAllowed.Should().BeFalse();
+        result.RejectionReason.Should().Contain("outside allowed roots");
+        _auditStore.GetPolicyValidations("task-path").Should().ContainSingle(entry => !entry.IsValid);
+        _auditStore.GetApprovalDecisions("task-path").Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task EvaluateStep_Allows_Validated_Json_String_Inside_Root()
+    {
+        var root = AppContext.BaseDirectory;
+        var path = Path.Combine(root, "safe.txt");
+        var args = JsonSerializer.Deserialize<Dictionary<string, object?>>(
+            JsonSerializer.Serialize(new { path, content = "test" }))!;
+        var gate = new SafetyGate(_toolPolicy, _authService, auditStore: _auditStore, pathPolicy: new PathPolicy([root]));
+
+        var result = await gate.EvaluateStepAsync("task-inside", "step-inside", "fs.create_file", args);
+
+        result.IsAllowed.Should().BeTrue();
+        result.CanonicalArgs!["path"].Should().Be(path);
+    }
+
+    [Fact]
+    public async Task EvaluateStep_Rejects_NonString_Json_Path()
+    {
+        var args = JsonSerializer.Deserialize<Dictionary<string, object?>>("""{"path":123,"content":"test"}""")!;
+        var gate = new SafetyGate(_toolPolicy, _authService, auditStore: _auditStore, pathPolicy: new PathPolicy([AppContext.BaseDirectory]));
+
+        var result = await gate.EvaluateStepAsync("task-invalid", "step-invalid", "fs.create_file", args);
+
+        result.IsAllowed.Should().BeFalse();
+        _auditStore.GetPolicyValidations("task-invalid").Should().ContainSingle(entry => !entry.IsValid);
+    }
+
     private class FakeApprovalProvider : IApprovalHandler
     {
         public ApprovalDecision NextApprovalResult { get; set; } = new(true, "test-user");
