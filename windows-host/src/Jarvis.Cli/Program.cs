@@ -156,9 +156,15 @@ public static class Program
 
         foreach (var receipt in result.Receipts)
         {
-            output.AppendLine($"[Receipt] Step: {receipt.StepId}, ExitCode: {receipt.ExitCode}, Success: {receipt.ReportedSuccess}");
-            if (!string.IsNullOrEmpty(receipt.Stdout)) output.AppendLine($"  Stdout: {receipt.Stdout}");
-            if (!string.IsNullOrEmpty(receipt.Stderr)) output.AppendLine($"  Stderr: {receipt.Stderr}");
+            output.AppendLine($"[Untrusted executor diagnostic] Step: {receipt.StepId}, ExitCode: {receipt.ExitCode}, Reported success: {receipt.ReportedSuccess}");
+            if (!string.IsNullOrEmpty(receipt.Stderr)) output.AppendLine($"  Untrusted error: {receipt.Stderr}");
+        }
+
+        foreach (var search in VerifiedSearchResults.From(result.VerificationResults))
+        {
+            output.AppendLine($"[Independently verified search results] Step: {search.StepId}, Count: {search.Paths.Count}");
+            foreach (var path in search.Paths)
+                output.AppendLine($"  {path}");
         }
 
         foreach (var verification in result.VerificationResults)

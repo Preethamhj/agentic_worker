@@ -44,6 +44,21 @@
             <TabItem Header="Evidence">
                 <ListBox Margin="12" ItemsSource="{Binding Task.Reasons}" />
             </TabItem>
+            <TabItem Header="Verified search results">
+                <ScrollViewer Margin="12" VerticalScrollBarVisibility="Auto">
+                    <ItemsControl ItemsSource="{Binding Task.SearchResults}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="0,0,0,12">
+                                    <TextBlock Text="{Binding StepId, StringFormat=Verified search step: {0}}" FontWeight="Bold" />
+                                    <TextBlock Text="{Binding Paths.Count, StringFormat=Files found: {0}}" />
+                                    <ItemsControl ItemsSource="{Binding Paths}" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </TabItem>
             <TabItem Header="History">
                 <DataGrid Margin="12" ItemsSource="{Binding History.Events}" IsReadOnly="True"
                           AutoGenerateColumns="False" CanUserAddRows="False">

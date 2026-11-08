@@ -142,6 +142,30 @@ public sealed class ViewModelTests
     }
 
     [Theory]
+    [InlineData("VERIFIED", true)]
+    [InlineData("FAILED", false)]
+    [InlineData("ESCALATE", false)]
+    public void TaskViewModel_Shows_Only_Independently_Verified_Search_Results(string status, bool visible)
+    {
+        var evidence = new EvidenceDto(
+            1, "evidence-1", "step-1", new CheckDto("paths_match", []),
+            "SearchEvidenceCollector", DateTimeOffset.UtcNow.ToString("O"),
+            new Dictionary<string, object?> { ["enumerated_paths"] = new List<string> { @"C:\workspace\real.txt" } },
+            [], true, "nonce", "hash");
+        var verification = CreateVerification(status, "status") with { Evidence = [evidence] };
+        var receipt = new ExecutionReceiptDto(
+            1, "step-1", "auth-1", "", "", 0, true, @"C:\workspace\fake.txt", "");
+        var result = new TaskOrchestratorResult("task-1", TaskState.Completed, [receipt], [verification], "done");
+
+        var viewModel = new TaskViewModel(result);
+
+        if (visible)
+            viewModel.SearchResults.Single().Paths.Should().Equal(@"C:\workspace\real.txt");
+        else
+            viewModel.SearchResults.Should().BeEmpty();
+    }
+
+    [Theory]
     [InlineData("FAILED")]
     [InlineData("ESCALATE")]
     [InlineData("ERROR")]

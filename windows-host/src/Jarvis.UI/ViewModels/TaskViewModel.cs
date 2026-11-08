@@ -1,4 +1,5 @@
 using Jarvis.Contracts;
+using Jarvis.Composition;
 using Jarvis.Core;
 using Jarvis.Infrastructure;
 
@@ -23,6 +24,7 @@ public sealed class TaskViewModel
                 stage.Detail)))
             .ToArray());
         Reasons = Array.AsReadOnly(result.VerificationResults.SelectMany(verification => verification.Reasons).ToArray());
+        SearchResults = VerifiedSearchResults.From(result.VerificationResults);
         FinalMessage = result.FinalState == TaskState.Completed
             && result.VerificationResults.Count > 0
             && result.VerificationResults.All(verification =>
@@ -48,6 +50,9 @@ public sealed class TaskViewModel
 
     /// <summary>Independent verifier reasons, including overall failure reasons.</summary>
     public IReadOnlyList<string> Reasons { get; }
+
+    /// <summary>Search results from independently verified evidence, grouped by step.</summary>
+    public IReadOnlyList<VerifiedSearchResult> SearchResults { get; }
 
     /// <summary>Reports success only when the orchestrator and every verifier result are VERIFIED.</summary>
     public string FinalMessage { get; }
