@@ -72,6 +72,8 @@ The configured `timeouts.llm_seconds` is passed to the local Ollama HTTP client.
 
 For a verified file search, the CLI and the UI's **Verified search results** tab show paths independently enumerated by the verifier. The CLI no longer prints executor stdout in task summaries; exit codes and error text are labeled untrusted diagnostics. A verified search result is an observation at verification time, not a guarantee that files will remain unchanged.
 
+The UI Evidence tab also shows executor-reported errors as **untrusted diagnostics**, separately from independent verifier reasons. These messages can help troubleshoot a failed action but do not determine the verification result.
+
 ## Tests and checks
 
 Run the repository gate in a normal desktop session:

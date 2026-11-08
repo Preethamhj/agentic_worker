@@ -45,7 +45,12 @@
                 </Grid>
             </TabItem>
             <TabItem Header="Evidence">
-                <ListBox Margin="12" ItemsSource="{Binding Task.Reasons}" />
+                <StackPanel Margin="12">
+                    <TextBlock Text="Independent verifier reasons" FontWeight="Bold" />
+                    <ItemsControl ItemsSource="{Binding Task.Reasons}" />
+                    <TextBlock Text="Executor diagnostics (untrusted; not verification evidence)" FontWeight="Bold" Margin="0,12,0,0" />
+                    <ItemsControl ItemsSource="{Binding Task.ExecutorDiagnostics}" />
+                </StackPanel>
             </TabItem>
             <TabItem Header="Verified search results">
                 <ScrollViewer Margin="12" VerticalScrollBarVisibility="Auto">

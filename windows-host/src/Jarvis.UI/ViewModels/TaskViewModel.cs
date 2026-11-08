@@ -8,7 +8,7 @@ namespace Jarvis.UI.ViewModels;
 /// <summary>Read-only task state timeline and independent verification stage presentation.</summary>
 public sealed class TaskViewModel
 {
-    /// <summary>Creates task presentation data without exposing executor receipts as evidence.</summary>
+    /// <summary>Creates task presentation data; executor diagnostics are not verification evidence.</summary>
     public TaskViewModel(TaskOrchestratorResult result, IEnumerable<StateTransitionRecord>? transitions = null)
     {
         ArgumentNullException.ThrowIfNull(result);
@@ -24,6 +24,10 @@ public sealed class TaskViewModel
                 stage.Detail)))
             .ToArray());
         Reasons = Array.AsReadOnly(result.VerificationResults.SelectMany(verification => verification.Reasons).ToArray());
+        ExecutorDiagnostics = Array.AsReadOnly(result.Receipts
+            .Where(receipt => !string.IsNullOrWhiteSpace(receipt.Stderr))
+            .Select(receipt => $"Untrusted executor diagnostic ({receipt.StepId}): {receipt.Stderr}")
+            .ToArray());
         SearchResults = VerifiedSearchResults.From(result.VerificationResults);
         FinalMessage = result.FinalState == TaskState.Completed
             && result.VerificationResults.Count > 0
@@ -50,6 +54,9 @@ public sealed class TaskViewModel
 
     /// <summary>Independent verifier reasons, including overall failure reasons.</summary>
     public IReadOnlyList<string> Reasons { get; }
+
+    /// <summary>Executor-reported errors, which are not evidence of task success or failure.</summary>
+    public IReadOnlyList<string> ExecutorDiagnostics { get; }
 
     /// <summary>Search results from independently verified evidence, grouped by step.</summary>
     public IReadOnlyList<VerifiedSearchResult> SearchResults { get; }

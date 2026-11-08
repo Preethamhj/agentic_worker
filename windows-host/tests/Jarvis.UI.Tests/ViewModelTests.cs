@@ -11,6 +11,23 @@ namespace Jarvis.UI.Tests;
 public sealed class ViewModelTests
 {
     [Fact]
+    public void TaskViewModel_Exposes_Executor_Errors_As_Untrusted_Diagnostics()
+    {
+        var receipt = new ExecutionReceiptDto(
+            1, "step-1", "auth-1", "", "", 1, false, "untrusted output", "Reminder time must be in the future.");
+        var result = new TaskOrchestratorResult(
+            "task-1", TaskState.Failed, [receipt],
+            [CreateVerification("FAILED", "Task not found")], "Not verified.");
+
+        var viewModel = new TaskViewModel(result);
+
+        viewModel.FinalMessage.Should().Be("not verified");
+        viewModel.ExecutorDiagnostics.Should().ContainSingle()
+            .Which.Should().Contain("Untrusted").And.Contain("Reminder time must be in the future.");
+        viewModel.ExecutorDiagnostics.Single().Should().NotContain("untrusted output");
+    }
+
+    [Fact]
     public void ApprovalViewModel_Preserves_Canonical_Arguments_And_Displays_Risk_And_Image_Path()
     {
         IReadOnlyDictionary<string, object?> args = new Dictionary<string, object?>
