@@ -88,4 +88,6 @@ The owner asked to implement a reusable Outlook backend. A further read-only che
 
 The owner requested a cloud collaboration direction and an Outlook sign-in page. `docs/architecture/adr/ADR-0009-cloud-collaboration-direction.md` records that direction and its prerequisites; the active local-only operating boundaries remain in force. No OAuth connection, cloud provider access, or calendar implementation was performed.
 
-The owner requested six empty Google OAuth and credential-storage C# files under `Jarvis.Infrastructure/Google` for manual editing. They are placeholders only: no packages, connection, credential storage, or Google integration were implemented. The active network restrictions remain in force.
+The owner requested six empty Google OAuth and credential-storage C# files under `Jarvis.Infrastructure/Google` for manual editing. They are placeholders only: no connection, credential storage, or Google integration was implemented. The active network restrictions remain in force.
+
+The owner requested package references for `Google.Apis.Auth`, `Google.Apis.Gmail.v1`, and `Google.Apis.Calendar.v3` in `Jarvis.Infrastructure`, and selected floating stable versions because no versions were available in the local package cache. References have not been restored or validated; pin compatible exact versions before a reproducible build. No Google connection or API usage is implemented.
