@@ -1,3 +1,4 @@
+import re
 from typing import Literal
 
 import httpx
@@ -29,6 +30,18 @@ class Planner:
 
     def create_plan(self, request: PlanRequestModel) -> PlanResponseModel:
         trace_id = generate_trace_id()
+        if (
+            re.search(r"\b(?:remind|reminder|schedule|task)\b", request.text, re.IGNORECASE)
+            and re.search(
+                r"\b(?:daily|weekly|monthly|every\s+(?:day|weekday|week|month|morning|evening))\b",
+                request.text,
+                re.IGNORECASE,
+            )
+        ):
+            return self._planning_failure(
+                trace_id, "clarify",
+                "Recurring reminders are not supported yet. Request a one-time reminder instead.",
+            )
         try:
             intent: IntentModel = self.intent_parser.parse(request.text)
         except StructuredOutputError:

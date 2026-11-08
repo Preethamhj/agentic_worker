@@ -11,6 +11,11 @@ public partial class App : Application
         base.OnStartup(e);
         try
         {
+            if (ReminderStartup.TryDispatch(e.Args, DispatchReminder, out var exitCode))
+            {
+                Shutdown(exitCode);
+                return;
+            }
             var composition = new JarvisSessionFactory();
             var presenter = new WpfDecisionDialogPresenter();
             var dispatcher = new WpfUiDispatcher(Dispatcher);
@@ -31,5 +36,14 @@ public partial class App : Application
                 MessageBoxImage.Error);
             Shutdown(1);
         }
+    }
+
+    private static int DispatchReminder(string[] args)
+    {
+        var result = ReminderDispatchService.Dispatch(args, (title, message) =>
+            MessageBox.Show(message, title, MessageBoxButton.OK, MessageBoxImage.Information));
+        if (result.Error is not null)
+            MessageBox.Show(result.Error, "Jarvis reminder error", MessageBoxButton.OK, MessageBoxImage.Error);
+        return result.ExitCode;
     }
 }

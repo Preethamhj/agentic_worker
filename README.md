@@ -74,6 +74,8 @@ For a verified file search, the CLI and the UI's **Verified search results** tab
 
 The UI Evidence tab also shows executor-reported errors as **untrusted diagnostics**, separately from independent verifier reasons. These messages can help troubleshoot a failed action but do not determine the verification result.
 
+Reminders are currently one-time only. Common requests for recurring reminders are rejected with a clarification rather than intentionally scheduled once; other phrasings may not be detected, so always review the approved time and arguments. Do not rely on daily reminders until recurrence is implemented and verified.
+
 ## Tests and checks
 
 Run the repository gate in a normal desktop session:

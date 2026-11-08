@@ -8,6 +8,21 @@ from jarvis_ai.planning.planner import Planner
 from jarvis_ai.schemas.models import PlanRequestModel
 
 
+@pytest.mark.parametrize("prompt", [
+    "schedule a task of drinking water at 3 am every day",
+    "remind me to drink water at 3 am daily",
+    "schedule reminder meeting at 9 am every weekday",
+])
+def test_recurring_reminder_is_not_silently_planned_as_one_time(prompt: str) -> None:
+    client = FakeLlmClient()
+    response = Planner(IntentParser(client)).create_plan(
+        PlanRequestModel(session_id="test", text=prompt)
+    )
+    assert response.status == "clarify"
+    assert "recurring" in response.message.lower()
+    assert not response.steps
+
+
 def test_invalid_model_output_returns_clarification_after_retries() -> None:
     client = FakeLlmClient()
     client.set_response("Please find matching documents", "invalid json")
