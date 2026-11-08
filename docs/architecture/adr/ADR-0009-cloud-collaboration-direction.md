@@ -1,42 +1,65 @@
-# ADR-0009: Requested cloud collaboration direction
+# ADR-0009: Google account sign-in proposal
 
-Status: owner-requested future direction, 2026-11-08. Not implemented or
-authorized as a change to the current operational network boundary.
+Status: owner-requested future direction, 2026-11-08. No external network
+access is authorized by this ADR. The current loopback-only operating
+restriction remains in force.
 
 ## Context
 
-The owner wants Jarvis to connect to internet-based services, beginning with
-Outlook Calendar, and later potentially Google Calendar, mail and Drive.
-This changes the original local-only product direction. The current design
-and operating constraints allow loopback-only connections and defer Outlook
-integration; they remain in force. This document does not authorize network
-access or a production integration.
+The owner selected Google account sign-in as the first collaboration
+milestone, ahead of the previously proposed Outlook Calendar feature. The
+immediate goal is one optional Google account connection for Jarvis. This
+changes the proposed roadmap, but not the active local-first network boundary.
+The current change adds only local DPAPI credential-storage scaffolding;
+browser OAuth and provider API calls are not implemented.
 
-## Target design
+## Proposed G1 boundary
 
-- Connections are optional and independently enabled by the user. Sign-in
-  should use the provider's browser-based OAuth flow, not a password entered
-  into Jarvis. The provider account and Jarvis connection are distinct: a
-  normal Outlook sign-in does not connect the account to Jarvis.
-- Request the least permissions required for the selected feature. Support
-  disconnecting an account and revoking or removing stored credentials. Never
-  place tokens, passwords or client secrets in code, configuration or logs.
-- Preserve per-action policy checks, user approval for writes, signed
-  authorization and an independently collected read-back before reporting
-  success. A provider response from the executor is not verification evidence.
-- The first proposed feature is a single approved Outlook Calendar event and
-  independent read-back. Existing local reminder registration is a separate
-  effect and must not be reported as successful merely because the calendar
-  event succeeded. Mail, Drive and other providers are subsequent work.
-- Use fakes for development tests and explicitly approved, isolated test
-  accounts and events for any future real-provider checks.
+- Sign-in must use the user's system browser; Jarvis must not collect a Google
+  password. The provider account and Jarvis connection are distinct.
+- G1 requests identity scopes only (`openid`, `email`, and `profile` if the
+  display name is needed). Calendar, Gmail, Drive, and Meet scopes are not part
+  of G1 and require separate feature decisions.
+- Keep the client JSON outside the repository. Protect persisted tokens and
+  account metadata with Windows DPAPI `CurrentUser`; never send them to Python
+  or Ollama or include them in logs.
+- Disconnecting removes Jarvis's local credential files. It does not by
+  itself revoke the grant at Google; revocation must be designed and tested
+  separately before claiming that disconnect revokes access.
+- Do not report a future provider-side write as successful from its response
+  alone. Preserve the existing authorization and independent-verification
+  requirements for any later action tools.
+- Use fakes for development tests. Any live check requires explicit approval
+  and an isolated test account.
 
-## Before implementation
+## User-provided setup placeholders
 
-The operating network restrictions and active design must be formally changed
-in the environment where cloud integration is to run. The design must specify
-allowed provider endpoints, OAuth client registration and redirect handling,
-credential storage, permission and revocation behavior, independent evidence,
-event identity, error handling and partial failures. Provider-specific setup
-and end-to-end testing remain outstanding. Nothing in this record implements
-OAuth, accesses an account, or establishes that Outlook is connected.
+No values should be sent in chat or committed. Before any future OAuth
+implementation, the owner must supply these locally:
+
+| Placeholder | What to provide / configure |
+|---|---|
+| `<GOOGLE_CLOUD_PROJECT_ID>` | The Google Cloud project used for Jarvis's OAuth consent configuration. |
+| `<GOOGLE_OAUTH_CLIENT_ID>` | Create an OAuth client of the installed/desktop application type in that project. The client ID is in the downloaded client JSON. |
+| `<GOOGLE_OAUTH_CLIENT_SECRET>` | Keep it only in the downloaded client JSON at `%LOCALAPPDATA%\Jarvis\Google\oauth-client.json`; do not paste it into chat, source, checked-in config, or logs. |
+| `<GOOGLE_TEST_ACCOUNT_EMAIL>` | Add the account to the consent screen's test-user list when the app is in testing mode. Do not share its password. |
+| `<GOOGLE_REDIRECT_HANDLING>` | Use the selected OAuth library's supported loopback callback; implementation must document the exact binding, ephemeral/fixed port choice, state validation, and PKCE behavior before enabling it. |
+| `<GOOGLE_ALLOWED_ENDPOINTS>` | Enumerate and approve the minimum Google OAuth endpoints needed. The current network policy allows none of them. |
+
+The local credential directory is
+`%LOCALAPPDATA%\Jarvis\Google\credentials`. The client JSON is user-managed
+setup, not a repository file. The OAuth package references currently in the
+project are floating and have not been restored or validated; pin compatible
+versions before a reproducible OAuth build.
+
+## Blocking requirements before implementation
+
+The active operating network restriction and design must be formally changed
+in the environment where OAuth will run. A complete design must approve exact
+endpoints, redirect handling, credential lifecycle and revocation behavior,
+scope consent, failure/partial states, and a test strategy. It must also
+identify the one Jarvis host service that owns connection state and how the
+user explicitly connects/disconnects the account. Until those prerequisites
+are met, no browser flow, Google call, or Jarvis DI/UI integration may be
+enabled. No OAuth credentials have been supplied or accessed, and no Google
+account is connected.

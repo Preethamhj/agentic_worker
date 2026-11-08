@@ -6,8 +6,9 @@ Version 1.0 - October 2026. Built from HLD/LLD specification.
 
 ## Requested future direction
 
-The owner requested an internet-connected collaboration direction, beginning
-with Outlook Calendar; see [ADR-0009](architecture/adr/ADR-0009-cloud-collaboration-direction.md).
+The owner now requests Google account sign-in as the first collaboration
+milestone, before any provider APIs; see
+[ADR-0009](architecture/adr/ADR-0009-cloud-collaboration-direction.md).
 This is not implemented and does not change the active local-only boundaries
 or authorize external connections. A future implementation requires the
 operating restrictions and this design's affected contracts to be formally

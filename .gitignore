@@ -26,6 +26,11 @@ eval-sandbox/
 audit.db
 *.sqlite3
 
+# Local Google OAuth client files and credential stores
+oauth-client.json
+client_secret_*.json
+credentials/
+
 # OS / IDE
 .DS_Store
 Thumbs.db
