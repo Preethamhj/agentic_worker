@@ -97,7 +97,7 @@ The development run is not the frozen paper evaluation. The five-repetition pape
 
 - Verification stages 7 and 8 are deferred to Phase 6 and currently report `NOT_RUN`.
 - Filesystem evidence snapshots are non-recursive and do not claim to observe all descendant or unrelated changes.
-- Search enumeration skips reparse-point directories but may include reparse-point files without resolving their targets; verified search paths do not guarantee that file-link targets stay inside the search root.
+- Search enumeration skips reparse-point directories and escalates if a matching file is a reparse point. This check is a point-in-time observation and does not prevent subsequent filesystem changes.
 - Notepad resolution supports the configured/packaged Windows locations described by the project; arbitrary installations are not guaranteed to resolve.
 - Real Task Scheduler tests are opt-in and require `JARVIS_REAL_SCHEDULER=1`; fake-scheduler tests are the default for evaluation.
 - The evaluation uses a small fixed catalogue and synthetic faults; it does not establish performance or reliability for every Windows workload.

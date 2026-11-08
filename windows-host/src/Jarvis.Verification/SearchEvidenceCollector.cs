@@ -44,8 +44,20 @@ internal sealed class SearchEvidenceCollector
             ["max_results"] = maxResults,
             ["independently_enumerated_count"] = enumeration.Paths.Count,
             ["enumeration_hit_result_cap"] = enumeration.CapReached,
+            ["matching_reparse_point_encountered"] = enumeration.MatchingReparsePointEncountered,
             ["enumerated_paths"] = enumeration.Paths
         };
+
+        if (enumeration.MatchingReparsePointEncountered)
+        {
+            return new IndependentEvidenceObservation(
+                "paths_match",
+                nameof(SearchEvidenceCollector),
+                observed,
+                false,
+                "A matching file is a reparse point; its target cannot be independently established as safe.",
+                "ESCALATE");
+        }
 
         if (enumeration.CapReached)
         {
@@ -77,6 +89,7 @@ internal sealed class SearchEvidenceCollector
             throw new PlatformNotSupportedException("Independent FindFirstFileEx search verification is Windows-only.");
 
         var paths = new List<string>(maxResults);
+        var matchingReparsePointEncountered = false;
         var queue = new Queue<(string Directory, int Depth)>();
         queue.Enqueue((root, 0));
 
@@ -109,9 +122,14 @@ internal sealed class SearchEvidenceCollector
                     }
                     else if (FileSystemName.MatchesSimpleExpression(pattern, entry.FileName, ignoreCase: true))
                     {
+                        if (isReparsePoint)
+                        {
+                            matchingReparsePointEncountered = true;
+                            continue;
+                        }
                         paths.Add(Path.GetFullPath(path));
                         if (paths.Count >= maxResults)
-                            return new EnumerationResult(paths, true);
+                            return new EnumerationResult(paths, true, matchingReparsePointEncountered);
                     }
                 }
             }
@@ -124,7 +142,7 @@ internal sealed class SearchEvidenceCollector
                     new Win32Exception(nextError));
         }
 
-        return new EnumerationResult(paths, false);
+        return new EnumerationResult(paths, false, matchingReparsePointEncountered);
     }
 
     private static SafeFindHandle FindFirst(string directory, out FindData entry) =>
@@ -173,7 +191,10 @@ internal sealed class SearchEvidenceCollector
         protected override bool ReleaseHandle() => FindClose(handle);
     }
 
-    private sealed record EnumerationResult(List<string> Paths, bool CapReached);
+    private sealed record EnumerationResult(
+        List<string> Paths,
+        bool CapReached,
+        bool MatchingReparsePointEncountered);
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "FindFirstFileExW")]
     private static extern SafeFindHandle FindFirstFileExW(

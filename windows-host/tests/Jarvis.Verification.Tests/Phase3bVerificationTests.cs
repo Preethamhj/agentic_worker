@@ -38,6 +38,25 @@ public sealed class Phase3bVerificationTests : IDisposable
     }
 
     [Fact]
+    public async AsyncTask Search_With_Matching_File_Link_To_Outside_Does_Not_Verify()
+    {
+        var searchRoot = Path.Combine(_root, "search-link");
+        Directory.CreateDirectory(searchRoot);
+        var outsideFile = Path.Combine(_root, "outside-link-target.txt");
+        await File.WriteAllTextAsync(outsideFile, "outside");
+        var link = Path.Combine(searchRoot, "linked.txt");
+        File.CreateSymbolicLink(link, outsideFile);
+        var authorization = IssueSearchAuthorization(searchRoot, "*.txt", "file-link");
+        var token = await _engine.BeginStepAsync(authorization);
+        _authorizationService.Consume(authorization, authorization.StepId);
+
+        var result = await _engine.VerifyAsync(LyingReceipt(authorization), HostObservation(), token);
+
+        result.Status.Should().NotBe("VERIFIED");
+        result.Reasons.Should().Contain(reason => reason.Contains("reparse", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async AsyncTask Search_Uses_Independent_Enumeration_And_Ignores_Receipt_Output()
     {
         var searchRoot = Path.Combine(_root, "search");
