@@ -22,6 +22,10 @@ public sealed class LiveFactAttribute : FactAttribute
     }
 }
 
+[CollectionDefinition("Live Ollama", DisableParallelization = true)]
+public sealed class LiveOllamaCollection;
+
+[Collection("Live Ollama")]
 public sealed class LiveSearchEndToEndTests
 {
     [LiveFact]

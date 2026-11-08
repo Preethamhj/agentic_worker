@@ -13,6 +13,7 @@ using Xunit;
 
 namespace Jarvis.E2E.Tests;
 
+[Collection("Live Ollama")]
 public sealed class LiveMutationEndToEndTests
 {
     [LiveFact]
@@ -175,7 +176,9 @@ public sealed class LiveMutationEndToEndTests
 
     private static void AssertPlannedTool(ScenarioOutcome outcome, string toolId)
     {
-        outcome.Plan.Should().NotBeNull();
+        outcome.Plan.Should().NotBeNull(
+            "planning for {0} must return a response; task state: {1}; reason: {2}",
+            toolId, outcome.Result.FinalState, outcome.Result.StatusMessage);
         outcome.Plan!.Intent.Source.Should().Be("llm");
         outcome.Plan.Steps.Should().ContainSingle(step => step.ToolCall.ToolId == toolId);
     }
