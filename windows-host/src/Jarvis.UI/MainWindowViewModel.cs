@@ -16,6 +16,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private TaskViewModel? _task;
     private string? _errorMessage;
     private bool _isRunning;
+    private string _progressMessage = string.Empty;
     private string _prompt = string.Empty;
     private CancellationTokenSource? _currentTaskCancellation;
 
@@ -64,6 +65,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         private set => SetProperty(ref _isRunning, value);
     }
 
+    /// <summary>Describes the currently active host operation.</summary>
+    public string ProgressMessage
+    {
+        get => _progressMessage;
+        private set => SetProperty(ref _progressMessage, value);
+    }
+
     /// <summary>Read-only history projection for the history tab.</summary>
     public HistoryViewModel History { get; private set; }
 
@@ -83,6 +91,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             throw new InvalidOperationException("A Jarvis task is already running.");
 
         IsRunning = true;
+        ProgressMessage = "Starting the local AI server...";
         ErrorMessage = null;
         Task = null;
         using var taskCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -93,6 +102,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 _approvalHandler,
                 _escalationHandler,
                 taskCancellation.Token);
+            ProgressMessage = "Planning and processing your request. Approval may be required.";
             var result = await session.RunTaskAsync(prompt, taskCancellation.Token);
             var history = session.ReadHistory(result.TaskId);
             Task = new TaskViewModel(result, history.StateTransitions);
@@ -115,6 +125,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         finally
         {
             _currentTaskCancellation = null;
+            ProgressMessage = string.Empty;
             IsRunning = false;
         }
     }

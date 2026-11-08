@@ -45,6 +45,7 @@ public sealed class WpfDecisionDialogPresenter : IDecisionDialogPresenter
         body.Children.Add(buttons);
 
         var window = CreateWindow("Jarvis - Authorization required", body);
+        window.ContentRendered += (_, _) => deny.Focus();
         deny.Click += (_, _) => window.Close();
         approve.Click += (_, _) => window.Close();
         window.Closed += (_, _) => viewModel.Close();
@@ -72,6 +73,7 @@ public sealed class WpfDecisionDialogPresenter : IDecisionDialogPresenter
         body.Children.Add(buttons);
 
         var window = CreateWindow("Jarvis - Verification escalation", body);
+        window.ContentRendered += (_, _) => abort.Focus();
         abort.Click += (_, _) => window.Close();
         retry.Click += (_, _) => window.Close();
         window.Closed += (_, _) => viewModel.AbortCommand.Execute(null);
@@ -140,7 +142,8 @@ public sealed class WpfDecisionDialogPresenter : IDecisionDialogPresenter
             MinWidth = 600,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             ResizeMode = ResizeMode.CanResize,
-            ShowInTaskbar = false,
+            ShowInTaskbar = true,
+            Topmost = true,
             Background = SystemColors.WindowBrush,
             Foreground = SystemColors.WindowTextBrush
         };

@@ -30,6 +30,7 @@
                         <TextBlock Text="{Binding Task.FinalMessage, StringFormat=Result: {0}}" FontSize="20" FontWeight="Bold" />
                         <TextBlock Text="{Binding Task.StatusMessage}" TextWrapping="Wrap" />
                         <TextBlock Text="{Binding ErrorMessage}" Foreground="Red" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding ProgressMessage}" TextWrapping="Wrap" />
                         <ProgressBar Height="4" IsIndeterminate="{Binding IsRunning}" />
                     </StackPanel>
                     <DataGrid Grid.Row="1" ItemsSource="{Binding Task.VerificationStages}" IsReadOnly="True"

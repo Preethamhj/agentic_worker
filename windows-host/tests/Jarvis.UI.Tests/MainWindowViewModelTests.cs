@@ -13,6 +13,34 @@ namespace Jarvis.UI.Tests;
 public sealed class MainWindowViewModelTests
 {
     [Fact]
+    public async Task RunPromptAsync_Shows_Progress_While_Session_Is_Running()
+    {
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finish = new TaskCompletionSource<TaskOrchestratorResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var session = new FakeJarvisSession
+        {
+            Run = _ =>
+            {
+                started.SetResult();
+                return finish.Task;
+            }
+        };
+        var viewModel = new MainWindowViewModel(
+            new FakeJarvisSessionFactory(session),
+            new WpfApprovalHandler(new InlineDispatcher(), new NoOpDialogs()),
+            new WpfEscalationHandler(new InlineDispatcher(), new NoOpDialogs()));
+
+        var run = viewModel.RunPromptAsync("find documents");
+        await started.Task;
+        viewModel.IsRunning.Should().BeTrue();
+        viewModel.ProgressMessage.Should().NotBeNullOrWhiteSpace();
+        finish.SetResult(session.Result);
+        await run;
+        viewModel.ProgressMessage.Should().BeEmpty();
+        viewModel.Task!.FinalMessage.Should().Be("verified");
+    }
+
+    [Fact]
     public async Task CancelCurrentTask_Cancels_Active_Session_And_Shows_Status()
     {
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
