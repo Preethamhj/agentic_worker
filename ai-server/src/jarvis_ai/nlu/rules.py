@@ -7,6 +7,44 @@ from jarvis_ai.nlu.risk import detect_keyword_risk
 from jarvis_ai.schemas.models import IntentModel, RiskModel
 
 
+class ReminderTimeError(ValueError):
+    """The requested reminder time needs clarification."""
+
+
+def _absolute_reminder_time(value: str, now: datetime.datetime) -> datetime.datetime:
+    match = re.fullmatch(
+        r"\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*(today|tomorrow)?\s*",
+        value,
+        re.IGNORECASE,
+    )
+    if match is None:
+        raise ReminderTimeError("Use a local time such as 5:30 pm today or 14:15 tomorrow.")
+    hour = int(match.group(1))
+    minute = int(match.group(2) or 0)
+    meridiem = (match.group(3) or "").lower()
+    day = (match.group(4) or "").lower()
+    if minute > 59 or (meridiem and not 1 <= hour <= 12) or (not meridiem and hour > 23):
+        raise ReminderTimeError("The reminder time is invalid.")
+    if meridiem:
+        hour = hour % 12 + (12 if meridiem == "pm" else 0)
+    local_now = now.astimezone()
+    target_date = local_now.date() + datetime.timedelta(days=1 if day == "tomorrow" else 0)
+    wall = datetime.datetime.combine(target_date, datetime.time(hour, minute))
+    if not day and wall <= local_now.replace(tzinfo=None):
+        wall += datetime.timedelta(days=1)
+
+    candidates = [
+        wall.replace(fold=fold).astimezone().astimezone(datetime.UTC)
+        for fold in (0, 1)
+    ]
+    valid = [candidate for candidate in candidates if candidate.astimezone().replace(tzinfo=None) == wall]
+    if not valid or len(set(valid)) > 1:
+        raise ReminderTimeError("That local time is ambiguous or does not exist. Choose another time.")
+    if valid[0] <= now:
+        raise ReminderTimeError("That reminder time is in the past. Choose a future time.")
+    return valid[0]
+
+
 def parse_rules_fast_path(text: str) -> IntentModel | None:
     norm = normalize_text(text)
     norm_lower = norm.lower()
@@ -116,7 +154,7 @@ def parse_rules_fast_path(text: str) -> IntentModel | None:
                 return None
             scheduled_at = now + datetime.timedelta(minutes=delay)
         else:
-            scheduled_at = now
+            scheduled_at = _absolute_reminder_time(m_remind.group(3), now)
         time_iso = scheduled_at.replace(microsecond=0).isoformat()
         risk_lvl, reasons = detect_keyword_risk(norm)
         return IntentModel(

@@ -7,6 +7,7 @@ import ollama
 from jarvis_ai.core.errors import StructuredOutputError
 from jarvis_ai.core.ids import generate_intent_id, generate_step_id, generate_trace_id
 from jarvis_ai.nlu.intent_parser import IntentParser
+from jarvis_ai.nlu.rules import ReminderTimeError
 from jarvis_ai.planning.decomposer import Decomposer
 from jarvis_ai.planning.tool_mapper import ToolMapper
 from jarvis_ai.schemas.models import (
@@ -44,6 +45,8 @@ class Planner:
             )
         try:
             intent: IntentModel = self.intent_parser.parse(request.text)
+        except ReminderTimeError as error:
+            return self._planning_failure(trace_id, "clarify", str(error))
         except StructuredOutputError:
             return self._planning_failure(
                 trace_id, "clarify", "The model could not produce a valid plan. Please rephrase your request."

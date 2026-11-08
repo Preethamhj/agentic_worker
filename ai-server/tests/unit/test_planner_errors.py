@@ -1,3 +1,5 @@
+import datetime
+
 import httpx
 import ollama
 import pytest
@@ -6,6 +8,39 @@ from jarvis_ai.llm.fake import FakeLlmClient
 from jarvis_ai.nlu.intent_parser import IntentParser
 from jarvis_ai.planning.planner import Planner
 from jarvis_ai.schemas.models import PlanRequestModel
+
+
+@pytest.mark.parametrize("prompt", [
+    "remind me to drink water at 25:00 today",
+    "remind me to drink water at an unspecified time",
+    "remind me to drink water at 12:99 pm today",
+])
+def test_invalid_absolute_reminder_time_requires_clarification(prompt: str) -> None:
+    client = FakeLlmClient()
+    response = Planner(IntentParser(client)).create_plan(
+        PlanRequestModel(session_id="test", text=prompt)
+    )
+    assert response.status == "clarify"
+    assert not response.steps
+    assert not client.call_history
+
+
+def test_past_today_reminder_requires_clarification(monkeypatch: pytest.MonkeyPatch) -> None:
+    real_datetime = datetime.datetime
+
+    class FrozenDateTime(real_datetime):
+        @classmethod
+        def now(cls, tz: datetime.tzinfo | None = None) -> datetime.datetime:
+            local = real_datetime.now().astimezone().replace(hour=12, minute=0, second=0, microsecond=0)
+            return local.astimezone(tz) if tz else local.replace(tzinfo=None)
+
+    monkeypatch.setattr(datetime, "datetime", FrozenDateTime)
+    prompt = "remind me to drink water at 11:00 today"
+    response = Planner(IntentParser(FakeLlmClient())).create_plan(
+        PlanRequestModel(session_id="test", text=prompt)
+    )
+    assert response.status == "clarify"
+    assert not response.steps
 
 
 @pytest.mark.parametrize("prompt", [
