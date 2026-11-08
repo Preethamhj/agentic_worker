@@ -61,3 +61,7 @@ The fresh one-repetition fake-scheduler smoke used the fixed seed and two tasks 
 | D | F11 | `app.launch` | VERIFIED | FAILED | `[]` | (3) genuine D scope limitation; see the F11 finding above |
 
 The first-smoke C deviations C/F1, C/F9, and C/F10 for `app.launch`, plus C/F15 for `task.schedule_reminder`, were class (1) Eval baseline defects and are absent after commit `2095b3b`. The raw pre-fix reasons were `[]`; the app fix requires process start within the current step window, and the reminder fix leaves extra-task detection to D.
+
+### Live Ops search result-integrity finding (2026-11-08)
+
+At `fc4bc7c`, the focused `Jarvis.E2E.Tests` run reported two failures: the F7 omitted-result and F8 phantom-result BAD cases returned D=`VERIFIED` rather than the expected `FAILED`. The verifier independently enumerates the signed search root and does not read receipt output; meanwhile the CLI displays receipt stdout separately from the verifier verdict. Thus an incorrect executor result can be displayed next to a VERIFIED status. Independent enumeration alone does not establish that the displayed executor result is correct. The result flow and its verification contract require a safety-preserving design and focused validation; a protocol amendment alone does not resolve the functional issue. No new paper evaluation was run.
