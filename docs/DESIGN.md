@@ -4,6 +4,17 @@ Version 1.0 - October 2026. Built from HLD/LLD specification.
 
 ---
 
+## Requested future direction
+
+The owner requested an internet-connected collaboration direction, beginning
+with Outlook Calendar; see [ADR-0009](architecture/adr/ADR-0009-cloud-collaboration-direction.md).
+This is not implemented and does not change the active local-only boundaries
+or authorize external connections. A future implementation requires the
+operating restrictions and this design's affected contracts to be formally
+updated first.
+
+---
+
 ## 1. System Definition
 
 **One sentence:** A local-first Windows assistant that converts natural language into allowlisted tool calls, executes them only after safety checks and approval, and reports success only after an independent verifier confirms that the real system state matches what was authorized.
