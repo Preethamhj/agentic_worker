@@ -35,13 +35,13 @@ public sealed class LiveMutationEndToEndTests
             "blocked.txt");
 
         await using var server = await LiveTestAiServer.StartAsync(repoRoot, liveRoot);
-        using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(100) };
+        using var httpClient = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
         var sessionId = $"live-{Guid.NewGuid():N}";
         var apiClient = new ApiClient(
             httpClient,
             $"http://127.0.0.1:{server.Port}",
             server.Token,
-            planTimeout: TimeSpan.FromSeconds(90));
+            planTimeout: ApiClient.PlanTimeoutFromSettings(Path.Combine(repoRoot, "config", "settings.json")));
         using var auditStore = new SqliteAuditStore(Path.Combine(liveRoot, "audit.db"));
         var authorizationService = new AuthorizationService(
             new InMemoryDpapiKeyStore(),

@@ -86,6 +86,15 @@ public sealed class TaskOrchestrator
             var plan = await _planner.CreatePlanAsync(userPrompt, traceId, cancellationToken).ConfigureAwait(false);
             stateMachine.Transition(TaskState.Planned, $"Plan generated with {plan.Steps.Count} steps.");
 
+            if (!string.Equals(plan.Status, "ok", StringComparison.Ordinal))
+            {
+                var reason = string.IsNullOrWhiteSpace(plan.Message)
+                    ? $"Planner returned status '{plan.Status}'."
+                    : plan.Message;
+                stateMachine.Transition(TaskState.Failed, reason);
+                return new TaskOrchestratorResult(taskId, stateMachine.CurrentState, receipts, verifications, reason);
+            }
+
             if (plan.Steps.Count == 0)
             {
                 stateMachine.Transition(TaskState.Failed, "Plan contains 0 steps.");

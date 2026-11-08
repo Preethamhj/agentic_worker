@@ -126,8 +126,9 @@ public sealed class JarvisSessionFactory : IJarvisSessionFactory
             };
             var stepExecutor = new AuthorizedStepExecutor(authorizationService, executors, toolPolicy);
             var sessionId = $"session-{Guid.NewGuid():N}"[..12];
-            httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(95) };
-            var apiClient = new ApiClient(httpClient, serverProcess.BaseUrl, serverProcess.Token);
+            var planTimeout = ApiClient.PlanTimeoutFromSettings(Path.Combine(configDirectory, "settings.json"));
+            httpClient = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
+            var apiClient = new ApiClient(httpClient, serverProcess.BaseUrl, serverProcess.Token, planTimeout: planTimeout);
             var planner = new ApiClientSessionPlanner(apiClient, sessionId);
             queue = new ExecutionQueue();
             var verifier = new VerificationEngine(authorizationService, auditStore);

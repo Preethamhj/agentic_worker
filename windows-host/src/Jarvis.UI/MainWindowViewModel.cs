@@ -17,6 +17,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private string? _errorMessage;
     private bool _isRunning;
     private string _prompt = string.Empty;
+    private CancellationTokenSource? _currentTaskCancellation;
 
     /// <summary>Creates the WPF host view model around the shared Jarvis session factory.</summary>
     public MainWindowViewModel(
@@ -83,13 +84,16 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
         IsRunning = true;
         ErrorMessage = null;
+        Task = null;
+        using var taskCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _currentTaskCancellation = taskCancellation;
         try
         {
             await using var session = await _sessionFactory.StartAsync(
                 _approvalHandler,
                 _escalationHandler,
-                cancellationToken);
-            var result = await session.RunTaskAsync(prompt, cancellationToken);
+                taskCancellation.Token);
+            var result = await session.RunTaskAsync(prompt, taskCancellation.Token);
             var history = session.ReadHistory(result.TaskId);
             Task = new TaskViewModel(result, history.StateTransitions);
             History = new HistoryViewModel(
@@ -100,9 +104,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 history.LegacySafetyDecisions);
             OnPropertyChanged(nameof(History));
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (taskCancellation.IsCancellationRequested)
         {
-            throw;
+            ErrorMessage = "Task cancelled. Operations already started may have taken effect; check history and your files.";
         }
         catch (Exception exception)
         {
@@ -110,9 +114,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
         finally
         {
+            _currentTaskCancellation = null;
             IsRunning = false;
         }
     }
+
+    /// <summary>Requests cancellation of the active task, if any.</summary>
+    public void CancelCurrentTask() => _currentTaskCancellation?.Cancel();
 
     private void SetProperty<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
     {

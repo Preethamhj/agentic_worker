@@ -5,7 +5,7 @@
   "ai_server_host": "127.0.0.1",
   "ollama_host": "http://127.0.0.1:11434",
   "timeouts": {
-    "llm_seconds": 30,
+    "llm_seconds": 120,
     "step_execution_seconds": 60,
     "escalation_seconds": 120,
     "verification_seconds": 30

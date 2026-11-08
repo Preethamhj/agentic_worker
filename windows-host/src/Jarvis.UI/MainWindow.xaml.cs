@@ -19,4 +19,9 @@ public partial class MainWindow : Window
     {
         await _viewModel.RunPromptAsync(PromptInput.Text);
     }
+
+    private void CancelTask_Click(object sender, RoutedEventArgs e)
+    {
+        _viewModel.CancelCurrentTask();
+    }
 }

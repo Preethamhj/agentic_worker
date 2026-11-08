@@ -1,4 +1,10 @@
-from jarvis_ai.core.ids import generate_step_id, generate_trace_id
+from typing import Literal
+
+import httpx
+import ollama
+
+from jarvis_ai.core.errors import StructuredOutputError
+from jarvis_ai.core.ids import generate_intent_id, generate_step_id, generate_trace_id
 from jarvis_ai.nlu.intent_parser import IntentParser
 from jarvis_ai.planning.decomposer import Decomposer
 from jarvis_ai.planning.tool_mapper import ToolMapper
@@ -7,6 +13,7 @@ from jarvis_ai.schemas.models import (
     PlanRequestModel,
     PlanResponseModel,
     PlanStepModel,
+    RiskModel,
     ToolCallModel,
 )
 from jarvis_ai.verification_planning.planner import VerificationPlanner
@@ -22,7 +29,20 @@ class Planner:
 
     def create_plan(self, request: PlanRequestModel) -> PlanResponseModel:
         trace_id = generate_trace_id()
-        intent: IntentModel = self.intent_parser.parse(request.text)
+        try:
+            intent: IntentModel = self.intent_parser.parse(request.text)
+        except StructuredOutputError:
+            return self._planning_failure(
+                trace_id, "clarify", "The model could not produce a valid plan. Please rephrase your request."
+            )
+        except httpx.TimeoutException:
+            return self._planning_failure(
+                trace_id, "error", "The local Ollama model timed out. Check that it is responsive and try again."
+            )
+        except (httpx.RequestError, ollama.ResponseError):
+            return self._planning_failure(
+                trace_id, "error", "The local Ollama model is unavailable. Check Ollama and the configured model."
+            )
 
         if intent.action == "unsupported":
             return PlanResponseModel(
@@ -74,4 +94,24 @@ class Planner:
             intent=intent,
             steps=steps,
             message="Plan generated successfully",
+        )
+
+    @staticmethod
+    def _planning_failure(
+        trace_id: str, status: Literal["clarify", "error"], message: str
+    ) -> PlanResponseModel:
+        return PlanResponseModel(
+            trace_id=trace_id,
+            status=status,
+            intent=IntentModel(
+                intent_id=generate_intent_id(),
+                kind="chat",
+                action="unsupported",
+                confidence=0.0,
+                entities={},
+                risk=RiskModel(level="low", reasons=[]),
+                source="llm",
+            ),
+            steps=[],
+            message=message,
         )

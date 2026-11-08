@@ -1,7 +1,6 @@
 import json
 
 from jarvis_ai.core.config import get_settings
-from jarvis_ai.core.errors import StructuredOutputError
 from jarvis_ai.core.ids import generate_intent_id
 from jarvis_ai.llm.client import ILlmClient
 from jarvis_ai.llm.structured import generate_validated
@@ -57,37 +56,24 @@ class IntentParser:
 
         user_prompt = f"User request: {normalized_text}"
 
-        try:
-            llm_intent = generate_validated(
-                client=self.llm_client,
-                prompt=user_prompt,
-                model_class=IntentModel,
-                system_prompt=system_prompt,
-                max_retries=2,
-            )
-            # Maximum advisory risk calculation: max(keyword, llm)
-            final_risk = max_risk(kw_risk, llm_intent.risk.level)
-            reasons = list(set(kw_reasons + llm_intent.risk.reasons))
+        llm_intent = generate_validated(
+            client=self.llm_client,
+            prompt=user_prompt,
+            model_class=IntentModel,
+            system_prompt=system_prompt,
+            max_retries=2,
+        )
+        final_risk = max_risk(kw_risk, llm_intent.risk.level)
+        reasons = list(set(kw_reasons + llm_intent.risk.reasons))
 
-            iid = llm_intent.intent_id if llm_intent.intent_id else generate_intent_id()
+        iid = llm_intent.intent_id if llm_intent.intent_id else generate_intent_id()
 
-            return IntentModel(
-                intent_id=iid,
-                kind=llm_intent.kind,
-                action=llm_intent.action,
-                confidence=llm_intent.confidence,
-                entities=llm_intent.entities,
-                risk=RiskModel(level=final_risk, reasons=reasons),
-                source="llm",
-            )
-        except (StructuredOutputError, Exception):  # noqa: BLE001
-            # If LLM parsing fails or Ollama is unavailable, return an unsupported/fallback intent gracefully
-            return IntentModel(
-                intent_id=generate_intent_id(),
-                kind="chat",
-                action="unsupported",
-                confidence=0.0,
-                entities={},
-                risk=RiskModel(level=kw_risk, reasons=kw_reasons),
-                source="rules",
-            )
+        return IntentModel(
+            intent_id=iid,
+            kind=llm_intent.kind,
+            action=llm_intent.action,
+            confidence=llm_intent.confidence,
+            entities=llm_intent.entities,
+            risk=RiskModel(level=final_risk, reasons=reasons),
+            source="llm",
+        )

@@ -28,7 +28,7 @@ class OllamaClient:
         if not is_loopback(self.host):
             raise ValueError("Ollama host must be a loopback address")
         self.model = model if model else self.settings.model
-        self.client = ollama.Client(host=self.host)
+        self.client = ollama.Client(host=self.host, timeout=self.settings.llm_timeout_seconds)
 
     def generate(
         self,

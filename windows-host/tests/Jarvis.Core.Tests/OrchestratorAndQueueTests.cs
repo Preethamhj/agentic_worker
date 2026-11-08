@@ -8,6 +8,26 @@ namespace Jarvis.Core.Tests;
 
 public class OrchestratorAndQueueTests
 {
+    [Theory]
+    [InlineData("clarify", false)]
+    [InlineData("error", false)]
+    [InlineData("clarify", true)]
+    [InlineData("error", true)]
+    public async Task TaskOrchestrator_Rejects_NonOk_Plan_And_Surfaces_Reason(string status, bool hasSteps)
+    {
+        var executor = new FakeStepExecutor();
+        var orchestrator = CreateTestOrchestrator(
+            new SequenceVerifier("VERIFIED"),
+            stepExecutor: executor,
+            planner: new FakePlanner(status, hasSteps));
+
+        var result = await orchestrator.RunTaskAsync("test request");
+
+        result.FinalState.Should().Be(TaskState.Failed);
+        result.StatusMessage.Should().Be("Planner needs attention.");
+        executor.ExecuteCallCount.Should().Be(0);
+    }
+
     [Fact]
     public async Task ExecutionQueue_Processes_Items_Sequentially_In_Fifo_Order()
     {
@@ -268,10 +288,11 @@ public class OrchestratorAndQueueTests
         IApprovalHandler? approvalHandler = null,
         IStepExecutor? stepExecutor = null,
         IClock? clock = null,
-        IEscalationHandler? escalationHandler = null)
+        IEscalationHandler? escalationHandler = null,
+        IPlanner? planner = null)
     {
         var queue = new ExecutionQueue();
-        var planner = new FakePlanner();
+        planner ??= new FakePlanner();
         var safety = safetyGate ?? new FakeSafetyGate(allowed: true, risk: "medium");
         var approval = approvalHandler ?? new FakeApprovalHandler(userApproved: true);
         var executor = stepExecutor ?? new FakeStepExecutor();
@@ -289,12 +310,21 @@ public class OrchestratorAndQueueTests
 
     private class FakePlanner : IPlanner
     {
+        private readonly string _status;
+        private readonly bool _hasSteps;
+
+        public FakePlanner(string status = "ok", bool hasSteps = true)
+        {
+            _status = status;
+            _hasSteps = hasSteps;
+        }
+
         public Task<PlanResponseDto> CreatePlanAsync(string prompt, string? traceId = null, CancellationToken cancellationToken = default)
         {
             var plan = new PlanResponseDto(
                 SchemaVersion: 1,
                 TraceId: "trace-" + Guid.NewGuid().ToString("N")[..8],
-                Status: "ok",
+                Status: _status,
                 Intent: new IntentDto(
                     SchemaVersion: 1,
                     IntentId: "intent-1",
@@ -318,8 +348,10 @@ public class OrchestratorAndQueueTests
                         AdvisoryRisk: "medium"
                     )
                 },
-                Message: "Plan generated successfully."
+                Message: _status == "ok" ? "Plan generated successfully." : "Planner needs attention."
             );
+            if (!_hasSteps)
+                plan.Steps.Clear();
             return Task.FromResult(plan);
         }
     }

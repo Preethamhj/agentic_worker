@@ -58,6 +58,17 @@ assert len(GOLDEN_PROMPTS) == 30, "Golden prompts list must contain exactly 30 p
 @pytest.fixture
 def planner() -> Planner:
     fake_llm = FakeLlmClient()
+    for prompt, status, _ in GOLDEN_PROMPTS:
+        if status == "unsupported":
+            fake_llm.set_response(prompt, {
+                "intent_id": "intent-unsupported",
+                "kind": "chat",
+                "action": "unsupported",
+                "confidence": 1.0,
+                "entities": {},
+                "risk": {"level": "low", "reasons": []},
+                "source": "llm",
+            })
     intent_parser = IntentParser(fake_llm)
     return Planner(intent_parser)
 

@@ -11,6 +11,8 @@
         <DockPanel Grid.Row="0" Margin="0,0,0,12">
             <Button Content="Run task" Width="110" Height="36" Margin="10,0,0,0"
                     Click="RunTask_Click" IsEnabled="{Binding IsRunning, Converter={StaticResource InverseBooleanConverter}}" />
+            <Button Content="Cancel" Width="80" Height="36" Margin="10,0,0,0"
+                    Click="CancelTask_Click" IsEnabled="{Binding IsRunning}" />
             <TextBox x:Name="PromptInput" Text="{Binding Prompt, UpdateSourceTrigger=PropertyChanged}"
                      MinHeight="36" VerticalContentAlignment="Center"
                      ToolTip="Describe the task for Jarvis to plan and verify." />

@@ -18,8 +18,8 @@ public interface IApiClient
 /// Invariants:
 /// - X-Jarvis-Token on every authenticated request.
 /// - X-Trace-Id header forwarded or generated.
-/// - Plan timeout default 90 seconds (real model p95 around 28 s).
-/// - Exactly one retry for plan on transient failure.
+/// - Plan requests have a bounded timeout; transient failures may be retried once.
+/// - Timed-out plan requests are not retried.
 /// - Idempotency-Key header set to task_id for report requests.
 /// - Strictly local loopback only.
 /// </summary>
@@ -50,6 +50,22 @@ public sealed class ApiClient : IApiClient
         _reportTimeout = reportTimeout ?? TimeSpan.FromSeconds(30);
     }
 
+    /// <summary>Allows three model calls and thirty seconds for local request processing.</summary>
+    public static TimeSpan PlanTimeoutForModel(TimeSpan modelTimeout)
+    {
+        if (modelTimeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(modelTimeout));
+        return modelTimeout * 3 + TimeSpan.FromSeconds(30);
+    }
+
+    /// <summary>Reads the model timeout used by the local Python server.</summary>
+    public static TimeSpan PlanTimeoutFromSettings(string settingsPath)
+    {
+        using var settings = JsonDocument.Parse(File.ReadAllText(settingsPath));
+        var seconds = settings.RootElement.GetProperty("timeouts").GetProperty("llm_seconds").GetInt32();
+        return PlanTimeoutForModel(TimeSpan.FromSeconds(seconds));
+    }
+
     public async Task<PlanResponseDto> GetPlanAsync(PlanRequestDto request, string? traceId = null, CancellationToken cancellationToken = default)
     {
         var trace = traceId ?? $"trace-{Guid.NewGuid():N}"[..12];
@@ -78,11 +94,11 @@ public sealed class ApiClient : IApiClient
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    var errorBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                    var errorBody = await response.Content.ReadAsStringAsync(linkedCts.Token).ConfigureAwait(false);
                     throw new JarvisApiException($"AI server returned {(int)response.StatusCode}: {errorBody}", (int)response.StatusCode);
                 }
 
-                var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                var content = await response.Content.ReadAsStringAsync(linkedCts.Token).ConfigureAwait(false);
                 try
                 {
                     var plan = JsonSerializer.Deserialize<PlanResponseDto>(content, JsonOptions);
@@ -97,9 +113,14 @@ public sealed class ApiClient : IApiClient
                     throw new JarvisApiException($"AI server returned malformed JSON response: {jex.Message}", (int)response.StatusCode, jex);
                 }
             }
-            catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                lastException = new TimeoutException($"Plan generation timed out after {_planTimeout.TotalSeconds:F1}s (attempt {attempt}/2).");
+                throw;
+            }
+            catch (OperationCanceledException ex)
+            {
+                var timeout = new TimeoutException($"Plan generation timed out after up to {_planTimeout.TotalSeconds:F1}s.", ex);
+                throw new JarvisApiException(timeout.Message, innerException: timeout);
             }
             catch (JarvisApiException jae) when (jae.StatusCode == 401)
             {

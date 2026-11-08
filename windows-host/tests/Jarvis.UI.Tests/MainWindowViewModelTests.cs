@@ -13,6 +13,35 @@ namespace Jarvis.UI.Tests;
 public sealed class MainWindowViewModelTests
 {
     [Fact]
+    public async Task CancelCurrentTask_Cancels_Active_Session_And_Shows_Status()
+    {
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var session = new FakeJarvisSession
+        {
+            Run = async ct =>
+            {
+                started.SetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+                throw new InvalidOperationException("Unreachable");
+            }
+        };
+        var viewModel = new MainWindowViewModel(
+            new FakeJarvisSessionFactory(session),
+            new WpfApprovalHandler(new InlineDispatcher(), new NoOpDialogs()),
+            new WpfEscalationHandler(new InlineDispatcher(), new NoOpDialogs()));
+
+        var run = viewModel.RunPromptAsync("find documents");
+        await started.Task;
+        viewModel.IsRunning.Should().BeTrue();
+        viewModel.CancelCurrentTask();
+        await run;
+
+        viewModel.IsRunning.Should().BeFalse();
+        viewModel.ErrorMessage.Should().Contain("cancel").And.Contain("may have");
+        viewModel.Task.Should().BeNull();
+    }
+
+    [Fact]
     public async Task RunPromptAsync_Uses_Shared_Orchestration_Session_And_Refreshes_Task_History()
     {
         var session = new FakeJarvisSession();
@@ -69,6 +98,7 @@ public sealed class MainWindowViewModelTests
 
     private sealed class FakeJarvisSession : IJarvisSession
     {
+        public Func<CancellationToken, Task<TaskOrchestratorResult>>? Run { get; init; }
         public int AiServerPort => 8000;
         public string? Prompt { get; private set; }
         public TaskOrchestratorResult? ReportedResult { get; private set; }
@@ -83,6 +113,8 @@ public sealed class MainWindowViewModelTests
         {
             Prompt = prompt;
             ReportedResult = Result;
+            if (Run is not null)
+                return Run(cancellationToken);
             return Task.FromResult(Result);
         }
 

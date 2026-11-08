@@ -9,6 +9,53 @@ namespace Jarvis.E2E.Tests;
 
 public class ApiClientTests
 {
+    [Theory]
+    [InlineData(120, 390)]
+    [InlineData(5, 45)]
+    public void PlanTimeout_Accounts_For_Three_Model_Requests(int modelSeconds, int expectedSeconds)
+    {
+        ApiClient.PlanTimeoutForModel(TimeSpan.FromSeconds(modelSeconds))
+            .Should().Be(TimeSpan.FromSeconds(expectedSeconds));
+    }
+
+    [Fact]
+    public async Task ApiClient_Does_Not_Retry_A_Timed_Out_Plan()
+    {
+        var attempts = 0;
+        var handler = new MockHttpMessageHandler(async (_, ct) =>
+        {
+            attempts++;
+            await Task.Delay(1000, ct);
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        });
+        using var client = new HttpClient(handler);
+        var api = new ApiClient(client, "http://127.0.0.1:8000", "token", planTimeout: TimeSpan.FromMilliseconds(50));
+
+        var act = async () => await api.GetPlanAsync(new PlanRequestDto(1, "s1", "p1"));
+        var error = await act.Should().ThrowAsync<JarvisApiException>();
+        error.Which.InnerException.Should().BeAssignableTo<TimeoutException>();
+        attempts.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ApiClient_Propagates_Cancellation_Without_Retry()
+    {
+        var attempts = 0;
+        var handler = new MockHttpMessageHandler(async (_, ct) =>
+        {
+            attempts++;
+            await Task.Delay(1000, ct);
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        });
+        using var client = new HttpClient(handler);
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
+        var api = new ApiClient(client, "http://127.0.0.1:8000", "token");
+
+        var act = async () => await api.GetPlanAsync(new PlanRequestDto(1, "s1", "p1"), cancellationToken: cts.Token);
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        attempts.Should().Be(1);
+    }
+
     private class MockHttpMessageHandler : HttpMessageHandler
     {
         private readonly Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> _handler;

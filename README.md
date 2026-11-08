@@ -66,6 +66,10 @@ dotnet run --project windows-host\src\Jarvis.UI\Jarvis.UI.csproj
 
 For approval dialogs, review the canonical arguments and risk before deciding. Denial and closing the approval dialog both fail closed.
 
+The UI **Cancel** button requests cancellation of the current task. Cancellation does not undo actions already started, and a model request already being processed by the AI server may continue until it finishes or times out. Check task history and affected files after cancelling.
+
+The configured `timeouts.llm_seconds` is passed to the local Ollama HTTP client. The host allows three such model calls plus 30 seconds for a plan, to accommodate two structured-output retries; a host plan timeout is not retried. With the current 120-second setting, the host plan limit is 390 seconds. Ollama HTTP timeouts are network-operation timeouts, not a guarantee of total inference duration.
+
 For a verified file search, the CLI and the UI's **Verified search results** tab show paths independently enumerated by the verifier. The CLI no longer prints executor stdout in task summaries; exit codes and error text are labeled untrusted diagnostics. A verified search result is an observation at verification time, not a guarantee that files will remain unchanged.
 
 ## Tests and checks
