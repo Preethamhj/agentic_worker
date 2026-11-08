@@ -90,9 +90,20 @@ public sealed class LiveSearchEndToEndTests
         stopwatch.Stop();
 
         recordingPlanner.Response.Should().NotBeNull();
-        recordingPlanner.Response!.Intent.Source.Should().Be("llm");
-        recordingPlanner.Response.Steps.Should().ContainSingle(step =>
-            step.ToolCall.ToolId == "fs.search_files");
+        var plan = recordingPlanner.Response!;
+        var escapedLiveRoot = JsonSerializer.Serialize(liveRoot)[1..^1];
+        var planDetails = JsonSerializer.Serialize(new
+        {
+            plan.Status,
+            plan.Message,
+            plan.Intent.Action,
+            plan.Intent.Source,
+            plan.Intent.Entities
+        }).Replace(escapedLiveRoot, "<live-root>", StringComparison.OrdinalIgnoreCase);
+        plan.Intent.Source.Should().Be("llm", "the live test requires the model; plan: {0}", planDetails);
+        plan.Status.Should().Be("ok", "the model must produce a valid plan; plan: {0}", planDetails);
+        plan.Steps.Should().ContainSingle(step =>
+            step.ToolCall.ToolId == "fs.search_files", "plan: {0}", planDetails);
         approval.Requests.Should().ContainSingle();
         result.FinalState.Should().Be(TaskState.Completed);
         result.VerificationResults.Should().ContainSingle(verification =>

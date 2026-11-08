@@ -2,7 +2,7 @@ from typing import Any, Protocol
 
 import ollama
 
-from jarvis_ai.core.config import get_settings
+from jarvis_ai.core.config import get_settings, is_loopback
 
 
 class ILlmClient(Protocol):
@@ -24,9 +24,11 @@ class OllamaClient:
 
     def __init__(self, host: str | None = None, model: str | None = None) -> None:
         self.settings = get_settings()
-        self.host = host
+        self.host = host if host is not None else self.settings.ollama_host
+        if not is_loopback(self.host):
+            raise ValueError("Ollama host must be a loopback address")
         self.model = model if model else self.settings.model
-        self.client = ollama.Client(host=host)
+        self.client = ollama.Client(host=self.host)
 
     def generate(
         self,
