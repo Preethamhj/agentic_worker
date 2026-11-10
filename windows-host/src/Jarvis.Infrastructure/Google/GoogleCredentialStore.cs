@@ -1,3 +1,4 @@
+
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
 using System.Text;
@@ -5,11 +6,9 @@ using System.Text.Json;
 
 namespace Jarvis.Infrastructure.Google;
 
-/// <summary>
-/// Persists Google token data using DPAPI CurrentUser protection.
-/// </summary>
 [SupportedOSPlatform("windows")]
-public sealed class GoogleCredentialStore : IGoogleCredentialStore, IDisposable
+public sealed class GoogleCredentialStore :
+    IGoogleCredentialStore, IDisposable
 {
     private static readonly byte[] Entropy =
         Encoding.UTF8.GetBytes("Jarvis.Google.Credentials.v1");
@@ -21,9 +20,6 @@ public sealed class GoogleCredentialStore : IGoogleCredentialStore, IDisposable
     private readonly SemaphoreSlim _lock = new(1, 1);
     private bool _disposed;
 
-    /// <summary>
-    /// Creates a store using the configured local credential directory.
-    /// </summary>
     public GoogleCredentialStore(GoogleOAuthOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -33,45 +29,47 @@ public sealed class GoogleCredentialStore : IGoogleCredentialStore, IDisposable
         Directory.CreateDirectory(_directory);
     }
 
-    /// <inheritdoc />
-    public async Task StoreAsync<T>(
-        string key,
-        T value,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(key);
-        var path = GetTokenPath<T>(key);
-        var json = JsonSerializer.SerializeToUtf8Bytes(value, JsonOptions);
-        await WriteProtectedAsync(path, json, cancellationToken).ConfigureAwait(false);
-    }
+    // Google IDataStore methods
+    // Exact signatures required by Google.Apis.Auth 1.78.0
 
-    /// <inheritdoc />
-    public async Task<T?> GetAsync<T>(
-        string key,
-        CancellationToken cancellationToken = default)
+    public async Task StoreAsync<T>(string key, T value)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
-        var json = await ReadProtectedAsync(
+
+        var json = JsonSerializer.SerializeToUtf8Bytes(
+            value, JsonOptions);
+
+        await WriteProtectedAsync(
             GetTokenPath<T>(key),
-            cancellationToken).ConfigureAwait(false);
-        return json is null ? default : JsonSerializer.Deserialize<T>(json, JsonOptions);
+            json);
     }
 
-    /// <inheritdoc />
-    public async Task DeleteAsync<T>(
-        string key,
-        CancellationToken cancellationToken = default)
+    public async Task<T> GetAsync<T>(string key)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
-        await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+        var json = await ReadProtectedAsync(
+            GetTokenPath<T>(key));
+
+        if (json is null)
+            return default!;
+
+        return JsonSerializer.Deserialize<T>(
+            json, JsonOptions)!;
+    }
+
+    public async Task DeleteAsync<T>(string key)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+
+        await _lock.WaitAsync();
 
         try
         {
             var path = GetTokenPath<T>(key);
+
             if (File.Exists(path))
-            {
                 File.Delete(path);
-            }
         }
         finally
         {
@@ -79,16 +77,15 @@ public sealed class GoogleCredentialStore : IGoogleCredentialStore, IDisposable
         }
     }
 
-    /// <inheritdoc />
-    public async Task ClearAsync(CancellationToken cancellationToken = default)
+    public async Task ClearAsync()
     {
-        await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await _lock.WaitAsync();
 
         try
         {
-            foreach (var path in Directory.EnumerateFiles(_directory, "token-*.bin"))
+            foreach (var path in Directory.EnumerateFiles(
+                _directory, "token-*.bin"))
             {
-                cancellationToken.ThrowIfCancellationRequested();
                 File.Delete(path);
             }
         }
@@ -98,43 +95,54 @@ public sealed class GoogleCredentialStore : IGoogleCredentialStore, IDisposable
         }
     }
 
-    /// <inheritdoc />
+    // Account information storage
+
     public async Task StoreAccountAsync(
         GoogleAccountInfo account,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(account);
-        ArgumentException.ThrowIfNullOrWhiteSpace(account.AccountId);
-        ArgumentException.ThrowIfNullOrWhiteSpace(account.Email);
 
-        var json = JsonSerializer.SerializeToUtf8Bytes(account, JsonOptions);
-        await WriteProtectedAsync(GetAccountPath(), json, cancellationToken)
-            .ConfigureAwait(false);
+        ArgumentException.ThrowIfNullOrWhiteSpace(
+            account.AccountId);
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(
+            account.Email);
+
+        var json = JsonSerializer.SerializeToUtf8Bytes(
+            account, JsonOptions);
+
+        await WriteProtectedAsync(
+            GetAccountPath(),
+            json,
+            cancellationToken);
     }
 
-    /// <inheritdoc />
     public async Task<GoogleAccountInfo?> GetAccountAsync(
         CancellationToken cancellationToken = default)
     {
-        var json = await ReadProtectedAsync(GetAccountPath(), cancellationToken)
-            .ConfigureAwait(false);
-        return json is null
-            ? null
-            : JsonSerializer.Deserialize<GoogleAccountInfo>(json, JsonOptions);
+        var json = await ReadProtectedAsync(
+            GetAccountPath(),
+            cancellationToken);
+
+        if (json is null)
+            return null;
+
+        return JsonSerializer.Deserialize<GoogleAccountInfo>(
+            json, JsonOptions);
     }
 
-    /// <inheritdoc />
-    public async Task ClearAccountAsync(CancellationToken cancellationToken = default)
+    public async Task ClearAccountAsync(
+        CancellationToken cancellationToken = default)
     {
-        await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await _lock.WaitAsync(cancellationToken);
 
         try
         {
             var path = GetAccountPath();
+
             if (File.Exists(path))
-            {
                 File.Delete(path);
-            }
         }
         finally
         {
@@ -142,17 +150,7 @@ public sealed class GoogleCredentialStore : IGoogleCredentialStore, IDisposable
         }
     }
 
-    /// <inheritdoc />
-    public void Dispose()
-    {
-        if (_disposed)
-        {
-            return;
-        }
-
-        _lock.Dispose();
-        _disposed = true;
-    }
+    // DPAPI protection
 
     private async Task WriteProtectedAsync(
         string path,
@@ -163,21 +161,28 @@ public sealed class GoogleCredentialStore : IGoogleCredentialStore, IDisposable
             plainText,
             Entropy,
             DataProtectionScope.CurrentUser);
-        await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
 
-        var temporaryPath = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        await _lock.WaitAsync(cancellationToken);
+
+        var temporaryPath = path + "." +
+            Guid.NewGuid().ToString("N") + ".tmp";
+
         try
         {
-            await File.WriteAllBytesAsync(temporaryPath, encrypted, cancellationToken)
-                .ConfigureAwait(false);
-            File.Move(temporaryPath, path, overwrite: true);
+            await File.WriteAllBytesAsync(
+                temporaryPath,
+                encrypted,
+                cancellationToken);
+
+            File.Move(
+                temporaryPath,
+                path,
+                overwrite: true);
         }
         finally
         {
             if (File.Exists(temporaryPath))
-            {
                 File.Delete(temporaryPath);
-            }
 
             _lock.Release();
         }
@@ -187,17 +192,16 @@ public sealed class GoogleCredentialStore : IGoogleCredentialStore, IDisposable
         string path,
         CancellationToken cancellationToken = default)
     {
-        await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await _lock.WaitAsync(cancellationToken);
 
         try
         {
             if (!File.Exists(path))
-            {
                 return null;
-            }
 
-            var encrypted = await File.ReadAllBytesAsync(path, cancellationToken)
-                .ConfigureAwait(false);
+            var encrypted = await File.ReadAllBytesAsync(
+                path, cancellationToken);
+
             return ProtectedData.Unprotect(
                 encrypted,
                 Entropy,
@@ -212,12 +216,26 @@ public sealed class GoogleCredentialStore : IGoogleCredentialStore, IDisposable
     private string GetTokenPath<T>(string key)
     {
         var identity = key + "|" + typeof(T).FullName;
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(identity));
-        return Path.Combine(_directory, "token-" + Convert.ToHexString(hash) + ".bin");
+
+        var hash = SHA256.HashData(
+            Encoding.UTF8.GetBytes(identity));
+
+        return Path.Combine(
+            _directory,
+            "token-" + Convert.ToHexString(hash) + ".bin");
     }
 
     private string GetAccountPath()
     {
         return Path.Combine(_directory, "account.bin");
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+
+        _lock.Dispose();
+        _disposed = true;
     }
 }

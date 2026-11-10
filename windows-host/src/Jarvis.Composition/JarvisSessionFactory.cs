@@ -2,6 +2,7 @@ using System.Text.Json;
 using Jarvis.Contracts;
 using Jarvis.Core;
 using Jarvis.Infrastructure;
+using Jarvis.Infrastructure.Google;
 using Jarvis.Safety;
 using Jarvis.Tools;
 using Jarvis.Verification;
@@ -40,6 +41,7 @@ public sealed class JarvisSessionFactory : IJarvisSessionFactory
     {
         var settingsPath = Path.Combine(_repositoryRoot, "config", "settings.json");
         using var settings = JsonDocument.Parse(File.ReadAllText(settingsPath));
+        _ = GoogleEndpointPolicy.FromSettingsFile(settingsPath);
         var modelName = settings.RootElement.GetProperty("model").GetString();
         if (string.IsNullOrWhiteSpace(modelName))
             throw new InvalidDataException($"The configured model name in '{settingsPath}' is empty.");
@@ -70,6 +72,10 @@ public sealed class JarvisSessionFactory : IJarvisSessionFactory
             Path.Combine(configDirectory, "apps.allowlist.json"));
         return policy.TryResolveAllowedExecutablePath(appId, out var imagePath) ? imagePath : null;
     }
+
+    /// <summary>Creates WPF Google account services using the application's shared settings.</summary>
+    public GoogleAccountServices CreateGoogleAccountServices() =>
+        new(Path.Combine(_repositoryRoot, "config", "settings.json"));
 
     /// <inheritdoc />
     public async Task<IJarvisSession> StartAsync(

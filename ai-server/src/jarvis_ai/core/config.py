@@ -63,6 +63,46 @@ class Settings:
                 f"ollama_host '{self.ollama_host}' is not a valid loopback address. Outbound non-loopback calls are forbidden."
             )
 
+        integrations = self._data.get("integrations")
+        if integrations is None:
+            return
+        if not isinstance(integrations, dict):
+            raise ValueError("integrations must be an object.")
+
+        google = integrations.get("google")
+        if google is None:
+            return
+        if not isinstance(google, dict):
+            raise ValueError("integrations.google must be an object.")
+
+        network_policy = google.get("network_policy")
+        if network_policy is None:
+            return
+        if not isinstance(network_policy, dict):
+            raise ValueError("integrations.google.network_policy must be an object.")
+
+        unknown_settings = set(network_policy) - {
+            "enabled",
+            "request_timeout_seconds",
+        }
+        if unknown_settings:
+            raise ValueError("Google network_policy contains an unknown setting.")
+
+        enabled = network_policy.get("enabled", False)
+        if not isinstance(enabled, bool):
+            raise ValueError("Google network_policy.enabled must be a boolean.")
+
+        timeout = network_policy.get("request_timeout_seconds", 30)
+        if (
+            not isinstance(timeout, int)
+            or isinstance(timeout, bool)
+            or timeout < 1
+            or timeout > 120
+        ):
+            raise ValueError(
+                "Google network_policy.request_timeout_seconds must be an integer from 1 to 120."
+            )
+
     @property
     def model(self) -> str:
         return str(self._data.get("model", "qwen2.5:7b-instruct"))
@@ -93,4 +133,3 @@ def get_settings() -> Settings:
     if _settings_instance is None:
         _settings_instance = Settings()
     return _settings_instance
-

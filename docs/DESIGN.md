@@ -9,10 +9,12 @@ Version 1.0 - October 2026. Built from HLD/LLD specification.
 The owner now requests Google account sign-in as the first collaboration
 milestone, before any provider APIs; see
 [ADR-0009](architecture/adr/ADR-0009-cloud-collaboration-direction.md).
-This is not implemented and does not change the active local-only boundaries
-or authorize external connections. A future implementation requires the
-operating restrictions and this design's affected contracts to be formally
-updated first.
+The network boundary is amended by
+[ADR-0010](architecture/adr/ADR-0010-google-external-network-access.md):
+the Python process remains loopback/Ollama-only, and the C# Windows host may
+use only the explicitly enabled, exact Google HTTPS endpoints listed there.
+The first provider API milestone is limited to read-only Calendar event and
+Gmail inbox display. Drive and Meet remain disabled and unimplemented.
 
 ---
 
@@ -32,7 +34,7 @@ updated first.
 | :--- | :--- |
 | **Verification before completion** | The state machine allows `completed` only from `verifying` with result `VERIFIED`. A unit test tries every other path. |
 | **Safety before execution** | Every `ToolExecutor` method requires a signed `AuthorizationRecord`. Missing or invalid signature throws. |
-| **Local-first** | AI server binds 127.0.0.1 only, no outbound network calls. A test blocks sockets to non-loopback addresses. |
+| **Local-first** | Python binds 127.0.0.1 and can contact only loopback and local Ollama. The C# host can contact external services only through the explicitly enabled, exact Google HTTPS endpoint policy. A Python test blocks sockets to non-loopback addresses. |
 | **Structured outputs only** | Every LLM reply is validated against a schema. Invalid output triggers retry, then fallback. |
 | **No direct LLM execution** | The LLM may emit only a `tool_id` plus typed args. Command strings are never accepted from the LLM. |
 | **Modular replaceable components** | Interfaces plus dependency injection: `ILlmClient`, `IToolExecutor`, `IEvidenceCollector`, `IVerifier`, `ISessionStore`. |
@@ -85,6 +87,13 @@ updated first.
 +------------------------------------------------------------------+
 ```
 
+The Windows host's `GoogleApiClientFactory` is the only supported
+`Google.Apis` HTTP transport. It applies the host/path/HTTPS/port policy and
+disables automatic redirects and system proxies. The Python process never
+communicates directly with Google. The system browser used for OAuth
+authorization is a separate process; its page loads and provider redirects
+are outside the .NET HTTP-handler boundary.
+
 ### Runtime Sequence
 1. User types text. The UI hands it to `TaskOrchestrator`, which creates a Task (state `created`) and resolves the session.
 2. Orchestrator calls `POST /v1/plan`. The AI server returns intent, advisory risk, and steps with tool calls and verification plans (or clarify/unsupported).
@@ -101,6 +110,16 @@ updated first.
 - `ExecutionReceipt` is always untrusted.
 - `AuthorizationRecord` is trusted because SafetyGate signs it.
 - Evidence is trusted only if it was produced inside `Jarvis.Verification`.
+- Google requests, when explicitly enabled, originate from the C# host and
+  use the restricted Google HTTP transport. OAuth tokens remain in the C#
+  credential store and are never sent to Python or Ollama.
+- Calendar and Gmail reads initiated by the dedicated UI or an explicit
+  prompt-bar request are read-only presentation actions, not LLM-selected
+  tool executions. Gmail search displays metadata for non-spam messages;
+  only an explicitly selected message is fetched in full and sent to the
+  configured loopback Ollama model for explanation. Attachments are not
+  loaded. The controlled transport and Google read-only scopes are used.
+  No event writes, Drive requests, or Meet requests are made.
 
 ---
 
@@ -262,15 +281,17 @@ Legal transition table lives in `Jarvis.Core/StateMachine.cs`. Every transition 
 
 - Authoritative risk is `max(Python advisory risk, C# policy risk)`. C# is authoritative.
 - **Path Policy (`Jarvis.Safety.PathPolicy`):** Allowed roots come from config (default: `Jarvis` folder under user's Documents). Expand env vars, resolve full path, normalize Unicode NFC, case-insensitive. Reject `..`, junctions, symlinks (reparse points), UNC paths, device paths, reserved names (`CON`, `NUL`), alternate data streams.
-- **API Hardening:** Bind 127.0.0.1 only. No CORS. HMAC key in DPAPI. Run non-elevated.
+- **Network boundary:** The Python AI server binds 127.0.0.1 and may call only loopback and the configured local Ollama service; it never contacts Google. The Windows host uses `GoogleEndpointPolicy` and `GoogleHttpMessageHandler` for external Google HTTP traffic. Google access is default-deny, requires the optional `integrations.google.network_policy.enabled` setting, HTTPS, port 443, exact host and path matches, public DNS results, and normal TLS certificate validation. Calendar/Gmail API methods are restricted to GET/HEAD, OAuth token exchange/refresh/revocation requests to POST, and authorization/certificate retrieval to GET. Automatic redirects and system proxies are disabled; a redirect outside the allowlist is rejected.
+- **API Hardening:** Bind the AI server to 127.0.0.1 only. No CORS. HMAC key in DPAPI. Run non-elevated.
 
 ---
 
 ## 10. Observability, Configuration & Targets
 
-- **Correlation IDs:** `trace_id`, `session_id`, `task_id`, `step_id` on every log line and API call (`X-Trace-Id` header).
+- **Correlation IDs:** `trace_id`, `session_id`, `task_id`, `step_id` on every log line and API call (`X-Trace-Id` header). Network-policy failures must not log request URLs, OAuth tokens, authorization headers, or response bodies.
 - **Sinks:** Serilog compact JSON to `logs/host-*.jsonl`, SQLite `audit.db`, Python `structlog` JSON to `logs/ai-server.jsonl`.
-- **Targets:** Rule fast path < 50 ms, Verification per file step < 500 ms, Outbound network calls = 0, Startup ready < 30 s.
+- **Targets:** Rule fast path < 50 ms, Verification per file step < 500 ms, unapproved outbound network calls = 0, Python-to-Google calls = 0, Startup ready < 30 s. C# Google calls are limited to the exact endpoints in ADR-0010 and require explicit configuration.
+- **Google UI data:** Calendar data is requested only after the user selects Refresh in the dedicated UI tab and is bounded to 10 upcoming primary-calendar events. Gmail prompt-bar searches exclude spam and show up to 100 subject/sender/date rows; today's requests use a local-day date range. Bodies are fetched only after an explicit Explain request for one selected message, and attachments are never loaded. Only that selected message is summarized by the configured loopback Ollama model, with a 180-second timeout. Drive and Meet are disabled in the shared settings.
 
 ---
 

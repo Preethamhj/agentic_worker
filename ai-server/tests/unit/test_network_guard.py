@@ -42,6 +42,36 @@ def test_network_guard_blocks_non_loopback_socket() -> None:
     sock_remote.close()
 
 
+def test_network_guard_blocks_google_destinations_from_python() -> None:
+    install_network_guard()
+
+    for host in (
+        "accounts.google.com",
+        "oauth2.googleapis.com",
+        "www.googleapis.com",
+        "gmail.googleapis.com",
+        "meet.googleapis.com",
+    ):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            with pytest.raises(PermissionError, match="strictly forbidden"):
+                sock.connect((host, 443))
+        finally:
+            sock.close()
+
+
+def test_network_guard_allows_local_ai_communication() -> None:
+    install_network_guard()
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
+        server.bind(("127.0.0.1", 0))
+        server.listen()
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client:
+            client.connect(server.getsockname())
+            connection, _ = server.accept()
+            connection.close()
+
+
 def test_is_loopback_helper() -> None:
     assert is_loopback("127.0.0.1") is True
     assert is_loopback("localhost") is True
@@ -68,3 +98,24 @@ def test_settings_rejects_non_loopback_hosts(tmp_path: pytest.TempPathFactory) -
     )
     with pytest.raises(ValueError, match="ollama_host.*forbidden"):
         Settings(settings_path=str(invalid_ollama_cfg))
+
+
+def test_settings_validates_optional_google_network_policy(
+    tmp_path: pytest.TempPathFactory,
+) -> None:
+    settings_path = tmp_path / "google_network_policy.json"  # type: ignore
+    settings_path.write_text(
+        '{"schema_version": 1, "ai_server_host": "127.0.0.1", '
+        '"ollama_host": "http://127.0.0.1:11434", "integrations": {"google": '
+        '{"network_policy": {"enabled": true, "request_timeout_seconds": 30}}}}'
+    )
+
+    Settings(settings_path=str(settings_path))
+
+    settings_path.write_text(
+        '{"schema_version": 1, "ai_server_host": "127.0.0.1", '
+        '"ollama_host": "http://127.0.0.1:11434", "integrations": {"google": '
+        '{"network_policy": {"enabled": "true"}}}}'
+    )
+    with pytest.raises(ValueError, match="network_policy.enabled"):
+        Settings(settings_path=str(settings_path))

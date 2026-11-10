@@ -12,5 +12,34 @@
   },
   "windows": {
     "verification_window_seconds": 30
+  },
+  "integrations": {
+    "google": {
+      "enabled": true,
+      "network_policy": {
+        "enabled": true,
+        "request_timeout_seconds": 30
+      },
+      "oauth": {
+        "redirect_mode": "loopback",
+        "credential_storage": "dpapi_current_user"
+      },
+      "calendar": {
+        "enabled": true,
+        "access_mode": "read_only"
+      },
+      "gmail": {
+        "enabled": true,
+        "access_mode": "read_only"
+      },
+      "drive": {
+        "enabled": false,
+        "access_mode": "read_only"
+      },
+      "meet": {
+        "enabled": false,
+        "access_mode": "read_only"
+      }
+    }
   }
 }

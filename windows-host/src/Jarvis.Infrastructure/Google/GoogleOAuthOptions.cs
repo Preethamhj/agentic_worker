@@ -1,7 +1,7 @@
 namespace Jarvis.Infrastructure.Google;
 
 /// <summary>
-/// Local paths and account key for a future Google OAuth connection.
+/// Local paths and account key for the Google OAuth connection.
 /// </summary>
 public sealed record GoogleOAuthOptions
 {

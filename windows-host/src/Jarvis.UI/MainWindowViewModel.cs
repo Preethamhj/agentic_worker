@@ -1,8 +1,10 @@
 using System.ComponentModel;
+using System.Collections.ObjectModel;
 using System.Runtime.CompilerServices;
 using Jarvis.Composition;
 using Jarvis.Contracts;
 using Jarvis.Infrastructure;
+using Jarvis.Infrastructure.Google;
 using Jarvis.UI.ViewModels;
 
 namespace Jarvis.UI;
@@ -19,20 +21,46 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private string _progressMessage = string.Empty;
     private string _prompt = string.Empty;
     private CancellationTokenSource? _currentTaskCancellation;
+    private GoogleGmailMessage? _selectedMail;
+    private MailResultViewModel? _mailDetail;
 
     /// <summary>Creates the WPF host view model around the shared Jarvis session factory.</summary>
     public MainWindowViewModel(
         IJarvisSessionFactory sessionFactory,
         IApprovalHandler approvalHandler,
-        IEscalationHandler escalationHandler)
+        IEscalationHandler escalationHandler,
+        GoogleAccountServices? googleAccountServices = null)
     {
         _sessionFactory = sessionFactory ?? throw new ArgumentNullException(nameof(sessionFactory));
         _approvalHandler = approvalHandler ?? throw new ArgumentNullException(nameof(approvalHandler));
         _escalationHandler = escalationHandler ?? throw new ArgumentNullException(nameof(escalationHandler));
         var settings = _sessionFactory.ReadSettings();
         Settings = new SettingsViewModel(settings.AllowedRoots, settings.ModelName, settings.DoctorResults);
+        GoogleAccount = googleAccountServices is null
+            ? null
+            : new GoogleAccountViewModel(
+                googleAccountServices.OAuthService,
+                googleAccountServices.Policy,
+                googleAccountServices.Options,
+                googleAccountServices.SetServiceEnabled);
+        GoogleWorkspace = googleAccountServices is null || GoogleAccount is null
+            ? null
+            : new GoogleWorkspaceViewModel(
+                googleAccountServices.WorkspaceReader,
+                googleAccountServices.Policy,
+                GoogleAccount);
         History = new HistoryViewModel();
+        if (googleAccountServices is not null
+            && googleAccountServices.Policy.Enabled
+            && googleAccountServices.Policy.GmailEnabled)
+        {
+            _mailSearcher = googleAccountServices.MailSearcher;
+            _mailSummarizer = googleAccountServices.MailSummarizer;
+        }
     }
+
+    private readonly IGoogleMailSearcher? _mailSearcher;
+    private readonly IMailSummarizer? _mailSummarizer;
 
     /// <summary>Raised when a view-bound property changes.</summary>
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -78,6 +106,29 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     /// <summary>Read-only settings and diagnostics projection.</summary>
     public SettingsViewModel Settings { get; }
 
+    /// <summary>Google account management, when composed by the Windows application.</summary>
+    public GoogleAccountViewModel? GoogleAccount { get; }
+
+    /// <summary>Explicit, read-only Calendar and Gmail data presentation.</summary>
+    public GoogleWorkspaceViewModel? GoogleWorkspace { get; }
+
+    /// <summary>Mail results fetched from Gmail via the prompt box, with local-model summaries.</summary>
+    public ObservableCollection<GoogleGmailMessage> MailResults { get; } = [];
+
+    /// <summary>Selected metadata row, whose body is not loaded until the user asks for an explanation.</summary>
+    public GoogleGmailMessage? SelectedMail
+    {
+        get => _selectedMail;
+        set => SetProperty(ref _selectedMail, value);
+    }
+
+    /// <summary>Full content and summary for the one mail explicitly being explained.</summary>
+    public MailResultViewModel? MailDetail
+    {
+        get => _mailDetail;
+        private set => SetProperty(ref _mailDetail, value);
+    }
+
     /// <summary>Runs a user prompt through the same shared orchestration session as the CLI.</summary>
     public async Task RunPromptAsync(string prompt, CancellationToken cancellationToken = default)
     {
@@ -89,6 +140,19 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
         if (IsRunning)
             throw new InvalidOperationException("A Jarvis task is already running.");
+
+        if (_mailSearcher is not null && _mailSummarizer is not null
+            && GmailPromptParser.IsExplainPrompt(prompt))
+        {
+            await ExplainSelectedMailAsync(cancellationToken);
+            return;
+        }
+
+        if (_mailSearcher is not null && GmailPromptParser.TryParse(prompt, out var mailRequest))
+        {
+            await RunMailPromptAsync(mailRequest, cancellationToken);
+            return;
+        }
 
         IsRunning = true;
         ProgressMessage = "Starting the local AI server...";
@@ -132,6 +196,119 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     /// <summary>Requests cancellation of the active task, if any.</summary>
     public void CancelCurrentTask() => _currentTaskCancellation?.Cancel();
+
+    /// <summary>Loads and summarizes only the selected mail.</summary>
+    public async Task ExplainSelectedMailAsync(CancellationToken cancellationToken = default)
+    {
+        if (_mailSearcher is null || _mailSummarizer is null)
+        {
+            ErrorMessage = "Gmail is not enabled.";
+            return;
+        }
+
+        var selectedMail = SelectedMail;
+        if (selectedMail is null)
+        {
+            ErrorMessage = "Select a mail from the list before asking for an explanation.";
+            return;
+        }
+
+        if (IsRunning)
+            throw new InvalidOperationException("A Jarvis task is already running.");
+
+        IsRunning = true;
+        ErrorMessage = null;
+        MailDetail = null;
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _currentTaskCancellation = cancellation;
+        try
+        {
+            ProgressMessage = "Loading the selected mail...";
+            var mail = await _mailSearcher.GetMailAsync(selectedMail.Id, cancellation.Token);
+            ProgressMessage = "Summarizing the selected mail with the local model (up to 180 seconds)...";
+            try
+            {
+                var summary = await _mailSummarizer.SummarizeAsync(mail, cancellation.Token);
+                MailDetail = new MailResultViewModel(
+                    mail.Subject, mail.From, mail.Date, mail.Body, summary);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                MailDetail = new MailResultViewModel(
+                    mail.Subject, mail.From, mail.Date, mail.Body, string.Empty);
+                ErrorMessage = $"The mail was loaded, but its summary failed: {exception.Message}";
+            }
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            ErrorMessage = "Mail explanation cancelled.";
+        }
+        catch (Exception exception)
+        {
+            ErrorMessage = exception.Message;
+        }
+        finally
+        {
+            _currentTaskCancellation = null;
+            ProgressMessage = string.Empty;
+            IsRunning = false;
+        }
+    }
+
+    private async Task RunMailPromptAsync(GmailPromptRequest request, CancellationToken cancellationToken)
+    {
+        IsRunning = true;
+        ErrorMessage = null;
+        MailResults.Clear();
+        SelectedMail = null;
+        MailDetail = null;
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _currentTaskCancellation = cancellation;
+        try
+        {
+            var query = request.Query;
+            if (request.TodayOnly)
+            {
+                var today = DateTime.Today;
+                var tomorrow = today.AddDays(1);
+                var localStart = new DateTimeOffset(
+                    today, TimeZoneInfo.Local.GetUtcOffset(today));
+                var localEnd = new DateTimeOffset(
+                    tomorrow, TimeZoneInfo.Local.GetUtcOffset(tomorrow));
+                query = $"{query} after:{localStart.ToUnixTimeSeconds()} before:{localEnd.ToUnixTimeSeconds()}".Trim();
+            }
+
+            ProgressMessage = request.TodayOnly
+                ? "Searching today's non-spam Gmail messages..."
+                : "Searching non-spam Gmail messages...";
+            var mails = await _mailSearcher!.SearchMailAsync(
+                query, request.MaxResults, cancellation.Token);
+            if (mails.Count == 0)
+            {
+                ErrorMessage = request.TodayOnly
+                    ? "No non-spam Gmail messages were found for today."
+                    : "No non-spam Gmail messages matched that request.";
+                return;
+            }
+
+            foreach (var mail in mails)
+                MailResults.Add(mail);
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            ErrorMessage = "Mail request cancelled.";
+        }
+        catch (Exception exception)
+        {
+            ErrorMessage = exception.Message;
+        }
+        finally
+        {
+            _currentTaskCancellation = null;
+            ProgressMessage = string.Empty;
+            IsRunning = false;
+        }
+    }
 
     private void SetProperty<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
     {

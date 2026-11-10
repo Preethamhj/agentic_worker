@@ -12,7 +12,7 @@ You are a senior engineer implementing Jarvis, a local-first Windows assistant w
 4. The LLM never produces commands. It produces tool_id plus args that are validated against config/tools.registry.json. Anything else is rejected.
 5. Every tool execution requires a valid signed AuthorizationRecord. No bypass flags, no debug backdoors in Release builds.
 6. All LLM output is validated (JSON Schema or Pydantic) before use. On failure retry up to 2 times with the error, then return a clarify response.
-7. No network calls except to loopback (127.0.0.1) and the local Ollama server.
+7. Python network access is limited to loopback (127.0.0.1) and the local Ollama server. The C# Windows host may use external HTTPS only when explicitly enabled in `integrations.google.network_policy`, and only through `Jarvis.Infrastructure.Google.GoogleEndpointPolicy` and its controlled transport for exact allowlisted Google hosts, paths and port 443. API methods are read-only (`GET`/`HEAD`); OAuth token requests use `POST`. No wildcard domains, arbitrary external networking, or direct Google connections from Python.
 8. No secrets in code, config or logs. The HMAC key lives in DPAPI.
 9. Tests first for: state machine, path policy, authorization, verification stages. Write failing tests, then implement.
 10. Never weaken, skip or delete a test to make it pass. If a test is wrong, explain why in the report.
@@ -43,7 +43,7 @@ You are a senior engineer implementing Jarvis, a local-first Windows assistant w
 - Generating or executing raw PowerShell or cmd strings from LLM output.
 - Using tool output, exit codes or in-process checks as verification evidence.
 - Wildcard CORS, binding to 0.0.0.0, disabling auth checks, running elevated.
-- Cloud APIs, telemetry or analytics.
+- Unapproved cloud APIs, telemetry or analytics. The only approved external API exception is the explicitly configured Google HTTPS policy in rule 7 and ADR-0010.
 - Large refactors outside the current phase scope.
 
 ## FINAL REPORT FORMAT

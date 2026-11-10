@@ -6,6 +6,8 @@ namespace Jarvis.UI;
 
 public partial class App : Application
 {
+    private GoogleAccountServices? _googleAccountServices;
+
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
@@ -17,6 +19,7 @@ public partial class App : Application
                 return;
             }
             var composition = new JarvisSessionFactory();
+            _googleAccountServices = composition.CreateGoogleAccountServices();
             var presenter = new WpfDecisionDialogPresenter();
             var dispatcher = new WpfUiDispatcher(Dispatcher);
             var approval = new WpfApprovalHandler(
@@ -24,7 +27,11 @@ public partial class App : Application
                 presenter,
                 resolvedImagePath: composition.ResolveImagePath);
             var escalation = new WpfEscalationHandler(dispatcher, presenter);
-            MainWindow = new MainWindow(new MainWindowViewModel(composition, approval, escalation));
+            MainWindow = new MainWindow(new MainWindowViewModel(
+                composition,
+                approval,
+                escalation,
+                _googleAccountServices));
             MainWindow.Show();
         }
         catch (Exception exception)
@@ -36,6 +43,12 @@ public partial class App : Application
                 MessageBoxImage.Error);
             Shutdown(1);
         }
+    }
+
+    protected override void OnExit(ExitEventArgs e)
+    {
+        _googleAccountServices?.Dispose();
+        base.OnExit(e);
     }
 
     private static int DispatchReminder(string[] args)

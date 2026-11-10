@@ -15,3 +15,48 @@ Scheduled reminder actions run the absolute executable path signed by `Authoriza
 The independent verifier compares the registered Task Scheduler command and arguments with signed expected fields, and compares the data file's title/message with the authorization's canonical arguments. Missing or changed data therefore fails verification. It normalizes only CRLF and CR line endings to LF when comparing arguments, because XML/platform serialization may normalize line endings; it does not normalize whitespace, quoting, or other characters.
 
 This check is a point-in-time integrity check, not protection from a process running as the same Windows user changing the task or data file after verification and before its trigger. The dispatcher validates the payload's structure and character limits but does not possess the authorization record and cannot re-check the authorized message. A same-user process can also read the per-user data file before dispatch. Protecting against those same-user races would require a stronger authenticated payload/dispatch contract and remains a known limitation.
+
+## External Google HTTPS boundary
+
+The Python AI server remains restricted to loopback and its local Ollama
+service by `install_network_guard()`. The guard does not allow Google
+destinations. Calendar, Gmail, Drive, and Meet requests must originate in the
+C# Windows host and use the `GoogleApiClientFactory` transport; access is
+denied unless `integrations.google.network_policy.enabled` is explicitly
+true.
+
+The C# policy matches exact DNS hostnames and service path prefixes, HTTPS,
+and port 443. It does not use a `*.googleapis.com` rule. The transport does
+not use the system proxy, resolves only an approved hostname, rejects
+non-public DNS results, and leaves default TLS certificate validation
+enabled. Automatic redirects are disabled; redirects returned by Google are
+rejected if their destination is not also an approved endpoint. Request
+timeouts and cancellation apply to HTTP and connection work. No request URLs,
+credentials, OAuth tokens, or response bodies are logged by this transport.
+API requests are limited to GET/HEAD; OAuth token and revocation endpoints
+accept POST and the authorization and signing-key endpoints accept GET.
+The installed Google ID-token validation API has no cancellation-token
+parameter, so that certificate request is bounded by the configured HTTP
+timeout rather than the caller's cancellation token.
+
+The system-browser OAuth authorization step is not an HTTP request made by
+Jarvis's .NET client. Once opened, the browser's page loads and provider
+redirects are outside the handler's enforcement boundary. The policy therefore
+does not claim to restrict all browser traffic to the listed Google hosts.
+No authorization code or access/refresh token is passed to Python or Ollama.
+The API host/path policy limits service routing but does not itself enforce
+per-operation read-only behavior; that remains governed by OAuth scopes and
+future tool authorization. The WPF account surface reports provider
+revocation separately from local DPAPI credential deletion; a failed provider
+response is never reported as confirmed revocation.
+
+The Calendar and Gmail reads are explicit user-initiated read-only display
+actions, not LLM-selected tools. Calendar reads are bounded to ten upcoming
+primary-calendar events. Gmail prompt-bar searches exclude spam and show up
+to 100 subject/sender/date rows; today's requests include a local-day date
+range. Message bodies are retrieved only when a specific row is explicitly
+explained, and only that message is sent to the configured loopback Ollama
+model. Attachments are not retrieved. The Ollama transport disables proxies
+and redirects and has a 180-second timeout. The shared configuration disables
+Drive and Meet for this milestone. Live Google data access is not performed
+by unit tests.
