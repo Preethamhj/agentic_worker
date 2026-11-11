@@ -6,6 +6,13 @@
     <RootNamespace>Jarvis.UI</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Jarvis.UI.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Jarvis.Browser.Core\Jarvis.Browser.Core.csproj" />
     <ProjectReference Include="..\Jarvis.Contracts\Jarvis.Contracts.csproj" />
     <ProjectReference Include="..\Jarvis.Core\Jarvis.Core.csproj" />
     <ProjectReference Include="..\Jarvis.Infrastructure\Jarvis.Infrastructure.csproj" />

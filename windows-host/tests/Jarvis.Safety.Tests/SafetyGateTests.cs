@@ -160,6 +160,78 @@ public class SafetyGateTests
     }
 
     [Fact]
+    public async Task Browser_Open_Link_Requires_Approval_And_Signs_Only_Target_Fingerprint()
+    {
+        const string targetHash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        var args = new JsonObject
+        {
+            ["link_id"] = "l123456789abc",
+            ["observation_id"] = "11111111-1111-1111-1111-111111111111",
+            ["tab_id"] = "22222222222222222222222222222222",
+            ["target_hash"] = targetHash,
+            ["target_host"] = "example.com",
+            ["mode"] = "new_tab"
+        };
+
+        var result = await _safetyGate.EvaluateAndAuthorizeAsync(
+            "task-browser-link", "step-browser-link", "browser.open_link", args, "medium");
+
+        result.Approved.Should().BeTrue();
+        _approvalProvider.CallCount.Should().Be(1);
+        _approvalProvider.LastRequest!.ToolId.Should().Be("browser.open_link");
+        _approvalProvider.LastRequest.CanonicalArgs["target_hash"].Should().Be(targetHash);
+        _approvalProvider.LastRequest.CanonicalArgs["mode"].Should().Be("new_tab");
+        result.Record!.CanonicalArgs["target_hash"].Should().Be(targetHash);
+        result.Record.CanonicalArgs["mode"].Should().Be("new_tab");
+        result.Record.Expected["mode"].Should().Be("new_tab");
+        result.Record.CanonicalArgs.Should().NotContainKey("url");
+        result.Record.AllowedEffects.Should().Contain("browser:open-link:l123456789abc");
+        var tamperedArgs = new Dictionary<string, object?>(result.Record.CanonicalArgs) { ["mode"] = "same_tab" };
+        Action consume = () => _authService.Consume(result.Record with { CanonicalArgs = tamperedArgs }, result.Record.StepId);
+        consume.Should().Throw<AuthorizationSecurityException>().WithMessage("*HMAC*");
+        _authService.Consume(result.Record, result.Record.StepId).Record.CanonicalArgs["mode"].Should().Be("new_tab");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("same_tab")]
+    [InlineData("NEW_TAB")]
+    public async Task Browser_Open_Link_Rejects_Missing_Or_Wrong_Mode_Before_Approval(string? mode)
+    {
+        var args = new JsonObject
+        {
+            ["link_id"] = "l123456789abc",
+            ["observation_id"] = "11111111-1111-1111-1111-111111111111",
+            ["tab_id"] = "22222222222222222222222222222222",
+            ["target_hash"] = new string('a', 64),
+            ["target_host"] = "example.com"
+        };
+        if (mode is not null)
+            args["mode"] = mode;
+
+        var result = await _safetyGate.EvaluateAndAuthorizeAsync(
+            "task-browser-mode", "step-browser-mode", "browser.open_link", args, "medium");
+
+        result.Approved.Should().BeFalse();
+        _approvalProvider.CallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Browser_Open_Link_Rejects_Missing_Signed_Target_Before_Approval()
+    {
+        var result = await _safetyGate.EvaluateAndAuthorizeAsync(
+            "task-browser-link-invalid",
+            "step-browser-link-invalid",
+            "browser.open_link",
+            new JsonObject { ["link_id"] = "l123456789abc" },
+            "medium");
+
+        result.Approved.Should().BeFalse();
+        result.Record.Should().BeNull();
+        _approvalProvider.CallCount.Should().Be(0);
+    }
+
+    [Fact]
     public async Task Medium_Risk_Tool_Approved_By_Provider_Returns_Authorized_Record()
     {
         _approvalProvider.NextApprovalResult = new ApprovalDecision(true, "test-user");

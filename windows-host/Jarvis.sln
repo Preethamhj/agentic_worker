@@ -43,6 +43,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{827E0CD3-B72
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Jarvis.Composition", "src\Jarvis.Composition\Jarvis.Composition.csproj", "{E777E665-F68C-481F-9ABE-3EB50A2D747F}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Jarvis.Browser.Core", "src\Jarvis.Browser.Core\Jarvis.Browser.Core.csproj", "{2593AD00-CA29-496A-AA72-BA30D6955C30}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -269,6 +271,18 @@ Global
 		{E777E665-F68C-481F-9ABE-3EB50A2D747F}.Release|x64.Build.0 = Release|Any CPU
 		{E777E665-F68C-481F-9ABE-3EB50A2D747F}.Release|x86.ActiveCfg = Release|Any CPU
 		{E777E665-F68C-481F-9ABE-3EB50A2D747F}.Release|x86.Build.0 = Release|Any CPU
+		{2593AD00-CA29-496A-AA72-BA30D6955C30}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2593AD00-CA29-496A-AA72-BA30D6955C30}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2593AD00-CA29-496A-AA72-BA30D6955C30}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{2593AD00-CA29-496A-AA72-BA30D6955C30}.Debug|x64.Build.0 = Debug|Any CPU
+		{2593AD00-CA29-496A-AA72-BA30D6955C30}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{2593AD00-CA29-496A-AA72-BA30D6955C30}.Debug|x86.Build.0 = Debug|Any CPU
+		{2593AD00-CA29-496A-AA72-BA30D6955C30}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2593AD00-CA29-496A-AA72-BA30D6955C30}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2593AD00-CA29-496A-AA72-BA30D6955C30}.Release|x64.ActiveCfg = Release|Any CPU
+		{2593AD00-CA29-496A-AA72-BA30D6955C30}.Release|x64.Build.0 = Release|Any CPU
+		{2593AD00-CA29-496A-AA72-BA30D6955C30}.Release|x86.ActiveCfg = Release|Any CPU
+		{2593AD00-CA29-496A-AA72-BA30D6955C30}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -276,5 +290,6 @@ Global
 	GlobalSection(NestedProjects) = preSolution
 		{B25D37B1-3DC0-4413-87CE-9880B3CD83BB} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{E777E665-F68C-481F-9ABE-3EB50A2D747F} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{2593AD00-CA29-496A-AA72-BA30D6955C30} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal

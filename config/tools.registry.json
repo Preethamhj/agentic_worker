@@ -111,6 +111,52 @@
       }
     },
     {
+      "tool_id": "browser.open_link",
+      "version": "1.0",
+      "risk": "medium",
+      "enabled": true,
+      "description": "Open one visible HTTP or HTTPS link selected from the approved current-page snapshot in a new tab",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "link_id": { "type": "string", "pattern": "^l[0-9a-f]{12}$" },
+          "observation_id": { "type": "string", "pattern": "^[0-9a-fA-F-]{36}$" },
+          "tab_id": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+          "target_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "target_host": { "type": "string", "minLength": 1, "maxLength": 253, "pattern": "^[^\\s\\u0000-\\u001F\\u007F]+$" },
+          "mode": { "type": "string", "const": "new_tab" }
+        },
+        "required": ["link_id", "observation_id", "tab_id", "target_hash", "target_host", "mode"],
+        "additionalProperties": false
+      },
+      "verification_template": {
+        "checks": []
+      }
+    },
+    {
+      "tool_id": "browser.search",
+      "version": "1.0",
+      "risk": "medium",
+      "enabled": true,
+      "description": "Type a search query into the selected browser page's search field and submit it (Jarvis browser chat only)",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
+          }
+        },
+        "required": ["query"],
+        "additionalProperties": false
+      },
+      "verification_template": {
+        "checks": []
+      }
+    },
+    {
       "tool_id": "shell.run_powershell",
       "version": "1.0",
       "risk": "high",

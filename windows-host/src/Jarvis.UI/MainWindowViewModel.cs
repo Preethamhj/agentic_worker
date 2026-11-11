@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Collections.ObjectModel;
 using System.Runtime.CompilerServices;
+using Jarvis.Browser.Core;
 using Jarvis.Composition;
 using Jarvis.Contracts;
 using Jarvis.Infrastructure;
@@ -193,6 +194,215 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             IsRunning = false;
         }
     }
+
+    /// <summary>Resolves an explicit website or web-app request without executing a Jarvis tool.</summary>
+    public async Task<Uri?> ResolveBrowserTargetAsync(
+        string target,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(target))
+        {
+            ErrorMessage = "Name a website or web app to open in the browser.";
+            return null;
+        }
+
+        if (IsRunning)
+            throw new InvalidOperationException("A Jarvis operation is already running.");
+
+        cancellationToken.ThrowIfCancellationRequested();
+        if (BrowserAddressPolicy.LooksLikeExplicitAddress(target))
+        {
+            ErrorMessage = null;
+            if (BrowserAddressPolicy.TryNormalize(target, out var directAddress, out var error)
+                && directAddress is not null)
+                return directAddress;
+
+            ErrorMessage = $"Invalid browser destination: {error}";
+            return null;
+        }
+
+        IsRunning = true;
+        ProgressMessage = "Resolving the browser destination with the local Ollama model...";
+        ErrorMessage = null;
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _currentTaskCancellation = cancellation;
+        try
+        {
+            await using var session = await _sessionFactory.StartAsync(
+                _approvalHandler,
+                _escalationHandler,
+                cancellation.Token);
+            var resolution = await session.ResolveBrowserTargetAsync(target, cancellation.Token);
+            if (string.Equals(resolution.Status, "open", StringComparison.OrdinalIgnoreCase))
+            {
+                if (string.IsNullOrWhiteSpace(resolution.Url))
+                {
+                    ErrorMessage = "The model returned an empty browser destination.";
+                    return null;
+                }
+
+                if (!BrowserAddressPolicy.TryNormalize(resolution.Url, out var address, out var error)
+                    || address is null)
+                {
+                    ErrorMessage = $"The model returned an invalid browser destination: {error}";
+                    return null;
+                }
+
+                return address;
+            }
+
+            ErrorMessage = string.Equals(resolution.Status, "error", StringComparison.OrdinalIgnoreCase)
+                ? resolution.Message
+                : string.IsNullOrWhiteSpace(resolution.Message)
+                    ? "The model could not identify a website destination. Please clarify the site name."
+                    : resolution.Message;
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            ErrorMessage = "Browser destination resolution cancelled.";
+        }
+        catch (Exception exception)
+        {
+            ErrorMessage = exception.Message;
+        }
+        finally
+        {
+            _currentTaskCancellation = null;
+            ProgressMessage = string.Empty;
+            IsRunning = false;
+        }
+
+        return null;
+    }
+
+    /// <summary>Uses the local model to refine a web search, falling back to the original prompt.</summary>
+    public async Task<(Uri? Address, string? StatusMessage)> PrepareBrowserSearchAsync(
+        string prompt,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(prompt))
+        {
+            ErrorMessage = "Enter a topic to search on the internet.";
+            return (null, ErrorMessage);
+        }
+
+        if (IsRunning)
+            throw new InvalidOperationException("A Jarvis operation is already running.");
+
+        IsRunning = true;
+        ProgressMessage = "Preparing a search query with the local Ollama model...";
+        ErrorMessage = null;
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _currentTaskCancellation = cancellation;
+        try
+        {
+            await using var session = await _sessionFactory.StartAsync(
+                _approvalHandler,
+                _escalationHandler,
+                cancellation.Token);
+            var result = await session.PrepareBrowserSearchQueryAsync(prompt, cancellation.Token);
+            var statusMessage = string.Equals(result.Status, "fallback", StringComparison.OrdinalIgnoreCase)
+                ? result.Message
+                : "Opening Google results. Choose the most relevant result; Jarvis has not ranked result links.";
+            return (BrowserSearchUrlBuilder.Build(result.Query), statusMessage);
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            ErrorMessage = "Browser search cancelled.";
+        }
+        catch (Exception exception)
+        {
+            ErrorMessage = $"Could not prepare the search query: {exception.Message}";
+        }
+        finally
+        {
+            _currentTaskCancellation = null;
+            ProgressMessage = string.Empty;
+            IsRunning = false;
+        }
+
+        return (null, ErrorMessage);
+    }
+
+    /// <summary>Plans one browser instruction with the local model after page disclosure approval.</summary>
+    public async Task<BrowserPlanResponseDto> PlanBrowserChatAsync(
+        string instruction,
+        BrowserPageContextDto? page,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await using var session = await _sessionFactory.StartAsync(
+                _approvalHandler,
+                _escalationHandler,
+                cancellationToken);
+            return await session.PlanBrowserActionAsync(instruction, page, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return new BrowserPlanResponseDto(1, "error", null, "Cancelled.");
+        }
+        catch (Exception exception)
+        {
+            return new BrowserPlanResponseDto(1, "error", null, $"Could not plan the instruction: {exception.Message}");
+        }
+    }
+
+    private BrowserActionAuthority? _browserAuthority;
+
+    /// <summary>The active browser approval, execution-consume and verification path, once created.</summary>
+    public BrowserActionAuthority? BrowserAuthority => _browserAuthority;
+
+    /// <summary>Asks the user to approve a typed browser search and returns the signed record on approval.</summary>
+    public async Task<BrowserActionAuthorizationResult> AuthorizeBrowserSearchAsync(
+        string query,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            _browserAuthority ??= _sessionFactory.CreateBrowserActionAuthority(_approvalHandler);
+            if (_browserAuthority is null)
+                return new BrowserActionAuthorizationResult(false, null, "Browser authorization is unavailable.");
+            return await _browserAuthority.AuthorizeSearchAsync(query, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return new BrowserActionAuthorizationResult(false, null, $"Authorization failed: {exception.Message}");
+        }
+    }
+
+    /// <summary>Asks the user to approve a specific link from the current page disclosure.</summary>
+    public async Task<BrowserActionAuthorizationResult> AuthorizeBrowserLinkAsync(
+        BrowserPageDisclosure disclosure,
+        BrowserDisclosureLink link,
+        BrowserTabId tabId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            _browserAuthority ??= _sessionFactory.CreateBrowserActionAuthority(_approvalHandler);
+            if (_browserAuthority is null)
+                return new BrowserActionAuthorizationResult(false, null, "Browser authorization is unavailable.");
+            if (disclosure.TabId != tabId || disclosure.FindLink(link.Id) != link)
+                return new BrowserActionAuthorizationResult(false, null, "The selected tab changed; inspect the page again.");
+            return await _browserAuthority.AuthorizeOpenLinkAsync(
+                link.Id,
+                disclosure.ObservationId.ToString(),
+                tabId.ToString(),
+                BrowserPageDisclosure.Fingerprint(link.Target),
+                link.Target.Host,
+                cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return new BrowserActionAuthorizationResult(false, null, $"Authorization failed: {exception.Message}");
+        }
+    }
+
+    /// <summary>Consumes a signed search record once; used by the browser executor.</summary>
+    public ConsumedBrowserSearch ConsumeBrowserSearch(AuthorizationRecordDto record) =>
+        (_browserAuthority ?? throw new InvalidOperationException("No browser authority is active."))
+            .ConsumeSearch(record);
 
     /// <summary>Requests cancellation of the active task, if any.</summary>
     public void CancelCurrentTask() => _currentTaskCancellation?.Cancel();

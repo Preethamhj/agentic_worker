@@ -497,6 +497,16 @@ public sealed class AuthorizationService : IAuthorizationVerifier
                 expected["end_boundary_offset_seconds"] = ReminderSchedulerPolicy.EndBoundaryOffsetSeconds;
                 expected["delete_expired_task_after_seconds"] = ReminderSchedulerPolicy.DeleteExpiredTaskAfterSeconds;
                 break;
+            case "browser.search":
+                if (args.TryGetValue("query", out var searchQuery)) expected["query"] = searchQuery;
+                break;
+            case "browser.open_link":
+                foreach (var key in new[] { "link_id", "observation_id", "tab_id", "target_hash", "target_host", "mode" })
+                {
+                    if (args.TryGetValue(key, out var value))
+                        expected[key] = value;
+                }
+                break;
             default:
                 expected["status"] = "success";
                 break;
@@ -507,7 +517,17 @@ public sealed class AuthorizationService : IAuthorizationVerifier
     private static List<string> DeriveAllowedEffects(string toolId, Dictionary<string, object?> args)
     {
         var list = new List<string>();
-        if (args.TryGetValue("path", out var p) && p != null)
+        if (toolId.Equals("browser.search", StringComparison.OrdinalIgnoreCase))
+        {
+            list.Add("browser:search");
+        }
+        else if (toolId.Equals("browser.open_link", StringComparison.OrdinalIgnoreCase)
+            && args.TryGetValue("link_id", out var linkId)
+            && linkId is string id)
+        {
+            list.Add($"browser:open-link:{id}");
+        }
+        else if (args.TryGetValue("path", out var p) && p != null)
         {
             list.Add($"create:{p}");
         }

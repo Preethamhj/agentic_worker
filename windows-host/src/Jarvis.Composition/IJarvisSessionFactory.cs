@@ -32,6 +32,9 @@ public interface IJarvisSessionFactory
     /// <summary>Resolves an application identifier to its configured allowlisted image path.</summary>
     string? ResolveImagePath(ApprovalRequest request) => null;
 
+    /// <summary>Creates the approval and signing path for registered browser operations; null when unsupported.</summary>
+    BrowserActionAuthority? CreateBrowserActionAuthority(IApprovalHandler approvalHandler) => null;
+
     /// <summary>Starts the AI server and creates a task session using the supplied decision handlers.</summary>
     Task<IJarvisSession> StartAsync(
         IApprovalHandler approvalHandler,
@@ -47,6 +50,18 @@ public interface IJarvisSession : IAsyncDisposable
 
     /// <summary>Plans, executes under existing policy, verifies, and reports a task.</summary>
     Task<TaskOrchestratorResult> RunTaskAsync(string prompt, CancellationToken cancellationToken = default);
+
+    /// <summary>Resolves an explicit browser-open request to a URL using the local AI server.</summary>
+    Task<BrowserResolveResponseDto> ResolveBrowserTargetAsync(string target, CancellationToken cancellationToken = default);
+
+    /// <summary>Prepares a concise web-search query using the local AI server.</summary>
+    Task<BrowserSearchQueryResponseDto> PrepareBrowserSearchQueryAsync(string prompt, CancellationToken cancellationToken = default);
+
+    /// <summary>Interprets one instruction and an explicitly approved safe page projection.</summary>
+    Task<BrowserPlanResponseDto> PlanBrowserActionAsync(
+        string instruction,
+        BrowserPageContextDto? page,
+        CancellationToken cancellationToken = default);
 
     /// <summary>Reads task audit events, including legacy combined safety rows.</summary>
     JarvisHistorySnapshot ReadHistory(string? taskId = null);

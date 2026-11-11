@@ -15,6 +15,10 @@ the Python process remains loopback/Ollama-only, and the C# Windows host may
 use only the explicitly enabled, exact Google HTTPS endpoints listed there.
 The first provider API milestone is limited to read-only Calendar event and
 Gmail inbox display. Drive and Meet remain disabled and unimplemented.
+The user-operated WebView2 workspace is separately authorized to browse
+user-selected HTTP/HTTPS sites in a dedicated Jarvis profile; it does not
+change the network rules for Python or C# API clients. See
+[ADR-0013](architecture/adr/ADR-0013-webview-browser-network-boundary.md).
 
 ---
 
@@ -34,7 +38,7 @@ Gmail inbox display. Drive and Meet remain disabled and unimplemented.
 | :--- | :--- |
 | **Verification before completion** | The state machine allows `completed` only from `verifying` with result `VERIFIED`. A unit test tries every other path. |
 | **Safety before execution** | Every `ToolExecutor` method requires a signed `AuthorizationRecord`. Missing or invalid signature throws. |
-| **Local-first** | Python binds 127.0.0.1 and can contact only loopback and local Ollama. The C# host can contact external services only through the explicitly enabled, exact Google HTTPS endpoint policy. A Python test blocks sockets to non-loopback addresses. |
+| **Local-first** | Python binds 127.0.0.1 and can contact only loopback and local Ollama. C# API clients use only the explicitly enabled, exact Google HTTPS endpoint policy. A user-operated WebView2 browser is a separate, explicit exception for user-selected HTTP/HTTPS browsing; it uses a dedicated profile. A Python test blocks sockets to non-loopback addresses. |
 | **Structured outputs only** | Every LLM reply is validated against a schema. Invalid output triggers retry, then fallback. |
 | **No direct LLM execution** | The LLM may emit only a `tool_id` plus typed args. Command strings are never accepted from the LLM. |
 | **Modular replaceable components** | Interfaces plus dependency injection: `ILlmClient`, `IToolExecutor`, `IEvidenceCollector`, `IVerifier`, `ISessionStore`. |
@@ -93,6 +97,28 @@ disables automatic redirects and system proxies. The Python process never
 communicates directly with Google. The system browser used for OAuth
 authorization is a separate process; its page loads and provider redirects
 are outside the .NET HTTP-handler boundary.
+
+The WPF browser workspace uses WebView2 and a Jarvis-owned user-data profile.
+User-selected HTTP/HTTPS browsing is explicitly outside
+`GoogleApiClientFactory`; this exception is limited to WebView2 page and
+subresource traffic, not arbitrary host HTTP clients. The main prompt accepts
+explicit “open ... in browser” and internet-search requests through
+authenticated loopback endpoints. For search, Ollama refines the query (or
+the original text is used on model failure); C# URL-encodes it into a Google
+search-page address and WebView2 loads it. Jarvis does not fetch or rank the
+results through that flow; the user selects from Google's page. The browser
+agent may inspect pages locally under ADR-0015. Page content may be sent to
+local Ollama only after explicit user confirmation for that disclosure, and
+passwords, cookies, and authentication tokens must never be sent. This
+observation permission does not authorize browser actions, native-app
+execution, or arbitrary scripts from the model. Browser actions require
+typed registered operations and explicit safety/authorization checks.
+Page-aware disclosure and the first limited link-opening action follow
+[ADR-0017](architecture/adr/ADR-0017-safe-page-disclosure-and-link-actions.md):
+the user reviews the exact bounded projection before each disclosure, raw
+DOM and link destinations stay local, and a separate signed approval is
+required to open a revalidated temporary link ID. Form filling and booking
+remain out of scope. See ADR-0014 through ADR-0017.
 
 ### Runtime Sequence
 1. User types text. The UI hands it to `TaskOrchestrator`, which creates a Task (state `created`) and resolves the session.
@@ -281,7 +307,7 @@ Legal transition table lives in `Jarvis.Core/StateMachine.cs`. Every transition 
 
 - Authoritative risk is `max(Python advisory risk, C# policy risk)`. C# is authoritative.
 - **Path Policy (`Jarvis.Safety.PathPolicy`):** Allowed roots come from config (default: `Jarvis` folder under user's Documents). Expand env vars, resolve full path, normalize Unicode NFC, case-insensitive. Reject `..`, junctions, symlinks (reparse points), UNC paths, device paths, reserved names (`CON`, `NUL`), alternate data streams.
-- **Network boundary:** The Python AI server binds 127.0.0.1 and may call only loopback and the configured local Ollama service; it never contacts Google. The Windows host uses `GoogleEndpointPolicy` and `GoogleHttpMessageHandler` for external Google HTTP traffic. Google access is default-deny, requires the optional `integrations.google.network_policy.enabled` setting, HTTPS, port 443, exact host and path matches, public DNS results, and normal TLS certificate validation. Calendar/Gmail API methods are restricted to GET/HEAD, OAuth token exchange/refresh/revocation requests to POST, and authorization/certificate retrieval to GET. Automatic redirects and system proxies are disabled; a redirect outside the allowlist is rejected.
+- **Network boundary:** The Python AI server binds 127.0.0.1 and may call only loopback and the configured local Ollama service; it never contacts Google or browser sites. C# API clients use `GoogleEndpointPolicy` and `GoogleHttpMessageHandler` for external Google HTTP traffic. Google access is default-deny, requires the optional `integrations.google.network_policy.enabled` setting, HTTPS, port 443, exact host and path matches, public DNS results, and normal TLS certificate validation. Calendar/Gmail API methods are restricted to GET/HEAD, OAuth token exchange/refresh/revocation requests to POST, and authorization/certificate retrieval to GET. Automatic redirects and system proxies are disabled; a redirect outside the allowlist is rejected. The separate user-operated WebView2 workspace may navigate user-selected HTTP/HTTPS sites using its dedicated Jarvis profile; no other arbitrary host networking is authorized.
 - **API Hardening:** Bind the AI server to 127.0.0.1 only. No CORS. HMAC key in DPAPI. Run non-elevated.
 
 ---
@@ -292,6 +318,7 @@ Legal transition table lives in `Jarvis.Core/StateMachine.cs`. Every transition 
 - **Sinks:** Serilog compact JSON to `logs/host-*.jsonl`, SQLite `audit.db`, Python `structlog` JSON to `logs/ai-server.jsonl`.
 - **Targets:** Rule fast path < 50 ms, Verification per file step < 500 ms, unapproved outbound network calls = 0, Python-to-Google calls = 0, Startup ready < 30 s. C# Google calls are limited to the exact endpoints in ADR-0010 and require explicit configuration.
 - **Google UI data:** Calendar data is requested only after the user selects Refresh in the dedicated UI tab and is bounded to 10 upcoming primary-calendar events. Gmail prompt-bar searches exclude spam and show up to 100 subject/sender/date rows; today's requests use a local-day date range. Bodies are fetched only after an explicit Explain request for one selected message, and attachments are never loaded. Only that selected message is summarized by the configured loopback Ollama model, with a 180-second timeout. Drive and Meet are disabled in the shared settings.
+- **Browser UI:** The WebView2 browser uses a dedicated `%LOCALAPPDATA%\Jarvis\Browser\Profile` user-data directory and supports multiple tabs. Manual navigation, explicit main-prompt “open ... in browser” requests, and internet searches may navigate to HTTP/HTTPS pages; searches open Google's results page for user selection and do not retrieve/rank results in Jarvis. Downloads and site permission requests are denied. Browser chat currently supports approved searches only. Page-aware disclosure and link opening are governed by ADR-0017; form filling, booking, scripts, and browser persistence are not authorized.
 
 ---
 
