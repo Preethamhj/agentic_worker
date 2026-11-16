@@ -107,6 +107,121 @@ public sealed class MainWindowViewModelTests
         viewModel.Task.Should().BeNull();
     }
 
+    [Fact]
+    public async Task ResolveBrowserTargetAsync_Opens_Explicit_Domain_Without_Starting_Ollama()
+    {
+        var factory = new FakeJarvisSessionFactory(new FakeJarvisSession());
+        var viewModel = new MainWindowViewModel(
+            factory,
+            new WpfApprovalHandler(new InlineDispatcher(), new NoOpDialogs()),
+            new WpfEscalationHandler(new InlineDispatcher(), new NoOpDialogs()));
+
+        var address = await viewModel.ResolveBrowserTargetAsync("amazon.in");
+
+        address!.AbsoluteUri.Should().Be("https://amazon.in/");
+        factory.StartCount.Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData("https://user:password@example.com/")]
+    [InlineData("javascript:alert(1)")]
+    public async Task ResolveBrowserTargetAsync_Rejects_Invalid_Explicit_Addresses_Without_Model(string target)
+    {
+        var factory = new FakeJarvisSessionFactory(new FakeJarvisSession());
+        var viewModel = new MainWindowViewModel(
+            factory,
+            new WpfApprovalHandler(new InlineDispatcher(), new NoOpDialogs()),
+            new WpfEscalationHandler(new InlineDispatcher(), new NoOpDialogs()));
+
+        var address = await viewModel.ResolveBrowserTargetAsync(target);
+
+        address.Should().BeNull();
+        viewModel.ErrorMessage.Should().NotBeNullOrWhiteSpace();
+        factory.StartCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ResolveBrowserTargetAsync_Uses_Local_Session_And_Validates_Url()
+    {
+        var session = new FakeJarvisSession
+        {
+            BrowserResolution = new BrowserResolveResponseDto(
+                1, "open", "https://mail.google.com/", string.Empty)
+        };
+        var factory = new FakeJarvisSessionFactory(session);
+        var viewModel = new MainWindowViewModel(
+            factory,
+            new WpfApprovalHandler(new InlineDispatcher(), new NoOpDialogs()),
+            new WpfEscalationHandler(new InlineDispatcher(), new NoOpDialogs()));
+
+        var address = await viewModel.ResolveBrowserTargetAsync("Gmail");
+
+        address!.AbsoluteUri.Should().Be("https://mail.google.com/");
+        session.BrowserTarget.Should().Be("Gmail");
+        factory.StartCount.Should().Be(1);
+        viewModel.IsRunning.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ResolveBrowserTargetAsync_Rejects_NonWeb_Model_Output()
+    {
+        var session = new FakeJarvisSession
+        {
+            BrowserResolution = new BrowserResolveResponseDto(
+                1, "open", "javascript:alert(1)", string.Empty)
+        };
+        var viewModel = new MainWindowViewModel(
+            new FakeJarvisSessionFactory(session),
+            new WpfApprovalHandler(new InlineDispatcher(), new NoOpDialogs()),
+            new WpfEscalationHandler(new InlineDispatcher(), new NoOpDialogs()));
+
+        var address = await viewModel.ResolveBrowserTargetAsync("Gmail");
+
+        address.Should().BeNull();
+        viewModel.ErrorMessage.Should().Contain("invalid browser destination");
+    }
+
+    [Fact]
+    public async Task PrepareBrowserSearchAsync_Opens_Encoded_Google_Search_And_Reports_User_Selection()
+    {
+        var session = new FakeJarvisSession
+        {
+            BrowserSearch = new BrowserSearchQueryResponseDto(
+                1, "ready", "best beginner C++ tutorial", "ready")
+        };
+        var viewModel = new MainWindowViewModel(
+            new FakeJarvisSessionFactory(session),
+            new WpfApprovalHandler(new InlineDispatcher(), new NoOpDialogs()),
+            new WpfEscalationHandler(new InlineDispatcher(), new NoOpDialogs()));
+
+        var search = await viewModel.PrepareBrowserSearchAsync("find C++ tutorial online");
+
+        search.Address!.Host.Should().Be("www.google.com");
+        search.Address.AbsolutePath.Should().Be("/search");
+        search.Address.Query.Should().Contain("best%20beginner%20C%2B%2B%20tutorial");
+        search.StatusMessage.Should().Contain("has not ranked");
+        session.SearchPrompt.Should().Be("find C++ tutorial online");
+    }
+
+    [Fact]
+    public async Task PrepareBrowserSearchAsync_Uses_Original_Query_When_Ollama_Reports_Fallback()
+    {
+        var session = new FakeJarvisSession
+        {
+            BrowserSearch = new BrowserSearchQueryResponseDto(
+                1, "fallback", "original search", "Ollama is unavailable.")
+        };
+        var viewModel = new MainWindowViewModel(
+            new FakeJarvisSessionFactory(session),
+            new WpfApprovalHandler(new InlineDispatcher(), new NoOpDialogs()),
+            new WpfEscalationHandler(new InlineDispatcher(), new NoOpDialogs()));
+
+        var search = await viewModel.PrepareBrowserSearchAsync("original search");
+
+        search.Address!.Query.Should().Contain("original%20search");
+        search.StatusMessage.Should().Be("Ollama is unavailable.");
+    }
+
     private sealed class FakeJarvisSessionFactory(FakeJarvisSession session) : IJarvisSessionFactory
     {
         public int StartCount { get; private set; }
@@ -127,8 +242,14 @@ public sealed class MainWindowViewModelTests
     private sealed class FakeJarvisSession : IJarvisSession
     {
         public Func<CancellationToken, Task<TaskOrchestratorResult>>? Run { get; init; }
+        public BrowserResolveResponseDto BrowserResolution { get; init; } =
+            new(1, "open", "https://example.com/", string.Empty);
+        public BrowserSearchQueryResponseDto BrowserSearch { get; init; } =
+            new(1, "ready", "example search", string.Empty);
         public int AiServerPort => 8000;
         public string? Prompt { get; private set; }
+        public string? BrowserTarget { get; private set; }
+        public string? SearchPrompt { get; private set; }
         public TaskOrchestratorResult? ReportedResult { get; private set; }
         public TaskOrchestratorResult Result { get; } = new(
             "task-1",
@@ -144,6 +265,28 @@ public sealed class MainWindowViewModelTests
             if (Run is not null)
                 return Run(cancellationToken);
             return Task.FromResult(Result);
+        }
+
+        public Task<BrowserResolveResponseDto> ResolveBrowserTargetAsync(
+            string target,
+            CancellationToken cancellationToken = default)
+        {
+            BrowserTarget = target;
+            return Task.FromResult(BrowserResolution);
+        }
+
+        public Task<BrowserPlanResponseDto> PlanBrowserActionAsync(
+            string instruction,
+            BrowserPageContextDto? page,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new BrowserPlanResponseDto(1, "clarify", null, "Not supported in this fake."));
+
+        public Task<BrowserSearchQueryResponseDto> PrepareBrowserSearchQueryAsync(
+            string prompt,
+            CancellationToken cancellationToken = default)
+        {
+            SearchPrompt = prompt;
+            return Task.FromResult(BrowserSearch);
         }
 
         public JarvisHistorySnapshot ReadHistory(string? taskId = null) =>

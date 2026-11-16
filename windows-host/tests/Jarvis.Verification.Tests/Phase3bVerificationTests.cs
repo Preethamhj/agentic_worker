@@ -57,7 +57,7 @@ public sealed class Phase3bVerificationTests : IDisposable
     }
 
     [Fact]
-    public async AsyncTask Search_Uses_Independent_Enumeration_And_Ignores_Receipt_Output()
+    public async AsyncTask Search_Uses_Independent_Enumeration_And_Rejects_Mismatched_Receipt_Output()
     {
         var searchRoot = Path.Combine(_root, "search");
         Directory.CreateDirectory(searchRoot);
@@ -83,9 +83,9 @@ public sealed class Phase3bVerificationTests : IDisposable
 
         var result = await _engine.VerifyAsync(receipt, observation, token);
 
-        result.Status.Should().Be("VERIFIED");
+        result.Status.Should().Be("FAILED");
         result.Stages.Single(stage => stage.Stage == 3).Passed.Should().BeTrue();
-        result.Stages.Single(stage => stage.Stage == 5).Passed.Should().BeTrue();
+        result.Stages.Single(stage => stage.Stage == 5).Passed.Should().BeFalse();
         result.Evidence.Should().ContainSingle(item => item.Match);
         result.Evidence.Single().Observed["enumerated_paths"]
             .Should().BeEquivalentTo(new[] { Path.GetFullPath(matchingFile) });
@@ -119,7 +119,30 @@ public sealed class Phase3bVerificationTests : IDisposable
     }
 
     [Fact]
-    public async AsyncTask Search_Ignores_Malformed_Receipt_Output()
+    public async AsyncTask Search_Accepts_Matching_Receipt_Paths_In_A_Different_Order()
+    {
+        var searchRoot = Path.Combine(_root, "search-order");
+        Directory.CreateDirectory(searchRoot);
+        var first = Path.Combine(searchRoot, "first.txt");
+        var second = Path.Combine(searchRoot, "second.txt");
+        await File.WriteAllTextAsync(first, "1");
+        await File.WriteAllTextAsync(second, "2");
+        var authorization = IssueSearchAuthorization(searchRoot, "*.txt", "order");
+        var token = await _engine.BeginStepAsync(authorization);
+        _authorizationService.Consume(authorization, authorization.StepId);
+
+        var result = await _engine.VerifyAsync(
+            LyingReceipt(authorization) with { Stdout = JsonSerializer.Serialize(new[] { second, first }) },
+            HostObservation(),
+            token);
+
+        result.Status.Should().Be("VERIFIED");
+        result.Evidence.Single().Observed["enumerated_paths"]
+            .Should().BeEquivalentTo(new[] { Path.GetFullPath(first), Path.GetFullPath(second) });
+    }
+
+    [Fact]
+    public async AsyncTask Search_Rejects_Malformed_Receipt_Output()
     {
         var searchRoot = Path.Combine(_root, "search-malformed");
         Directory.CreateDirectory(searchRoot);
@@ -138,11 +161,13 @@ public sealed class Phase3bVerificationTests : IDisposable
             HostObservation(),
             token);
 
-        result.Status.Should().Be("VERIFIED");
+        result.Status.Should().Be("FAILED");
+        result.Evidence.Should().ContainSingle(item => item.Match);
+        result.Stages.Single(stage => stage.Stage == 5).Passed.Should().BeFalse();
     }
 
     [Fact]
-    public async AsyncTask Search_UnderReported_Receipt_Does_Not_Change_Independent_Results()
+    public async AsyncTask Search_UnderReported_Receipt_Fails_Without_Changing_Independent_Results()
     {
         var searchRoot = Path.Combine(_root, "search-under-report");
         Directory.CreateDirectory(searchRoot);
@@ -159,14 +184,15 @@ public sealed class Phase3bVerificationTests : IDisposable
             HostObservation(),
             token);
 
-        result.Status.Should().Be("VERIFIED");
+        result.Status.Should().Be("FAILED");
+        result.Stages.Single(stage => stage.Stage == 5).Passed.Should().BeFalse();
         result.Evidence.Single().Observed["independently_enumerated_count"].Should().Be(2);
         result.Evidence.Single().Observed["enumerated_paths"]
             .Should().BeEquivalentTo(new[] { Path.GetFullPath(first), Path.GetFullPath(second) });
     }
 
     [Fact]
-    public async AsyncTask Search_OverReported_Receipt_Does_Not_Change_Independent_Results()
+    public async AsyncTask Search_OverReported_Receipt_Fails_Without_Changing_Independent_Results()
     {
         var searchRoot = Path.Combine(_root, "search-over-report");
         Directory.CreateDirectory(searchRoot);
@@ -183,7 +209,8 @@ public sealed class Phase3bVerificationTests : IDisposable
             HostObservation(),
             token);
 
-        result.Status.Should().Be("VERIFIED");
+        result.Status.Should().Be("FAILED");
+        result.Stages.Single(stage => stage.Stage == 5).Passed.Should().BeFalse();
         result.Evidence.Single().Observed["independently_enumerated_count"].Should().Be(1);
         result.Evidence.Single().Observed["enumerated_paths"]
             .Should().BeEquivalentTo(new[] { Path.GetFullPath(matching) });

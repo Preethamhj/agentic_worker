@@ -177,7 +177,9 @@ public class DependencyRulesTests
             .OrderBy(name => name)
             .ToArray();
 
+        // Jarvis.Browser.Core approved by ADR-0016.
         jarvisReferences.Should().BeEquivalentTo(
+            "Jarvis.Browser.Core",
             "Jarvis.Composition",
             "Jarvis.Contracts",
             "Jarvis.Core",

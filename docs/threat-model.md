@@ -25,6 +25,39 @@ C# Windows host and use the `GoogleApiClientFactory` transport; access is
 denied unless `integrations.google.network_policy.enabled` is explicitly
 true.
 
+The user-operated WebView2 workspace is a separate, explicitly authorized
+network surface. It can load user-selected HTTP/HTTPS sites, including their
+page subresources, in a Jarvis-owned profile; these requests do not pass
+through `GoogleApiClientFactory` and are not restricted to Google's endpoint
+allowlist. This exception does not permit arbitrary `HttpClient` use in
+Jarvis or external access from Python. A named-site prompt may send the site
+name to authenticated loopback Ollama for URL resolution; WPF validates the
+HTTP/HTTPS URL before navigation. An explicit web-search prompt may send its
+text to local Ollama for query refinement, and C# builds a URL-encoded
+Google results-page URL. The search itself and its result traffic occur only
+inside user-operated WebView2. That flow does not scrape or rank results;
+the user selects from the browser page. ADR-0015 permits local observation, while ADR-0017 requires
+the user to review and confirm the exact bounded projection for each
+page-aware planner request. The projection omits URLs, link destinations,
+attributes, and input values; link references are temporary IDs, and the
+target mapping remains in host memory. Credential-like markers, common token
+forms, and credential-bearing target parameters block disclosure or target
+selection. This is conservative pattern detection, not a proof that arbitrary
+visible page text contains no password or secret; the preview remains
+mandatory and detection limitations are an open risk.
+Page text is untrusted and may contain prompt injection. The model can return
+only a validated search or temporary link ID. Opening a link is separately
+registered, approved, signed, and revalidated against the current observation;
+the signed record contains a target fingerprint and host, not the URL. The
+browser adapter uses CDP `Page.navigate` only for that already-approved
+HTTP/HTTPS target. Independent verification checks browser-engine address
+evidence; the CDP response is not evidence. Form filling, booking, purchases,
+downloads, and page-supplied scripts remain unsupported. Native desktop
+applications are not launched by the browser. Top-level
+non-HTTP(S) navigations remain blocked, and downloads and site permission
+requests remain denied. Ollama's named-site URL may be incorrect, so the
+destination is visible in the browser address bar; see ADR-0014.
+
 The C# policy matches exact DNS hostnames and service path prefixes, HTTPS,
 and port 443. It does not use a `*.googleapis.com` rule. The transport does
 not use the system proxy, resolves only an approved hostname, rejects

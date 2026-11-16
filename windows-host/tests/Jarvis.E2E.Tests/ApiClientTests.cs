@@ -110,6 +110,101 @@ public class ApiClientTests
     }
 
     [Fact]
+    public async Task ApiClient_Resolves_Browser_Target_Through_Authenticated_Loopback_Endpoint()
+    {
+        string? requestPath = null;
+        string? receivedToken = null;
+        string? receivedTrace = null;
+        string? requestBody = null;
+        var handler = new MockHttpMessageHandler(async (request, cancellationToken) =>
+        {
+            requestPath = request.RequestUri?.AbsolutePath;
+            receivedToken = request.Headers.GetValues("X-Jarvis-Token").Single();
+            receivedTrace = request.Headers.GetValues("X-Trace-Id").Single();
+            requestBody = await request.Content!.ReadAsStringAsync(cancellationToken);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    JsonSerializer.Serialize(new BrowserResolveResponseDto(
+                        1, "open", "https://mail.google.com/", string.Empty)))
+            };
+        });
+        using var client = new HttpClient(handler);
+        var api = new ApiClient(client, "http://127.0.0.1:8000", "local-token");
+
+        var result = await api.ResolveBrowserTargetAsync(
+            new BrowserResolveRequestDto(1, "session-1", "Gmail"),
+            traceId: "trace-browser");
+
+        requestPath.Should().Be("/v1/browser/resolve");
+        receivedToken.Should().Be("local-token");
+        receivedTrace.Should().Be("trace-browser");
+        requestBody.Should().Contain("\"text\":\"Gmail\"");
+        result.Url.Should().Be("https://mail.google.com/");
+    }
+
+    [Fact]
+    public async Task ApiClient_Prepares_Browser_Search_Through_Authenticated_Loopback_Endpoint()
+    {
+        string? requestPath = null;
+        string? receivedToken = null;
+        var handler = new MockHttpMessageHandler((request, _) =>
+        {
+            requestPath = request.RequestUri?.AbsolutePath;
+            receivedToken = request.Headers.GetValues("X-Jarvis-Token").Single();
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    JsonSerializer.Serialize(new BrowserSearchQueryResponseDto(
+                        1, "ready", "best beginner C++ tutorial", "Choose a result.")))
+            });
+        });
+        using var client = new HttpClient(handler);
+        var api = new ApiClient(client, "http://127.0.0.1:8000", "local-token");
+
+        var result = await api.PrepareBrowserSearchQueryAsync(
+            new BrowserResolveRequestDto(1, "session-1", "find C++ tutorial online"));
+
+        requestPath.Should().Be("/v1/browser/search-query");
+        receivedToken.Should().Be("local-token");
+        result.Status.Should().Be("ready");
+        result.Query.Should().Be("best beginner C++ tutorial");
+    }
+
+    [Fact]
+    public async Task ApiClient_Sends_Only_Approved_Page_Text_And_Temporary_Link_Labels()
+    {
+        string? requestBody = null;
+        var handler = new MockHttpMessageHandler(async (request, _) =>
+        {
+            requestBody = await request.Content!.ReadAsStringAsync();
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """{"schema_version":1,"status":"open_link","query":null,"link_id":"l123456789abc","message":""}""")
+            };
+        });
+        using var client = new HttpClient(handler);
+        var api = new ApiClient(client, "http://127.0.0.1:8000", "local-token");
+
+        var result = await api.PlanBrowserActionAsync(
+            new BrowserPlanRequestDto(
+                1,
+                "session-1",
+                "open the pricing page",
+                new BrowserPageContextDto(
+                    "Product",
+                    "Pricing is available.",
+                    [new BrowserPageLinkDto("l123456789abc", "Pricing")])));
+
+        result.Status.Should().Be("open_link");
+        result.LinkId.Should().Be("l123456789abc");
+        requestBody.Should().Contain("Pricing");
+        requestBody.Should().NotContain("https://");
+        requestBody.Should().NotContain("href");
+    }
+
+    [Fact]
     public async Task ApiClient_Throws_JarvisApiException_On_401_Unauthorized()
     {
         var handler = new MockHttpMessageHandler((_, _) =>

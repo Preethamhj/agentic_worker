@@ -78,6 +78,40 @@ public sealed class JarvisSessionFactory : IJarvisSessionFactory
         new(Path.Combine(_repositoryRoot, "config", "settings.json"));
 
     /// <inheritdoc />
+    public BrowserActionAuthority CreateBrowserActionAuthority(IApprovalHandler approvalHandler)
+    {
+        ArgumentNullException.ThrowIfNull(approvalHandler);
+        var auditStore = new SqliteAuditStore(Path.Combine(_repositoryRoot, "audit.db"));
+        try
+        {
+            IDpapiKeyStore keyStore = OperatingSystem.IsWindows()
+                ? new DpapiKeyStore()
+                : new InMemoryDpapiKeyStore();
+            var authorization = new AuthorizationService(
+                keyStore,
+                SystemClock.Instance,
+                auditStore,
+                reminderDataLocation: new DefaultReminderDataLocation());
+            var configDirectory = Path.Combine(_repositoryRoot, "config");
+            var toolPolicy = ToolPolicy.FromFile(
+                Path.Combine(configDirectory, "tools.registry.json"),
+                Path.Combine(configDirectory, "apps.allowlist.json"));
+            var gate = new SafetyGate(toolPolicy, authorization, approvalHandler, auditStore);
+            return new BrowserActionAuthority(
+                gate,
+                authorization,
+                new BrowserSearchVerifier(authorization, auditStore, SystemClock.Instance),
+                new BrowserOpenLinkVerifier(authorization, auditStore, SystemClock.Instance),
+                auditStore);
+        }
+        catch
+        {
+            auditStore.Dispose();
+            throw;
+        }
+    }
+
+    /// <inheritdoc />
     public async Task<IJarvisSession> StartAsync(
         IApprovalHandler approvalHandler,
         IEscalationHandler escalationHandler,
@@ -184,6 +218,40 @@ internal sealed class JarvisSession(
         await apiClient.SendReportAsync(CreateReport(sessionId, result), cancellationToken: cancellationToken)
             .ConfigureAwait(false);
         return result;
+    }
+
+    public Task<BrowserResolveResponseDto> ResolveBrowserTargetAsync(
+        string target,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(target);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return apiClient.ResolveBrowserTargetAsync(
+            new BrowserResolveRequestDto(1, sessionId, target),
+            cancellationToken: cancellationToken);
+    }
+
+    public Task<BrowserSearchQueryResponseDto> PrepareBrowserSearchQueryAsync(
+        string prompt,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(prompt);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return apiClient.PrepareBrowserSearchQueryAsync(
+            new BrowserResolveRequestDto(1, sessionId, prompt),
+            cancellationToken: cancellationToken);
+    }
+
+    public Task<BrowserPlanResponseDto> PlanBrowserActionAsync(
+        string instruction,
+        BrowserPageContextDto? page,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(instruction);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return apiClient.PlanBrowserActionAsync(
+            new BrowserPlanRequestDto(1, sessionId, instruction, page),
+            cancellationToken: cancellationToken);
     }
 
     public JarvisHistorySnapshot ReadHistory(string? taskId = null) =>

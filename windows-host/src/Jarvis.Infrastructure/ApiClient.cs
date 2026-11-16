@@ -9,6 +9,9 @@ namespace Jarvis.Infrastructure;
 public interface IApiClient
 {
     Task<PlanResponseDto> GetPlanAsync(PlanRequestDto request, string? traceId = null, CancellationToken cancellationToken = default);
+    Task<BrowserResolveResponseDto> ResolveBrowserTargetAsync(BrowserResolveRequestDto request, string? traceId = null, CancellationToken cancellationToken = default);
+    Task<BrowserSearchQueryResponseDto> PrepareBrowserSearchQueryAsync(BrowserResolveRequestDto request, string? traceId = null, CancellationToken cancellationToken = default);
+    Task<BrowserPlanResponseDto> PlanBrowserActionAsync(BrowserPlanRequestDto request, string? traceId = null, CancellationToken cancellationToken = default);
     Task<ReportResponseDto> SendReportAsync(ReportRequestDto report, string? traceId = null, CancellationToken cancellationToken = default);
     Task<bool> CheckHealthAsync(CancellationToken cancellationToken = default);
 }
@@ -145,6 +148,151 @@ public sealed class ApiClient : IApiClient
         }
 
         throw new JarvisApiException($"Plan generation failed after 2 attempts: {lastException?.Message}", innerException: lastException);
+    }
+
+    public async Task<BrowserResolveResponseDto> ResolveBrowserTargetAsync(
+        BrowserResolveRequestDto request,
+        string? traceId = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var trace = traceId ?? $"trace-{Guid.NewGuid():N}"[..12];
+        using var timeoutCts = new CancellationTokenSource(_planTimeout);
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"{_baseUrl}/v1/browser/resolve");
+        httpRequest.Headers.Add("X-Jarvis-Token", _token);
+        httpRequest.Headers.Add("X-Trace-Id", trace);
+        httpRequest.Content = JsonContent.Create(request, options: JsonOptions);
+
+        try
+        {
+            using var response = await _httpClient.SendAsync(httpRequest, linkedCts.Token).ConfigureAwait(false);
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
+                throw new JarvisApiException("Unauthorized: Invalid or missing token (401).", 401);
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorBody = await response.Content.ReadAsStringAsync(linkedCts.Token).ConfigureAwait(false);
+                throw new JarvisApiException(
+                    $"AI server returned {(int)response.StatusCode}: {errorBody}",
+                    (int)response.StatusCode);
+            }
+
+            var content = await response.Content.ReadAsStringAsync(linkedCts.Token).ConfigureAwait(false);
+            try
+            {
+                return JsonSerializer.Deserialize<BrowserResolveResponseDto>(content, JsonOptions)
+                    ?? throw new JarvisApiException("AI server returned an empty browser-resolution response.");
+            }
+            catch (JsonException exception)
+            {
+                throw new JarvisApiException(
+                    $"AI server returned malformed browser-resolution JSON: {exception.Message}",
+                    (int)response.StatusCode,
+                    exception);
+            }
+        }
+        catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            var timeout = new TimeoutException(
+                $"Browser destination resolution timed out after {_planTimeout.TotalSeconds:F1}s.",
+                exception);
+            throw new JarvisApiException(timeout.Message, innerException: timeout);
+        }
+    }
+
+    /// <summary>Refines an explicit browser search prompt through the authenticated loopback AI server.</summary>
+    public async Task<BrowserSearchQueryResponseDto> PrepareBrowserSearchQueryAsync(
+        BrowserResolveRequestDto request,
+        string? traceId = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var trace = traceId ?? $"trace-{Guid.NewGuid():N}"[..12];
+        using var timeoutCts = new CancellationTokenSource(_planTimeout);
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"{_baseUrl}/v1/browser/search-query");
+        httpRequest.Headers.Add("X-Jarvis-Token", _token);
+        httpRequest.Headers.Add("X-Trace-Id", trace);
+        httpRequest.Content = JsonContent.Create(request, options: JsonOptions);
+
+        try
+        {
+            using var response = await _httpClient.SendAsync(httpRequest, linkedCts.Token).ConfigureAwait(false);
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
+                throw new JarvisApiException("Unauthorized: Invalid or missing token (401).", 401);
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorBody = await response.Content.ReadAsStringAsync(linkedCts.Token).ConfigureAwait(false);
+                throw new JarvisApiException(
+                    $"AI server returned {(int)response.StatusCode}: {errorBody}",
+                    (int)response.StatusCode);
+            }
+
+            var content = await response.Content.ReadAsStringAsync(linkedCts.Token).ConfigureAwait(false);
+            try
+            {
+                return JsonSerializer.Deserialize<BrowserSearchQueryResponseDto>(content, JsonOptions)
+                    ?? throw new JarvisApiException("AI server returned an empty browser-search response.");
+            }
+            catch (JsonException exception)
+            {
+                throw new JarvisApiException(
+                    $"AI server returned malformed browser-search JSON: {exception.Message}",
+                    (int)response.StatusCode,
+                    exception);
+            }
+        }
+        catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            var timeout = new TimeoutException(
+                $"Browser search query preparation timed out after {_planTimeout.TotalSeconds:F1}s.",
+                exception);
+            throw new JarvisApiException(timeout.Message, innerException: timeout);
+        }
+    }
+
+    /// <summary>Interprets one typed chat instruction and its user-approved safe page projection.</summary>
+    public async Task<BrowserPlanResponseDto> PlanBrowserActionAsync(
+        BrowserPlanRequestDto request,
+        string? traceId = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var trace = traceId ?? $"trace-{Guid.NewGuid():N}"[..12];
+        using var timeoutCts = new CancellationTokenSource(_planTimeout);
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"{_baseUrl}/v1/browser/plan");
+        httpRequest.Headers.Add("X-Jarvis-Token", _token);
+        httpRequest.Headers.Add("X-Trace-Id", trace);
+        httpRequest.Content = JsonContent.Create(request, options: JsonOptions);
+
+        try
+        {
+            using var response = await _httpClient.SendAsync(httpRequest, linkedCts.Token).ConfigureAwait(false);
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
+                throw new JarvisApiException("Unauthorized: Invalid or missing token (401).", 401);
+            var content = await response.Content.ReadAsStringAsync(linkedCts.Token).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+                throw new JarvisApiException($"AI server returned {(int)response.StatusCode}: {content}", (int)response.StatusCode);
+            try
+            {
+                return JsonSerializer.Deserialize<BrowserPlanResponseDto>(content, JsonOptions)
+                    ?? throw new JarvisApiException("AI server returned an empty browser-plan response.");
+            }
+            catch (JsonException exception)
+            {
+                throw new JarvisApiException(
+                    $"AI server returned malformed browser-plan JSON: {exception.Message}",
+                    (int)response.StatusCode,
+                    exception);
+            }
+        }
+        catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            var timeout = new TimeoutException(
+                $"Browser planning timed out after {_planTimeout.TotalSeconds:F1}s.", exception);
+            throw new JarvisApiException(timeout.Message, innerException: timeout);
+        }
     }
 
     public async Task<ReportResponseDto> SendReportAsync(ReportRequestDto report, string? traceId = null, CancellationToken cancellationToken = default)

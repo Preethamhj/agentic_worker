@@ -207,6 +207,8 @@ public sealed class EvalVerifierTests
         var result = await new VerificationEngineEvalVerifier(scenario.Engine)
             .VerifyAsync(CreateCase(faultId) with { ToolId = "fs.search_files" }, scenario.Execution);
         result.Status.Should().Be(EvalStatus.Failed);
+        result.Reasons.Should().Contain(reason =>
+            reason.Contains("Executor-reported search results differ", StringComparison.Ordinal));
     }
 
     private static EvalCase CreateCase(string faultId) =>

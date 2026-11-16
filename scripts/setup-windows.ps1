@@ -23,9 +23,7 @@ $status = [ordered]@{
 try {
     $wingetVer = & winget --version 2>$null
     $status["winget"] = "OK ($wingetVer)"
-} catch {
-    Write-Warning "winget is missing! Please install App Installer from Microsoft Store."
-}
+} catch { }
 
 # 2. Check dotnet
 try {

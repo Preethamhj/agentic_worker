@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from jarvis_ai import __version__
 from jarvis_ai.api.routes_plan import router as plan_router
 from jarvis_ai.api.routes_report import router as report_router
+from jarvis_ai.api.routes_browser import router as browser_router
 from jarvis_ai.core.network_guard import install_network_guard
 from jarvis_ai.llm.client import OllamaClient
 
@@ -20,6 +21,7 @@ app = FastAPI(
 
 app.include_router(plan_router)
 app.include_router(report_router)
+app.include_router(browser_router)
 
 ollama_client = OllamaClient()
 

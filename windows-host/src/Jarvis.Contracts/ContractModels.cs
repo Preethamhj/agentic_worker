@@ -11,6 +11,59 @@ public record PlanRequestDto(
 );
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public record BrowserResolveRequestDto(
+    [property: JsonPropertyName("schema_version")] int SchemaVersion,
+    [property: JsonPropertyName("session_id")] string SessionId,
+    [property: JsonPropertyName("text")] string Text
+);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public record BrowserResolveResponseDto(
+    [property: JsonPropertyName("schema_version")] int SchemaVersion,
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("url")] string? Url,
+    [property: JsonPropertyName("message")] string Message
+);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public record BrowserSearchQueryResponseDto(
+    [property: JsonPropertyName("schema_version")] int SchemaVersion,
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("query")] string Query,
+    [property: JsonPropertyName("message")] string Message
+);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public record BrowserPageLinkDto(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("label")] string Label
+);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public record BrowserPageContextDto(
+    [property: JsonPropertyName("title")] string Title,
+    [property: JsonPropertyName("visible_text")] string VisibleText,
+    [property: JsonPropertyName("links")] IReadOnlyList<BrowserPageLinkDto> Links
+);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public record BrowserPlanRequestDto(
+    [property: JsonPropertyName("schema_version")] int SchemaVersion,
+    [property: JsonPropertyName("session_id")] string SessionId,
+    [property: JsonPropertyName("text")] string Text,
+    [property: JsonPropertyName("page")] BrowserPageContextDto? Page
+);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public record BrowserPlanResponseDto(
+    [property: JsonPropertyName("schema_version")] int SchemaVersion,
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("query")] string? Query,
+    [property: JsonPropertyName("message")] string Message,
+    [property: JsonPropertyName("link_id")] string? LinkId = null
+);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public record RiskDto(
     [property: JsonPropertyName("level")] string Level,
     [property: JsonPropertyName("reasons")] List<string> Reasons

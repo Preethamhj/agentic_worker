@@ -29,7 +29,7 @@ public sealed class TaskScheduleReminderExecutor : IToolExecutor
         _scheduler = scheduler ?? throw new ArgumentNullException(nameof(scheduler));
         _dataFileStore = dataFileStore ?? new ReminderDataFileStore();
         _clock = clock ?? SystemClock.Instance;
-        _hostPathProvider = hostPathProvider ?? new EnvironmentHostPathProvider();
+        _hostPathProvider = hostPathProvider ??     new EnvironmentHostPathProvider();
     }
 
     public string ToolId => "task.schedule_reminder";

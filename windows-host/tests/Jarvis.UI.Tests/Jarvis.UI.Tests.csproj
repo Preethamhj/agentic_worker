@@ -17,5 +17,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Jarvis.UI\Jarvis.UI.csproj" />
+    <ProjectReference Include="..\..\src\Jarvis.Browser.Core\Jarvis.Browser.Core.csproj" />
   </ItemGroup>
 </Project>
