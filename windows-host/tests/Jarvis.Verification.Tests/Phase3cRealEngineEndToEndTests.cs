@@ -21,19 +21,20 @@ public sealed class Phase3cRealEngineEndToEndTests
     public Phase3cRealEngineEndToEndTests(ITestOutputHelper output) => _output = output;
 
     [Fact]
-    public async Task SearchFiles_Real_Executor_Verifies_Regardless_Of_Receipt_Output()
+    public async Task SearchFiles_Real_Executor_Fails_When_Receipt_Output_Disagrees_With_Evidence()
     {
         var control = await RunScenarioAsync("fs.search_files", injectFault: false);
         var alteredOutput = await RunScenarioAsync("fs.search_files", injectFault: true);
 
         Assert.True(control.FinalState == TaskState.Completed, Describe(control));
         Assert.Equal("VERIFIED", Assert.Single(control.VerificationResults).Status);
-        Assert.Equal(TaskState.Completed, alteredOutput.FinalState);
-        Assert.Equal("VERIFIED", Assert.Single(alteredOutput.VerificationResults).Status);
-        Assert.Equal(
-            1,
-            Assert.Single(alteredOutput.VerificationResults).Evidence.Single()
-                .Observed["independently_enumerated_count"]);
+        Assert.Equal(TaskState.Failed, alteredOutput.FinalState);
+        Assert.Equal("FAILED", Assert.Single(alteredOutput.VerificationResults).Status);
+        var evidence = Assert.Single(alteredOutput.VerificationResults).Evidence.Single();
+        Assert.True(evidence.Match);
+        Assert.Equal(1, evidence.Observed["independently_enumerated_count"]);
+        var enumeratedPaths = Assert.IsAssignableFrom<IEnumerable<string>>(evidence.Observed["enumerated_paths"]);
+        Assert.Contains(enumeratedPaths, path => Path.GetFileName(path) == "found.txt");
     }
 
     [Fact]

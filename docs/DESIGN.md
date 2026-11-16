@@ -267,6 +267,7 @@ JSON Schemas in `contracts/schemas/` are the ground truth. Python (Pydantic) and
 
 ### Evidence Rules
 - Collected only by `Jarvis.Verification`, never taken from tool `stdout`, `stderr`, or `exit_code`.
+- Untrusted receipt claims may be checked against independent evidence, but receipt values never populate an evidence record.
 - Valid only inside time window (default 30 s after `completed_at`). Stale evidence is rejected.
 - Each evidence record is hashed and stored immutably. A nonce is used once.
 

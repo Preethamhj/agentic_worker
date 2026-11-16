@@ -163,9 +163,21 @@ public sealed class VerificationEngine : IVerifier
                 if (!evidenceValid)
                     reasons.Add(evidenceFailure);
 
-                stages.Add(Stage(5, "AttributeVerification", collected.Match, collected.Detail, collected.Outcome));
-                if (!collected.Match)
-                    reasons.Add(collected.Detail);
+                var attributeMatch = collected.Match;
+                var attributeDetail = collected.Detail;
+                var attributeOutcome = collected.Outcome;
+                if (attributeMatch
+                    && authorization.ToolId == "fs.search_files"
+                    && !SearchReceiptMatches(receipt.Stdout, collected))
+                {
+                    attributeMatch = false;
+                    attributeDetail = "Executor-reported search results differ from independently enumerated paths.";
+                    attributeOutcome = Failed;
+                }
+
+                stages.Add(Stage(5, "AttributeVerification", attributeMatch, attributeDetail, attributeOutcome));
+                if (!attributeMatch)
+                    reasons.Add(attributeDetail);
             }
             catch (OperationCanceledException)
             {
@@ -433,6 +445,53 @@ public sealed class VerificationEngine : IVerifier
                 cancellationToken),
             _ => throw new ArgumentException($"Unsupported verification tool '{authorization.ToolId}'.", nameof(authorization))
         };
+    }
+
+    private static bool SearchReceiptMatches(string? stdout, IndependentEvidenceObservation collected)
+    {
+        if (stdout is null
+            || !collected.Observed.TryGetValue("enumerated_paths", out var observedPaths)
+            || observedPaths is not IEnumerable<string> expectedPaths)
+            return false;
+
+        string?[]? reportedPaths;
+        try
+        {
+            reportedPaths = JsonSerializer.Deserialize<string?[]>(stdout);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+
+        if (reportedPaths is null)
+            return false;
+
+        var expected = expectedPaths.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (reportedPaths.Length != expected.Count)
+            return false;
+
+        var reported = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var path in reportedPaths)
+        {
+            if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path))
+                return false;
+
+            string fullPath;
+            try
+            {
+                fullPath = Path.GetFullPath(path);
+            }
+            catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException)
+            {
+                return false;
+            }
+
+            if (!reported.Add(fullPath))
+                return false;
+        }
+
+        return reported.SetEquals(expected);
     }
 
     private static bool MatchesExpected(
